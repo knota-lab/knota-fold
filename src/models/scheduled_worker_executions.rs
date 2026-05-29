@@ -50,6 +50,9 @@ pub struct UpdateStatusParams {
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn create_pending(
         db: &DatabaseConnection,
         params: &CreateExecutionParams,
@@ -76,6 +79,9 @@ impl Model {
         active_model.insert(db).await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_running_for_schedule(
         db: &DatabaseConnection,
         schedule_id: Uuid,
@@ -88,6 +94,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn count_running_for_tenant(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -99,6 +108,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_zombies(
         db: &DatabaseConnection,
         cutoff: DateTimeWithTimeZone,
@@ -112,6 +124,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn update_status(
         db: &DatabaseConnection,
         id: Uuid,
@@ -140,6 +155,9 @@ impl Model {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_tenant(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -157,6 +175,9 @@ impl Model {
         Ok((rows, total))
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id(
         db: &DatabaseConnection,
         id: Uuid,
@@ -167,6 +188,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn set_retry_count(
         db: &DatabaseConnection,
         id: Uuid,

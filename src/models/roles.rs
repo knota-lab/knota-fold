@@ -21,6 +21,9 @@ impl ActiveModelBehavior for super::_entities::roles::ActiveModel {
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_tenant<C: ConnectionTrait>(
         db: &C,
         tenant_id: Uuid,
@@ -31,6 +34,9 @@ impl Model {
             .await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id_and_tenant<C: ConnectionTrait>(
         db: &C,
         id: Uuid,
@@ -45,6 +51,9 @@ impl Model {
             .ok_or_else(|| ModelError::EntityNotFound)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn update_with_version<C: ConnectionTrait>(
         db: &C,
         id: Uuid,
@@ -77,6 +86,9 @@ impl Model {
         Ok(active_model.update(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn toggle_status<C: ConnectionTrait>(
         db: &C,
         id: Uuid,
@@ -95,6 +107,9 @@ impl Model {
         Ok(active.update(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn create_role<C: ConnectionTrait>(
         db: &C,
         tenant_id: Uuid,
@@ -114,6 +129,9 @@ impl Model {
         Ok(active_model.insert(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_user_role_codes<C: ConnectionTrait>(
         db: &C,
         user_id: Uuid,
@@ -141,6 +159,9 @@ impl Model {
         Ok(roles.into_iter().map(|r| r.code).collect())
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn sync_user_roles<C: ConnectionTrait>(
         db: &C,
         tenant_id: Uuid,

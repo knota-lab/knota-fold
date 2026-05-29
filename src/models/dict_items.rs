@@ -73,6 +73,10 @@ impl EffectiveDictItem {
 
 impl Model {
     /// Find a dict item by ID (no tenant filter).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id(db: &DatabaseConnection, id: Uuid) -> ModelResult<Self> {
         Entity::find()
             .filter(dict_items::Column::Id.eq(id))
@@ -83,6 +87,10 @@ impl Model {
     }
 
     /// Find dict item by id, scoped to a tenant (owns or system).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id_and_tenant(
         db: &DatabaseConnection,
         id: Uuid,
@@ -109,6 +117,10 @@ impl Model {
     }
 
     /// Find the override row a tenant has for a specific system item.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_override_by_tenant_and_source(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -124,6 +136,10 @@ impl Model {
     }
 
     /// Find system items for a given dict type.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_system_items_by_type(
         db: &DatabaseConnection,
         dict_type_id: Uuid,
@@ -136,8 +152,12 @@ impl Model {
             .await?)
     }
 
-    /// Effective dict items for a tenant under a given dict_type_id — 3 ORM queries merged.
+    /// Effective dict items for a tenant under a given `dict_type_id` — 3 ORM queries merged.
     /// Returns all effective items (no pagination — tree built in memory).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_effective_items(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -194,6 +214,10 @@ impl Model {
     }
 
     /// System items for a dict type (for super admin — no merge needed).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_items_by_type(
         db: &DatabaseConnection,
         dict_type_id: Uuid,
@@ -206,6 +230,10 @@ impl Model {
     }
 
     /// Find all override items a tenant has for a given source dict type.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_tenant_overrides_for_type(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -221,6 +249,10 @@ impl Model {
     }
 
     /// Update with optimistic locking.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn update_with_version(
         db: &DatabaseConnection,
         id: Uuid,
@@ -246,6 +278,10 @@ impl Model {
     }
 
     /// Soft delete.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn soft_delete(db: &DatabaseConnection, id: Uuid) -> ModelResult<Self> {
         let existing = Self::find_by_id(db, id).await?;
         let mut active: ActiveModel = existing.into();
@@ -254,6 +290,10 @@ impl Model {
     }
 
     /// Create a dict item.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn create_dict_item(
         db: &DatabaseConnection,
         tenant_id: Option<Uuid>,
@@ -274,6 +314,10 @@ impl Model {
 
     /// Validate tree depth by walking parent chain.
     /// Uses the effective item set (system + overrides) to resolve parents.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn validate_tree_depth(
         db: &DatabaseConnection,
         parent_id: Option<Uuid>,
@@ -299,6 +343,10 @@ impl Model {
     }
 
     /// Validate no circular reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn validate_no_circular_ref(
         db: &DatabaseConnection,
         id: Uuid,

@@ -14,23 +14,25 @@ impl ActiveModelBehavior for super::_entities::sys_configs::ActiveModel {
     where
         C: ConnectionTrait,
     {
+        let mut this = self;
         if insert {
-            let mut this = self;
             this.id = ActiveValue::Set(crate::utils::id::generate_id());
             let now = chrono::Utc::now().fixed_offset();
             this.created_at = ActiveValue::Set(now);
             this.updated_at = ActiveValue::Set(now);
-            Ok(this)
         } else {
-            let mut this = self;
             this.updated_at = ActiveValue::Set(chrono::Utc::now().fixed_offset());
-            Ok(this)
         }
+        Ok(this)
     }
 }
 
 impl Model {
-    /// Find global config by key (tenant_id IS NULL).
+    /// Find global config by key (`tenant_id` IS NULL).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_global_by_key(
         db: &DatabaseConnection,
         key: &str,
@@ -43,6 +45,10 @@ impl Model {
     }
 
     /// Find tenant override by key for a specific tenant.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_tenant_by_key(
         db: &DatabaseConnection,
         key: &str,
@@ -55,7 +61,11 @@ impl Model {
             .await
     }
 
-    /// List all global configs (tenant_id IS NULL).
+    /// List all global configs (`tenant_id` IS NULL).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn list_global(db: &DatabaseConnection) -> Result<Vec<Self>, DbErr> {
         Entity::find()
             .filter(sys_configs::Column::TenantId.is_null())
@@ -64,6 +74,10 @@ impl Model {
     }
 
     /// List all tenant override configs for a specific tenant.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn list_tenant_overrides(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -75,6 +89,10 @@ impl Model {
     }
 
     /// Delete all tenant overrides for a given key (used when global config is deleted).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn delete_tenant_overrides_for_key(
         db: &DatabaseConnection,
         key: &str,

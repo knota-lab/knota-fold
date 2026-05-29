@@ -240,6 +240,10 @@ impl Model {
     /// # Errors
     ///
     /// When could not save the user into the DB
+    ///
+    /// # Panics
+    ///
+    /// Panics if the default tenant UUID is invalid (should never happen).
     pub async fn create_with_password<C: ConnectionTrait + TransactionTrait>(
         db: &C,
         params: &RegisterParams,
@@ -267,9 +271,9 @@ impl Model {
         });
 
         let user = users::ActiveModel {
-            email: ActiveValue::set(params.email.to_string()),
+            email: ActiveValue::set(params.email.clone()),
             password: ActiveValue::set(password_hash),
-            name: ActiveValue::set(params.name.to_string()),
+            name: ActiveValue::set(params.name.clone()),
             tenant_id: ActiveValue::set(tenant_id),
             status: ActiveValue::set("active".to_string()),
             password_changed_at: ActiveValue::set(Some(Local::now().into())),
@@ -435,6 +439,10 @@ impl ActiveModel {
     ///
     /// `None` clears the preference so the frontend falls back to
     /// browser detection on next login.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the update fails.
     pub async fn set_preferred_locale(
         mut self,
         db: &DatabaseConnection,

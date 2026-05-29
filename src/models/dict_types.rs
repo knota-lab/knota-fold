@@ -61,6 +61,10 @@ impl EffectiveDictType {
 
 impl Model {
     /// Find a dict type by ID (no tenant filter — used for looking up any row).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id(db: &DatabaseConnection, id: Uuid) -> ModelResult<Self> {
         Entity::find()
             .filter(dict_types::Column::Id.eq(id))
@@ -70,7 +74,11 @@ impl Model {
             .ok_or_else(|| ModelError::EntityNotFound)
     }
 
-    /// Find system dict types (tenant_id IS NULL, not deleted).
+    /// Find system dict types (`tenant_id` IS NULL, not deleted).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_system_types(db: &DatabaseConnection) -> ModelResult<Vec<Self>> {
         Ok(Entity::find()
             .filter(dict_types::Column::TenantId.is_null())
@@ -80,6 +88,10 @@ impl Model {
     }
 
     /// Find a system dict type by code.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_system_type_by_code(
         db: &DatabaseConnection,
         code: &str,
@@ -94,6 +106,10 @@ impl Model {
     }
 
     /// Find the override row a tenant has for a specific system type.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_override_by_tenant_and_source(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -109,6 +125,10 @@ impl Model {
     }
 
     /// Find dict type by id, scoped to a tenant (owns or system).
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id_and_tenant(
         db: &DatabaseConnection,
         id: Uuid,
@@ -138,6 +158,11 @@ impl Model {
 
     /// Effective dict types for a tenant — 3 ORM queries merged in memory.
     /// Returns tenant overrides + tenant-only + system rows not overridden.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
+    #[allow(clippy::cast_possible_truncation)] // DB pagination: page/page_size are bounded by app config
     pub async fn find_effective_types(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -204,6 +229,10 @@ impl Model {
     }
 
     /// System dict types list (for super admin) with pagination.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     #[tracing::instrument(skip_all)]
     pub async fn find_system_types_paginated(
         db: &DatabaseConnection,
@@ -221,7 +250,11 @@ impl Model {
         Ok((rows, total))
     }
 
-    /// Update with optimistic locking. tenant_id can be None for system rows.
+    /// Update with optimistic locking. `tenant_id` can be None for system rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn update_with_version(
         db: &DatabaseConnection,
         id: Uuid,
@@ -247,6 +280,10 @@ impl Model {
     }
 
     /// Soft delete a dict type.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn soft_delete(db: &DatabaseConnection, id: Uuid) -> ModelResult<Self> {
         let existing = Self::find_by_id(db, id).await?;
         let mut active: ActiveModel = existing.into();
@@ -255,6 +292,10 @@ impl Model {
     }
 
     /// Create a dict type.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn create_dict_type(
         db: &DatabaseConnection,
         tenant_id: Option<Uuid>,

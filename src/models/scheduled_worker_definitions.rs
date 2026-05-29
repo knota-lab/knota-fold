@@ -15,22 +15,23 @@ impl ActiveModelBehavior for super::_entities::scheduled_worker_definitions::Act
     where
         C: ConnectionTrait,
     {
+        let mut this = self;
         if insert {
-            let mut this = self;
             this.id = ActiveValue::Set(crate::utils::id::generate_id());
             let now = chrono::Utc::now().fixed_offset();
             this.created_at = ActiveValue::Set(now);
             this.updated_at = ActiveValue::Set(now);
-            Ok(this)
         } else {
-            let mut this = self;
             this.updated_at = ActiveValue::Set(chrono::Utc::now().fixed_offset());
-            Ok(this)
         }
+        Ok(this)
     }
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_code(
         db: &DatabaseConnection,
         code: &str,
@@ -41,6 +42,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_active_by_code(
         db: &DatabaseConnection,
         code: &str,
@@ -52,6 +56,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_all_active(db: &DatabaseConnection) -> Result<Vec<Self>, DbErr> {
         Entity::find()
             .filter(scheduled_worker_definitions::Column::Status.eq("active"))

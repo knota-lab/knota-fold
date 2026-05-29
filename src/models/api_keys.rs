@@ -15,24 +15,25 @@ impl ActiveModelBehavior for super::_entities::api_keys::ActiveModel {
     where
         C: ConnectionTrait,
     {
+        let mut this = self;
         if insert {
-            let mut this = self;
             let now = Utc::now().fixed_offset();
             if this.id.is_not_set() {
                 this.id = ActiveValue::Set(crate::utils::id::generate_id());
             }
             this.created_at = ActiveValue::Set(now);
             this.updated_at = ActiveValue::Set(now);
-            Ok(this)
         } else {
-            let mut this = self;
             this.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
-            Ok(this)
         }
+        Ok(this)
     }
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_hash(
         db: &DatabaseConnection,
         hash: &str,
@@ -43,6 +44,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id_and_tenant(
         db: &DatabaseConnection,
         id: Uuid,
@@ -55,6 +59,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_active_by_tenant(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -68,6 +75,9 @@ impl Model {
             .collect())
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn count_active_by_tenant(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -75,6 +85,9 @@ impl Model {
         Ok(Self::find_active_by_tenant(db, tenant_id).await?.len() as u64)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn touch_last_used(db: &DatabaseConnection, id: Uuid) -> Result<(), DbErr> {
         if let Some(model) = Entity::find_by_id(id).one(db).await? {
             let mut active_model: ActiveModel = model.into();
@@ -84,6 +97,7 @@ impl Model {
         Ok(())
     }
 
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         if self.revoked_at.is_some() {
             return false;

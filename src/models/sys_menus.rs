@@ -23,7 +23,11 @@ impl ActiveModelBehavior for super::_entities::sys_menus::ActiveModel {
 }
 
 impl Model {
-    /// All non-deleted sys_menus (for super admin listing)
+    /// All non-deleted `sys_menus` (for super admin listing)
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_all_not_deleted(db: &DatabaseConnection) -> ModelResult<Vec<Self>> {
         Ok(Entity::find()
             .filter(sys_menus::Column::DeletedAt.is_null())
@@ -31,7 +35,11 @@ impl Model {
             .await?)
     }
 
-    /// All active, non-deleted sys_menus (for tenant/user queries)
+    /// All active, non-deleted `sys_menus` (for tenant/user queries)
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_active(db: &DatabaseConnection) -> ModelResult<Vec<Self>> {
         Ok(Entity::find()
             .filter(sys_menus::Column::DeletedAt.is_null())
@@ -40,6 +48,9 @@ impl Model {
             .await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails, or `EntityNotFound` if the menu does not exist.
     pub async fn find_by_id(db: &DatabaseConnection, id: Uuid) -> ModelResult<Self> {
         Entity::find()
             .filter(sys_menus::Column::Id.eq(id))
@@ -49,6 +60,10 @@ impl Model {
             .ok_or_else(|| ModelError::EntityNotFound)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails, `EntityNotFound` if the menu does not exist,
+    /// or a version conflict error.
     pub async fn update_with_version(
         db: &DatabaseConnection,
         id: Uuid,
@@ -86,6 +101,9 @@ impl Model {
         Ok(active_model.update(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails, or `EntityNotFound` if the menu does not exist.
     pub async fn soft_delete(db: &DatabaseConnection, id: Uuid) -> ModelResult<Self> {
         let existing = Entity::find()
             .filter(sys_menus::Column::Id.eq(id))
@@ -99,6 +117,9 @@ impl Model {
         Ok(active.update(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn create_menu(
         db: &DatabaseConnection,
         mut active_model: ActiveModel,
@@ -127,6 +148,9 @@ impl Model {
         Ok(active_model.insert(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails, or an error if maximum tree depth is exceeded.
     pub async fn validate_tree_depth(
         db: &DatabaseConnection,
         parent_id: Option<Uuid>,
@@ -150,6 +174,9 @@ impl Model {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails, or an error if a circular reference is detected.
     pub async fn validate_no_circular_ref(
         db: &DatabaseConnection,
         id: Uuid,

@@ -27,6 +27,9 @@ impl ActiveModelBehavior for super::_entities::i18n_bundle_revisions::ActiveMode
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_global(
         db: &DatabaseConnection,
         locale: &str,
@@ -41,6 +44,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_tenant(
         db: &DatabaseConnection,
         locale: &str,

@@ -27,6 +27,9 @@ impl ActiveModelBehavior for super::_entities::i18n_supported_locales::ActiveMod
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_locale(
         db: &DatabaseConnection,
         locale: &str,
@@ -37,7 +40,10 @@ impl Model {
             .await
     }
 
-    /// All rows (enabled + disabled), ordered by sort_order then locale.
+    /// All rows (enabled + disabled), ordered by `sort_order` then locale.
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn list_all(db: &DatabaseConnection) -> Result<Vec<Self>, DbErr> {
         Entity::find()
             .order_by_asc(i18n_supported_locales::Column::SortOrder)
@@ -47,6 +53,9 @@ impl Model {
     }
 
     /// Only `is_enabled = true` rows — what the public locale endpoint returns.
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn list_enabled(db: &DatabaseConnection) -> Result<Vec<Self>, DbErr> {
         Entity::find()
             .filter(i18n_supported_locales::Column::IsEnabled.eq(true))

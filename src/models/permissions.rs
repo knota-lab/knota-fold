@@ -21,6 +21,9 @@ impl ActiveModelBehavior for super::_entities::permissions::ActiveModel {
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_all<C: ConnectionTrait>(db: &C) -> ModelResult<Vec<Self>> {
         Ok(Entity::find()
             .filter(permissions::Column::DeletedAt.is_null())
@@ -29,14 +32,20 @@ impl Model {
     }
 
     /// Find all permissions including soft-deleted ones.
-    /// Used by sync_permissions to detect (obj, act) collisions with deleted records.
+    /// Used by `sync_permissions` to detect (obj, act) collisions with deleted records.
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_all_including_deleted<C: ConnectionTrait>(
         db: &C,
     ) -> ModelResult<Vec<Self>> {
         Ok(Entity::find().all(db).await?)
     }
 
-    /// Restore a soft-deleted permission by clearing deleted_at and updating fields.
+    /// Restore a soft-deleted permission by clearing `deleted_at` and updating fields.
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn restore<C: ConnectionTrait>(
         db: &C,
         id: Uuid,
@@ -56,6 +65,9 @@ impl Model {
         Ok(active.update(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: Uuid) -> ModelResult<Self> {
         Entity::find()
             .filter(permissions::Column::Id.eq(id))
@@ -65,6 +77,9 @@ impl Model {
             .ok_or_else(|| ModelError::EntityNotFound)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn update_with_version<C: ConnectionTrait>(
         db: &C,
         id: Uuid,
@@ -94,6 +109,9 @@ impl Model {
         Ok(active_model.update(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn soft_delete<C: ConnectionTrait>(db: &C, id: Uuid) -> ModelResult<Self> {
         let existing = Entity::find()
             .filter(permissions::Column::Id.eq(id))
@@ -107,6 +125,9 @@ impl Model {
         Ok(active.update(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn create_permission<C: ConnectionTrait>(
         db: &C,
         mut active_model: ActiveModel,
@@ -122,6 +143,9 @@ impl Model {
         Ok(active_model.insert(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn sync_role_permissions<C: ConnectionTrait>(
         db: &C,
         tenant_id: Uuid,
@@ -149,6 +173,9 @@ impl Model {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_role_permission_ids<C: ConnectionTrait>(
         db: &C,
         role_id: Uuid,
@@ -163,6 +190,9 @@ impl Model {
         Ok(records.iter().map(|rp| rp.permission_id).collect())
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_role_permission_obj_acts<C: ConnectionTrait>(
         db: &C,
         role_id: Uuid,
@@ -194,6 +224,9 @@ impl Model {
     /// If a soft-deleted record exists with the same (obj, act), restore it.
     /// Permissions are global — no tenant isolation.
     /// Used during tenant initialization from role templates.
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_or_create_by_obj_act<C: ConnectionTrait>(
         db: &C,
         obj: &str,

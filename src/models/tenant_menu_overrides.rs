@@ -21,6 +21,9 @@ impl ActiveModelBehavior for super::_entities::tenant_menu_overrides::ActiveMode
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_tenant(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -31,6 +34,9 @@ impl Model {
             .await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_tenant_and_menu(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -43,6 +49,9 @@ impl Model {
             .await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query or upsert fails.
     pub async fn upsert(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -73,6 +82,9 @@ impl Model {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails, or `EntityNotFound` if no matching override exists.
     pub async fn delete_override(
         db: &DatabaseConnection,
         tenant_id: Uuid,

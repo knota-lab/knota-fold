@@ -39,6 +39,9 @@ impl Model {
         format!("{}.{}", self.namespace, self.key)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_namespace_key<C>(
         db: &C,
         namespace: &str,
@@ -54,6 +57,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn list_active_in_namespace(
         db: &DatabaseConnection,
         namespace: &str,

@@ -33,6 +33,9 @@ impl ActiveModelBehavior for super::_entities::i18n_translations::ActiveModel {
 
 impl Model {
     /// Batch-check which `(namespace, key, locale)` triples already exist in global scope.
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_existing_global_keys<C: ConnectionTrait>(
         db: &C,
         triples: &[(String, String, String)],
@@ -63,6 +66,9 @@ impl Model {
     }
 
     /// Batch-check which `(namespace, key, locale)` triples already exist for a tenant.
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_existing_tenant_keys<C: ConnectionTrait>(
         db: &C,
         tenant_id: Uuid,
@@ -93,6 +99,9 @@ impl Model {
             .collect())
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_global<C: ConnectionTrait>(
         db: &C,
         namespace: &str,
@@ -108,6 +117,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_tenant<C: ConnectionTrait>(
         db: &C,
         namespace: &str,
@@ -125,6 +137,9 @@ impl Model {
     }
 
     /// All global rows for a (namespace, locale).
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn list_global_bundle<C: ConnectionTrait>(
         db: &C,
         namespace: &str,
@@ -139,6 +154,9 @@ impl Model {
     }
 
     /// All tenant override rows for a (namespace, locale, tenant).
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn list_tenant_bundle<C: ConnectionTrait>(
         db: &C,
         namespace: &str,

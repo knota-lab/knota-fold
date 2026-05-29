@@ -15,24 +15,25 @@ impl ActiveModelBehavior for super::_entities::api_key_exchange_tokens::ActiveMo
     where
         C: ConnectionTrait,
     {
+        let mut this = self;
         if insert {
-            let mut this = self;
             let now = Utc::now().fixed_offset();
             if this.id.is_not_set() {
                 this.id = ActiveValue::Set(crate::utils::id::generate_id());
             }
             this.created_at = ActiveValue::Set(now);
             this.updated_at = ActiveValue::Set(now);
-            Ok(this)
         } else {
-            let mut this = self;
             this.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
-            Ok(this)
         }
+        Ok(this)
     }
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_hash(
         db: &DatabaseConnection,
         hash: &str,
@@ -43,6 +44,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id_and_tenant(
         db: &DatabaseConnection,
         id: Uuid,
@@ -55,6 +59,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_tenant(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -65,6 +72,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn count_valid_by_tenant(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -73,6 +83,9 @@ impl Model {
         Ok(items.into_iter().filter(Self::is_valid).count() as u64)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn increment_usage(
         db: &DatabaseConnection,
         id: Uuid,
@@ -89,6 +102,7 @@ impl Model {
         Ok(next)
     }
 
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         self.used_count < self.max_usage && self.expires_at > Utc::now().fixed_offset()
     }

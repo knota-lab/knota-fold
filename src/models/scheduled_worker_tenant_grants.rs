@@ -30,6 +30,9 @@ impl ActiveModelBehavior
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_granted(
         db: &DatabaseConnection,
         worker_def_id: Uuid,
@@ -42,6 +45,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_grants_for_worker(
         db: &DatabaseConnection,
         worker_def_id: Uuid,
@@ -52,6 +58,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_granted_worker_ids_for_tenant(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -67,6 +76,9 @@ impl Model {
             .collect())
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn delete_for_worker(
         db: &DatabaseConnection,
         worker_def_id: Uuid,

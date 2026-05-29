@@ -1,6 +1,7 @@
 use crate::utils::error::IntoLocoResult;
 use async_trait::async_trait;
 use loco_rs::prelude::*;
+use sea_orm::ModelTrait;
 use uuid::Uuid;
 
 pub use super::_entities::sys_role_templates::{self, ActiveModel, Entity, Model};
@@ -22,10 +23,16 @@ impl ActiveModelBehavior for super::_entities::sys_role_templates::ActiveModel {
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_all<C: ConnectionTrait>(db: &C) -> ModelResult<Vec<Self>> {
         Ok(Entity::find().all(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails, or `EntityNotFound` if the template does not exist.
     pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: Uuid) -> ModelResult<Self> {
         Entity::find()
             .filter(sys_role_templates::Column::Id.eq(id))
@@ -34,6 +41,9 @@ impl Model {
             .ok_or_else(|| ModelError::EntityNotFound)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the insert fails.
     pub async fn create<C: ConnectionTrait>(
         db: &C,
         active_model: ActiveModel,
@@ -41,6 +51,9 @@ impl Model {
         Ok(active_model.insert(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query or update fails, or `EntityNotFound` if the template does not exist.
     pub async fn update_template<C: ConnectionTrait>(
         db: &C,
         id: Uuid,
@@ -51,6 +64,9 @@ impl Model {
         Ok(active_model.update(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the deletion fails, or `EntityNotFound` if the template does not exist.
     pub async fn delete_template<C: ConnectionTrait>(
         db: &C,
         id: Uuid,
@@ -73,7 +89,6 @@ impl Model {
 
         let template = Self::find_by_id(db, id).await.loco_err()?;
 
-        use sea_orm::ModelTrait;
         template.delete(db).await.loco_err()?;
 
         Ok(())

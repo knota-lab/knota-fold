@@ -7,6 +7,8 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
+use std::fmt::Write;
+
 use crate::models::_entities::{i18n_entries, i18n_entry_locations, i18n_translations};
 use crate::models::i18n_bundle_revisions as rev_model;
 
@@ -30,6 +32,9 @@ pub struct NamespaceCount {
     pub locale_count: u64,
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn read_revisions(
     db: &DatabaseConnection,
     locale: &str,
@@ -51,6 +56,9 @@ pub async fn read_revisions(
     Ok((global_rev, tenant_rev))
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn list_namespaces(
     db: &DatabaseConnection,
     tenant_id: Option<Uuid>,
@@ -82,7 +90,7 @@ pub async fn list_namespaces(
         None => {
             query.and_where(Expr::col(col_tid).is_null());
         }
-    };
+    }
 
     let builder = db.get_database_backend();
     let rows = db.query_all(builder.build(&query)).await?;
@@ -94,13 +102,16 @@ pub async fn list_namespaces(
         let locale_count: i64 = row.try_get("", "locale_count")?;
         out.push(NamespaceCount {
             namespace,
-            key_count: key_count.max(0) as u64,
-            locale_count: locale_count.max(0) as u64,
+            key_count: key_count.max(0).cast_unsigned(),
+            locale_count: locale_count.max(0).cast_unsigned(),
         });
     }
     Ok(out)
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn list_tenant_namespaces(
     db: &DatabaseConnection,
     tenant_id: Uuid,
@@ -140,13 +151,16 @@ pub async fn list_tenant_namespaces(
         let locale_count: i64 = row.try_get("", "locale_count")?;
         out.push(NamespaceCount {
             namespace,
-            key_count: key_count.max(0) as u64,
-            locale_count: locale_count.max(0) as u64,
+            key_count: key_count.max(0).cast_unsigned(),
+            locale_count: locale_count.max(0).cast_unsigned(),
         });
     }
     Ok(out)
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn export_global(
     db: &DatabaseConnection,
     namespace: Option<&str>,
@@ -169,6 +183,9 @@ pub async fn export_global(
         .await
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn export_tenant(
     db: &DatabaseConnection,
     tenant_id: Uuid,
@@ -192,6 +209,9 @@ pub async fn export_tenant(
         .await
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn list_entries(
     db: &DatabaseConnection,
     namespace: Option<&str>,
@@ -217,6 +237,9 @@ pub async fn list_entries(
     Ok((rows, total))
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn list_entry_locations(
     db: &DatabaseConnection,
     entry_id: Uuid,
@@ -229,8 +252,12 @@ pub async fn list_entry_locations(
         .await
 }
 
-/// Batch-fetch entry metadata for a set of `(namespace, key)` pairs.
-/// Returns a HashMap keyed by `(namespace, key)` for O(1) lookup.
+/// Batch-fetch entry metadata for a set of ``(namespace, key)`` pairs.
+/// Returns a ``HashMap`` keyed by ``(namespace, key)`` for O(1) lookup.
+///
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn fetch_entries_by_pairs(
     db: &DatabaseConnection,
     pairs: &[(String, String)],
@@ -256,6 +283,9 @@ pub async fn fetch_entries_by_pairs(
         .collect())
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn count_distinct_keys(
     db: &DatabaseConnection,
     scope: KeyScope,
@@ -277,9 +307,12 @@ pub async fn count_distinct_keys(
         .ok_or_else(|| DbErr::Custom("count query returned no row".into()))?
         .try_get("", "cnt")?;
 
-    Ok(total.max(0) as u64)
+    Ok(total.max(0).cast_unsigned())
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn paginate_distinct_keys(
     db: &DatabaseConnection,
     scope: KeyScope,
@@ -293,9 +326,9 @@ pub async fn paginate_distinct_keys(
     let (where_sql, binds) =
         build_distinct_keys_where(&scope, namespace, q, empty_locale);
     let mut page_binds = binds;
-    page_binds.push((page_size as i64).into());
+    page_binds.push(page_size.cast_signed().into());
     let limit_idx = page_binds.len();
-    page_binds.push((offset as i64).into());
+    page_binds.push(offset.cast_signed().into());
     let offset_idx = page_binds.len();
     let page_sql = format!(
         "SELECT DISTINCT namespace, key FROM i18n_translations \
@@ -315,6 +348,9 @@ pub async fn paginate_distinct_keys(
         .collect()
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn fetch_detail_rows(
     db: &DatabaseConnection,
     tenant_id: Option<Uuid>,
@@ -333,6 +369,9 @@ pub async fn fetch_detail_rows(
     query.filter(build_pair_filter(pairs)).all(db).await
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn fetch_global_rows(
     db: &DatabaseConnection,
     pairs: &[(String, String)],
@@ -348,6 +387,9 @@ pub async fn fetch_global_rows(
         .await
 }
 
+/// # Errors
+///
+/// Returns a database error if the query fails.
 pub async fn fetch_tenant_rows(
     db: &DatabaseConnection,
     tenant_id: Uuid,
@@ -385,7 +427,7 @@ fn build_distinct_keys_where(
 
     if let Some(ns) = namespace {
         binds.push(ns.to_string().into());
-        where_sql.push_str(&format!(" AND namespace = ${}", binds.len()));
+        let _ = write!(where_sql, " AND namespace = ${}", binds.len());
     }
     if let Some(needle) = q {
         let pat = format!("%{needle}%");
@@ -393,9 +435,10 @@ fn build_distinct_keys_where(
         let key_idx = binds.len();
         binds.push(pat.into());
         let val_idx = binds.len();
-        where_sql.push_str(&format!(
+        let _ = write!(
+            where_sql,
             " AND (key LIKE ${key_idx} OR value LIKE ${val_idx})"
-        ));
+        );
     }
 
     if let Some(locale) = empty_locale {
@@ -417,7 +460,8 @@ fn build_distinct_keys_where(
         };
         binds.push(locale.to_string().into());
         let loc_idx = binds.len();
-        where_sql.push_str(&format!(
+        let _ = write!(
+            where_sql,
             " AND NOT EXISTS (\
              SELECT 1 FROM i18n_translations sub \
              WHERE sub.namespace = i18n_translations.namespace \
@@ -425,7 +469,7 @@ fn build_distinct_keys_where(
              AND {scope_filter} \
              AND sub.locale = ${loc_idx} \
              AND sub.value != '')"
-        ));
+        );
     }
 
     (where_sql, binds)

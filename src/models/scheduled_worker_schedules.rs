@@ -17,22 +17,23 @@ impl ActiveModelBehavior for super::_entities::scheduled_worker_schedules::Activ
     where
         C: ConnectionTrait,
     {
+        let mut this = self;
         if insert {
-            let mut this = self;
             this.id = ActiveValue::Set(crate::utils::id::generate_id());
             let now = chrono::Utc::now().fixed_offset();
             this.created_at = ActiveValue::Set(now);
             this.updated_at = ActiveValue::Set(now);
-            Ok(this)
         } else {
-            let mut this = self;
             this.updated_at = ActiveValue::Set(chrono::Utc::now().fixed_offset());
-            Ok(this)
         }
+        Ok(this)
     }
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_due(
         db: &DatabaseConnection,
         now: DateTimeWithTimeZone,
@@ -45,6 +46,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_tenant(
         db: &DatabaseConnection,
         tenant_id: Uuid,
@@ -56,6 +60,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn find_by_id(
         db: &DatabaseConnection,
         id: Uuid,
@@ -66,6 +73,9 @@ impl Model {
             .await
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn update_next_run_at(
         db: &DatabaseConnection,
         id: Uuid,
@@ -83,6 +93,9 @@ impl Model {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
     pub async fn disable_for_worker_and_tenant(
         db: &DatabaseConnection,
         worker_def_id: Uuid,

@@ -145,7 +145,7 @@ impl Tool for SearchMaterialTool {
         } else {
             // Search all materials, ordered by registration_order
             let ordered_ids = self.registry.registration_order_ids();
-            let mut all: Vec<MaterialRef> = self
+            let mut all: Vec<MaterialRef<'_>> = self
                 .registry
                 .documents
                 .values()

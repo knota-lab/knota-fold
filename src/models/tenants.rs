@@ -21,6 +21,9 @@ impl ActiveModelBehavior for super::_entities::tenants::ActiveModel {
 }
 
 impl Model {
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails, or `EntityNotFound` if the tenant does not exist.
     pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: Uuid) -> ModelResult<Self> {
         Entity::find()
             .filter(tenants::Column::Id.eq(id))
@@ -29,6 +32,9 @@ impl Model {
             .ok_or_else(|| ModelError::EntityNotFound)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails, or `EntityNotFound` if the tenant does not exist.
     pub async fn find_by_code<C: ConnectionTrait>(
         db: &C,
         code: &str,
@@ -40,6 +46,9 @@ impl Model {
             .ok_or_else(|| ModelError::EntityNotFound)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the insert fails.
     pub async fn create<C: ConnectionTrait>(
         db: &C,
         active_model: ActiveModel,
@@ -47,6 +56,9 @@ impl Model {
         Ok(active_model.insert(db).await?)
     }
 
+    /// # Errors
+    ///
+    /// Returns a database error if the query or update fails, or `EntityNotFound` if the tenant does not exist.
     pub async fn update<C: ConnectionTrait>(
         db: &C,
         id: Uuid,
