@@ -56,7 +56,7 @@ pub async fn list_roles(
     .await?;
 
     Ok(PaginatedResponse::from_page_response(
-        page_response,
+        &page_response,
         pagination,
         |m| {
             let (code, name) = tenant_info

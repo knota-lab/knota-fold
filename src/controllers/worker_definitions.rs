@@ -9,7 +9,11 @@ use crate::models::{
     scheduled_worker_definitions, scheduled_worker_schedules,
     scheduled_worker_tenant_grants, tenants,
 };
-use crate::views::worker_scheduler::*;
+use crate::views::worker_scheduler::{
+    BatchGrantsRequest, CreateWorkerDefinitionRequest, GrantedTenantResponse,
+    PatchStatusRequest, UpdateWorkerDefinitionRequest, WorkerDefinitionResponse,
+    WorkerGrantResponse,
+};
 
 #[utoipa::path(
     get,

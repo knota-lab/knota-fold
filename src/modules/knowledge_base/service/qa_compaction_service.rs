@@ -248,14 +248,13 @@ pub async fn compact_history(
     let cached = get_cached_summary(db, params.session_id, params.tenant_id).await?;
 
     // Count new messages since last compaction
-    let new_msg_count = match &cached {
-        Some(c) => older_messages
+    let new_msg_count = cached.as_ref().map_or(older_messages.len(), |c| {
+        older_messages
             .iter()
             .rev()
             .take_while(|m| m.id != c.last_compacted_msg_id)
-            .count(),
-        None => older_messages.len(),
-    };
+            .count()
+    });
 
     // If cached summary exists and too few new messages, reuse cache
     if let Some(ref c) = cached {
@@ -270,38 +269,41 @@ pub async fn compact_history(
     }
 
     // ── 4. Iterative merge ────────────────────────────────────────
-    let (prompt, last_compacted_msg_id) = if let Some(ref c) = cached {
-        // Merge mode: only format NEW messages since last compaction
-        let new_messages: Vec<chat_messages::Model> = older_messages
-            .iter()
-            .rev()
-            .take_while(|m| m.id != c.last_compacted_msg_id)
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
+    let (prompt, last_compacted_msg_id) = cached.as_ref().map_or_else(
+        || {
+            // Initial mode: format ALL older messages
+            let text = format_history_for_summary(older_messages);
+            let prompt = format!("{INITIAL_SUMMARY_PROMPT}\n\n{text}");
+            let last_id = older_messages.last().map(|m| m.id).unwrap_or_default();
+            (prompt, last_id)
+        },
+        |c| {
+            // Merge mode: only format NEW messages since last compaction
+            let new_messages: Vec<chat_messages::Model> = older_messages
+                .iter()
+                .rev()
+                .take_while(|m| m.id != c.last_compacted_msg_id)
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
 
-        let new_text = format_history_for_summary(&new_messages);
+            let new_text = format_history_for_summary(&new_messages);
 
-        let prompt = format!(
-            "{}\n\n## 已有摘要\n{}\n\n## 新增对话内容\n{}",
-            MERGE_SUMMARY_PROMPT, c.summary, new_text
-        );
+            let prompt = format!(
+                "{}\n\n## 已有摘要\n{}\n\n## 新增对话内容\n{}",
+                MERGE_SUMMARY_PROMPT, c.summary, new_text
+            );
 
-        // The last compacted msg is the last of the older_messages
-        let last_id = older_messages
-            .last()
-            .map_or(c.last_compacted_msg_id, |m| m.id);
+            // The last compacted msg is the last of the older_messages
+            let last_id = older_messages
+                .last()
+                .map_or(c.last_compacted_msg_id, |m| m.id);
 
-        (prompt, last_id)
-    } else {
-        // Initial mode: format ALL older messages
-        let text = format_history_for_summary(older_messages);
-        let prompt = format!("{INITIAL_SUMMARY_PROMPT}\n\n{text}");
-        let last_id = older_messages.last().map(|m| m.id).unwrap_or_default();
-        (prompt, last_id)
-    };
+            (prompt, last_id)
+        },
+    );
 
     // ── 5. Non-streaming LLM call ────────────────────────────────
     tracing::info!(

@@ -16,7 +16,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::modules::knowledge_base::errors::KnowledgeBaseError;
-use crate::modules::knowledge_base::providers::search::*;
+use crate::modules::knowledge_base::providers::search::{
+    ChunkPoint, SearchFilter, SearchProvider, SearchResult,
+};
 
 // ── Struct ────────────────────────────────────────────────────────────
 
@@ -25,7 +27,7 @@ pub struct QdrantSearchProvider {
     collection_name: String,
 }
 
-fn map_err(e: qdrant_client::QdrantError) -> KnowledgeBaseError {
+fn map_err(e: &qdrant_client::QdrantError) -> KnowledgeBaseError {
     KnowledgeBaseError::ProviderError(e.to_string())
 }
 
@@ -39,12 +41,12 @@ impl QdrantSearchProvider {
         let client = Qdrant::from_url(url)
             .api_key(api_key)
             .build()
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
 
         if !client
             .collection_exists(collection_name)
             .await
-            .map_err(map_err)?
+            .map_err(|e| map_err(&e))?
         {
             let mut sparse_config = SparseVectorsConfigBuilder::default();
             sparse_config.add_named_vector_params(
@@ -61,7 +63,7 @@ impl QdrantSearchProvider {
                         .sparse_vectors_config(sparse_config),
                 )
                 .await
-                .map_err(map_err)?;
+                .map_err(|e| map_err(&e))?;
         }
 
         Ok(Self {
@@ -147,19 +149,19 @@ fn build_filter(tenant_id: Uuid, filter: Option<&SearchFilter>) -> Filter {
     let tenant_cond = Condition::matches("tenant_id", tenant_id.to_string());
 
     // Visibility: (scope=tenant) OR (scope=private AND created_by=user)
-    let visibility = if let Some(uid) = filter.as_ref().and_then(|f| f.user_id) {
-        Filter::should([
-            Condition::matches("scope", "tenant".to_string()),
-            Filter::must([
-                Condition::matches("scope", "private".to_string()),
-                Condition::matches("created_by", uid.to_string()),
+    let visibility = filter.as_ref().and_then(|f| f.user_id).map_or_else(
+        || Filter::should([Condition::matches("scope", "tenant".to_string())]),
+        |uid| {
+            Filter::should([
+                Condition::matches("scope", "tenant".to_string()),
+                Filter::must([
+                    Condition::matches("scope", "private".to_string()),
+                    Condition::matches("created_by", uid.to_string()),
+                ])
+                .into(),
             ])
-            .into(),
-        ])
-    } else {
-        // No user_id provided — only show tenant-scope docs
-        Filter::should([Condition::matches("scope", "tenant".to_string())])
-    };
+        },
+    );
 
     let mut must: Vec<qdrant_client::qdrant::Condition> =
         vec![tenant_cond, visibility.into()];
@@ -245,7 +247,7 @@ impl SearchProvider for QdrantSearchProvider {
                 UpsertPointsBuilder::new(&self.collection_name, points).wait(true),
             )
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
 
         Ok(())
     }
@@ -265,7 +267,7 @@ impl SearchProvider for QdrantSearchProvider {
                     .wait(true),
             )
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
 
         Ok(())
     }
@@ -305,7 +307,7 @@ impl SearchProvider for QdrantSearchProvider {
                     .with_payload(true),
             )
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
 
         Ok(map_scored_points(response.result))
     }
@@ -329,7 +331,7 @@ impl SearchProvider for QdrantSearchProvider {
                     .with_payload(true),
             )
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
 
         Ok(map_scored_points(response.result))
     }
@@ -354,7 +356,7 @@ impl SearchProvider for QdrantSearchProvider {
                     .wait(true),
             )
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
 
         Ok(())
     }

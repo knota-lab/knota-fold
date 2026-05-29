@@ -14,9 +14,9 @@ pub struct LoginResponse {
 
 impl LoginResponse {
     #[must_use]
-    pub fn new(user: &users::Model, token: &String) -> Self {
+    pub fn new(user: &users::Model, token: &str) -> Self {
         Self {
-            token: token.to_string(),
+            token: token.to_owned(),
             id: user.id.to_string(),
             name: user.name.clone(),
             is_verified: user.email_verified_at.is_some(),

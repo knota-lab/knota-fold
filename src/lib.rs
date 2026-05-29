@@ -23,13 +23,8 @@
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::cast_precision_loss)]
 // ── Import / closure / format style lints ──────────────────────────
-#![allow(clippy::wildcard_imports)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::format_push_string)]
-#![allow(clippy::implicit_clone)]
-#![allow(clippy::match_same_arms)]
-#![allow(clippy::needless_pass_by_value)]
-#![allow(clippy::option_if_let_else)]
 // ── Other style lints ──────────────────────────────────────────────
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::significant_drop_tightening)]

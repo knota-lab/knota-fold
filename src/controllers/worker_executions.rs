@@ -9,7 +9,7 @@ use crate::models::{
 };
 use crate::views::errors::parse_uuid;
 use crate::views::pagination::PaginatedResponse;
-use crate::views::worker_scheduler::*;
+use crate::views::worker_scheduler::WorkerExecutionResponse;
 
 #[utoipa::path(
     get,

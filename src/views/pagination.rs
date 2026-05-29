@@ -13,7 +13,7 @@ pub struct PaginatedResponse<T> {
 
 impl<T: Serialize> PaginatedResponse<T> {
     pub fn from_page_response<M>(
-        pr: query::PageResponse<M>,
+        pr: &query::PageResponse<M>,
         pagination: &query::PaginationQuery,
         map_fn: impl Fn(&M) -> T,
     ) -> Self {

@@ -114,28 +114,31 @@ impl Tool for SearchMaterialTool {
         // Resolve target materials
         let targets = if let Some(ref mid) = args.material_id {
             // Specific material requested
-            let mat = match Uuid::parse_str(mid) {
-                Ok(uuid) => self
-                    .registry
-                    .get_document(&uuid)
-                    .map(|d| MaterialRef {
-                        id: d.id.to_string(),
-                        title: d.title.clone(),
-                        content: &d.content,
+            let mat = Uuid::parse_str(mid).map_or_else(
+                |_| {
+                    self.registry.get_inline(mid).map(|t| MaterialRef {
+                        id: t.id.clone(),
+                        title: t.label.clone(),
+                        content: &t.content,
                     })
-                    .or_else(|| {
-                        self.registry.get_inline(mid).map(|t| MaterialRef {
-                            id: t.id.clone(),
-                            title: t.label.clone(),
-                            content: &t.content,
+                },
+                |uuid| {
+                    self.registry
+                        .get_document(&uuid)
+                        .map(|d| MaterialRef {
+                            id: d.id.to_string(),
+                            title: d.title.clone(),
+                            content: &d.content,
                         })
-                    }),
-                Err(_) => self.registry.get_inline(mid).map(|t| MaterialRef {
-                    id: t.id.clone(),
-                    title: t.label.clone(),
-                    content: &t.content,
-                }),
-            };
+                        .or_else(|| {
+                            self.registry.get_inline(mid).map(|t| MaterialRef {
+                                id: t.id.clone(),
+                                title: t.label.clone(),
+                                content: &t.content,
+                            })
+                        })
+                },
+            );
             match mat {
                 Some(m) => vec![m],
                 None => {

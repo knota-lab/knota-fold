@@ -100,7 +100,7 @@ async fn send_event(tx: &EventSender, event: QaEvent) -> Result<(), ()> {
 }
 
 /// Synchronous variant for use in `map_err` closures.
-fn send_event_blocking(tx: &EventSender, event: QaEvent) -> Result<(), ()> {
+fn send_event_blocking(tx: &EventSender, event: &QaEvent) -> Result<(), ()> {
     let json = serde_json::to_string(&event).map_err(|e| {
         tracing::error!(error = %e, "Failed to serialize QaEvent");
     })?;
@@ -597,7 +597,7 @@ pub async fn process_qa_v3_stream(
                 tracing::error!(error = %e, "Failed to fetch documents by ID");
                 let _ = send_event_blocking(
                     tx,
-                    QaEvent::Error {
+                    &QaEvent::Error {
                         message: format!("Failed to fetch documents: {e}"),
                     },
                 );
@@ -633,7 +633,7 @@ pub async fn process_qa_v3_stream(
                 tracing::error!(error = %e, "Failed to resolve file_ids to documents");
                 let _ = send_event_blocking(
                     tx,
-                    QaEvent::Error {
+                    &QaEvent::Error {
                         message: format!("Failed to resolve file_ids: {e}"),
                     },
                 );
@@ -794,7 +794,7 @@ pub async fn process_qa_v3_stream(
         memory_store,
         embedding_client,
         &SpawnIndexParams {
-            embedding_model_name: embedding_model_name.to_string(),
+            embedding_model_name: embedding_model_name.clone(),
             session_id: session.id,
             tenant_id,
             msg_id: user_msg.id,
@@ -818,7 +818,7 @@ pub async fn process_qa_v3_stream(
     let search_kb_tool = SearchKnowledgeBaseTool {
         embedding_client: embedding_client.clone(),
         search_provider: search_provider.clone(),
-        embedding_model_name: embedding_model_name.to_string(),
+        embedding_model_name: embedding_model_name.clone(),
         tenant_id,
         user_id,
     };
@@ -1275,9 +1275,6 @@ pub async fn process_qa_v3_stream(
                     tool_call_count,
                 );
             }
-            Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
-                // Tool results flowing back — already handled by hook
-            }
             Err(e) => {
                 // Always persist error information to DB so it survives page refresh.
                 let tool_records = records_hook.take_tool_records();
@@ -1450,7 +1447,7 @@ pub async fn process_qa_v3_stream(
         memory_store,
         embedding_client,
         &SpawnIndexParams {
-            embedding_model_name: embedding_model_name.to_string(),
+            embedding_model_name: embedding_model_name.clone(),
             session_id: session.id,
             tenant_id,
             msg_id: assistant_msg.id,

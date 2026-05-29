@@ -358,13 +358,15 @@ pub(crate) async fn get_resolved_detail(
 
     let detail = sys_config_service::get_resolved_detail(&ctx, &key, tenant_id).await?;
 
-    match detail {
-        Some(d) => format::json(d),
-        None => Err(crate::views::errors::err_not_found(
-            "sys_config.not_found",
-            "配置项不存在",
-        )),
-    }
+    detail.map_or_else(
+        || {
+            Err(crate::views::errors::err_not_found(
+                "sys_config.not_found",
+                "配置项不存在",
+            ))
+        },
+        format::json,
+    )
 }
 
 // ── Route registration ────────────────────────────────────────────────────────

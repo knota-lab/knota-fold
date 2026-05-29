@@ -46,7 +46,7 @@ pub async fn list_tenants(
     let page_response = query::paginate(db, base_query, None, pagination).await?;
 
     Ok(PaginatedResponse::from_page_response(
-        page_response,
+        &page_response,
         pagination,
         TenantResponse::from_model,
     ))

@@ -181,7 +181,7 @@ fn rfc8187_encode(value: &str) -> String {
     encoded
 }
 
-fn map_s3_error(err: aws_sdk_s3::error::SdkError<GetObjectError>) -> Error {
+fn map_s3_error(err: &aws_sdk_s3::error::SdkError<GetObjectError>) -> Error {
     if err
         .as_service_error()
         .is_some_and(|service_err| service_err.is_no_such_key())
@@ -362,7 +362,7 @@ pub async fn list_paginated(
     let page_response = query::paginate(db, base_query, None, pagination).await?;
 
     Ok(PaginatedResponse::from_page_response(
-        page_response,
+        &page_response,
         pagination,
         |model| FileResponse::from(model.clone()),
     ))
@@ -381,7 +381,7 @@ pub async fn sys_list_paginated(
     let page_response = query::paginate(db, base_query, None, pagination).await?;
 
     Ok(PaginatedResponse::from_page_response(
-        page_response,
+        &page_response,
         pagination,
         |model| FileResponse::from(model.clone()),
     ))
@@ -525,7 +525,7 @@ async fn small_upload_inner(
                     "failed to delete just-uploaded object after txn.begin failure"
                 );
             }
-            return Err(db_err_into(e));
+            return Err(db_err_into(&e));
         }
     };
 
@@ -574,7 +574,7 @@ async fn small_upload_inner(
             let _ = txn.rollback().await;
             cleanup_uploaded_object(&s3_client, &s3_config.bucket, &storage_key, file_id)
                 .await;
-            return Err(db_err_into(e));
+            return Err(db_err_into(&e));
         }
     };
 
@@ -661,7 +661,7 @@ async fn small_upload_inner(
                     file_id,
                 )
                 .await;
-                return Err(db_err_into(commit_err));
+                return Err(db_err_into(&commit_err));
             }
             inserted
         }
@@ -1143,7 +1143,7 @@ async fn stream_download_inner(
         .key(&row.storage_key)
         .send()
         .await
-        .map_err(map_s3_error)?;
+        .map_err(|e| map_s3_error(&e))?;
 
     let async_read = resp.body.into_async_read();
     let stream = tokio_util::io::ReaderStream::with_capacity(async_read, 64 * 1024);

@@ -95,8 +95,8 @@ where
 /// }
 /// ```
 #[track_caller]
-pub fn db_err_into(err: DbErr) -> Error {
-    let (status, code, desc) = classify_db_err(&err);
+pub fn db_err_into(err: &DbErr) -> Error {
+    let (status, code, desc) = classify_db_err(err);
     log_error!(code, status.as_u16(), "db error classified (bare)");
     Error::CustomError(status, ErrorDetail::new(code, desc))
 }
@@ -321,10 +321,7 @@ pub trait ErrInto<T> {
 impl<T, E> ErrInto<T> for Result<T, E> {
     #[track_caller]
     fn err_info(self, info: crate::error_info::ErrorInfo) -> Result<T> {
-        match self {
-            Ok(v) => Ok(v),
-            Err(_) => Err(crate::views::errors::from_info(info)),
-        }
+        self.map_or_else(|_| Err(crate::views::errors::from_info(info)), Ok)
     }
 }
 
@@ -350,10 +347,10 @@ impl<T, E> ErrIntoDesc<T> for Result<T, E> {
         info: crate::error_info::ErrorInfo,
         desc: impl Into<String>,
     ) -> Result<T> {
-        match self {
-            Ok(v) => Ok(v),
-            Err(_) => Err(crate::views::errors::from_info_with_desc(info, desc)),
-        }
+        self.map_or_else(
+            |_| Err(crate::views::errors::from_info_with_desc(info, desc)),
+            Ok,
+        )
     }
 }
 
@@ -378,9 +375,6 @@ pub trait OptionErrInto<T> {
 impl<T> OptionErrInto<T> for Option<T> {
     #[track_caller]
     fn or_err(self, info: crate::error_info::ErrorInfo) -> Result<T> {
-        match self {
-            Some(v) => Ok(v),
-            None => Err(crate::views::errors::from_info(info)),
-        }
+        self.map_or_else(|| Err(crate::views::errors::from_info(info)), Ok)
     }
 }

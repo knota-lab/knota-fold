@@ -266,7 +266,6 @@ fn count_tokens(text: &str) -> i32 {
 /// Render a start tag back to Markdown-ish source text.
 fn render_start_tag(tag: &Tag<'_>) -> String {
     match tag {
-        Tag::Paragraph => String::new(),
         Tag::BlockQuote(_) => "> ".to_string(),
         Tag::CodeBlock(kind) => {
             let lang = match kind {
@@ -275,14 +274,9 @@ fn render_start_tag(tag: &Tag<'_>) -> String {
             };
             format!("```{lang}\n")
         }
-        Tag::List(start) => {
-            if let Some(n) = start {
-                format!("{n}. ")
-            } else {
-                "- ".to_string()
-            }
-        }
-        Tag::Item => String::new(),
+        Tag::List(start) => start
+            .as_ref()
+            .map_or_else(|| "- ".to_string(), |n| format!("{n}. ")),
         Tag::Emphasis => "*".to_string(),
         Tag::Strong => "**".to_string(),
         Tag::Strikethrough => "~~".to_string(),
@@ -312,15 +306,13 @@ fn render_start_tag(tag: &Tag<'_>) -> String {
 fn render_end_tag(tag_end: TagEnd) -> String {
     match tag_end {
         TagEnd::Paragraph => "\n\n".to_string(),
-        TagEnd::Heading(_) => "\n".to_string(),
-        TagEnd::BlockQuote(_) => "\n".to_string(),
+        TagEnd::Heading(_) | TagEnd::BlockQuote(_) | TagEnd::Item | TagEnd::List(_) => {
+            "\n".to_string()
+        }
         TagEnd::CodeBlock => "```\n".to_string(),
         TagEnd::Emphasis => "*".to_string(),
         TagEnd::Strong => "**".to_string(),
         TagEnd::Strikethrough => "~~".to_string(),
-        TagEnd::Link | TagEnd::Image => String::new(),
-        TagEnd::Item => "\n".to_string(),
-        TagEnd::List(_) => "\n".to_string(),
         _ => String::new(),
     }
 }

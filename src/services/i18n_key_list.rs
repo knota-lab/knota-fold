@@ -91,10 +91,10 @@ async fn list_keys_inner(
 
     let total = i18n_queries::count_distinct_keys(
         db,
-        match tenant_id {
-            Some(tid) => i18n_queries::KeyScope::TenantOnly(tid),
-            None => i18n_queries::KeyScope::GlobalOnly,
-        },
+        tenant_id.map_or(
+            i18n_queries::KeyScope::GlobalOnly,
+            i18n_queries::KeyScope::TenantOnly,
+        ),
         namespace,
         q,
         empty_locale,
@@ -104,10 +104,10 @@ async fn list_keys_inner(
 
     let key_rows = i18n_queries::paginate_distinct_keys(
         db,
-        match tenant_id {
-            Some(tid) => i18n_queries::KeyScope::TenantOnly(tid),
-            None => i18n_queries::KeyScope::GlobalOnly,
-        },
+        tenant_id.map_or(
+            i18n_queries::KeyScope::GlobalOnly,
+            i18n_queries::KeyScope::TenantOnly,
+        ),
         namespace,
         q,
         empty_locale,

@@ -671,15 +671,15 @@ fn format_debug_html(
                     // Compaction
                     if let Some(comp) = dc.get("compaction") {
                         let kv = |key: &str| -> String {
-                            match comp.get(key) {
-                                Some(v) => match v {
+                            comp.get(key).map_or_else(
+                                || "—".to_string(),
+                                |v| match v {
                                     serde_json::Value::Bool(b) => b.to_string(),
                                     serde_json::Value::Number(n) => n.to_string(),
                                     serde_json::Value::String(s) => s.clone(),
                                     other => other.to_string(),
                                 },
-                                None => "—".to_string(),
-                            }
+                            )
                         };
                         html.push_str("<details><summary>Compaction 状态</summary>\n<table class=\"kv-table\">");
                         for (k, label) in [

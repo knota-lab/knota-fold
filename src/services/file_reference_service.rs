@@ -571,7 +571,7 @@ pub async fn list_for_tenant_paginated(
 
     // Step 3: zip into the joined DTO via PaginatedResponse mapper.
     Ok(PaginatedResponse::from_page_response(
-        page_response,
+        &page_response,
         pagination,
         |model| FileReferenceWithFileResponse {
             reference: FileReferenceResponse::from(model.clone()),

@@ -56,7 +56,6 @@ impl AppLogsConfig {
         match self.capture_level.as_str() {
             "debug" => tracing::Level::DEBUG,
             "info" => tracing::Level::INFO,
-            "warn" => tracing::Level::WARN,
             "error" => tracing::Level::ERROR,
             _ => tracing::Level::WARN,
         }

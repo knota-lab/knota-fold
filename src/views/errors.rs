@@ -99,10 +99,10 @@ pub fn err_custom(status: StatusCode, code: &str, description: &str) -> Error {
 /// Parse a string as UUID, returning 400 Bad Request on failure.
 #[track_caller]
 pub fn parse_uuid(id: impl AsRef<str>) -> Result<uuid::Uuid> {
-    match id.as_ref().parse::<uuid::Uuid>() {
-        Ok(v) => Ok(v),
-        Err(_) => Err(from_info(crate::error_info::common::INVALID_UUID)),
-    }
+    id.as_ref().parse::<uuid::Uuid>().map_or_else(
+        |_| Err(from_info(crate::error_info::common::INVALID_UUID)),
+        Ok,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +216,7 @@ pub fn err_internal(code: &str, msg: impl AsRef<str>) -> Error {
 
 /// Authorization (authz) errors.
 pub mod authz {
-    use super::*;
+    use super::{err_forbidden, forbidden, Error, Response, Result};
 
     /// 403 — 仅超级管理员可操作（controller 层，返回 Response）
     pub fn super_admin_required() -> Result<Response> {
@@ -236,7 +236,7 @@ pub mod authz {
 
 /// Role-related errors.
 pub mod role {
-    use super::*;
+    use super::{err_forbidden, forbidden, Error, Response, Result};
 
     /// 403 — 跨租户操作角色
     pub fn cross_tenant(action: &str) -> Result<Response> {
@@ -259,7 +259,7 @@ pub mod role {
 
 /// User-related errors.
 pub mod user {
-    use super::*;
+    use super::{forbidden, Response, Result};
 
     /// 403 — 跨租户操作用户
     pub fn cross_tenant(action: &str) -> Result<Response> {
@@ -269,7 +269,7 @@ pub mod user {
 
 /// Worker-related errors.
 pub mod worker {
-    use super::*;
+    use super::{forbidden, Response, Result};
 
     /// 403 — 无权操作此 Worker
     pub fn not_authorized() -> Result<Response> {
@@ -289,7 +289,7 @@ pub mod worker {
 
 /// Dictionary-related errors (service 层).
 pub mod dict {
-    use super::*;
+    use super::{err_forbidden, Error};
 
     /// 403 — 无权操作此字典类型
     pub fn err_type_forbidden() -> Error {
@@ -304,7 +304,7 @@ pub mod dict {
 
 /// API Key authentication errors (service 层).
 pub mod api_key {
-    use super::*;
+    use super::{err_unauthorized, Error};
 
     /// 401 — API 密钥无效或已失效
     pub fn err_invalid() -> Error {
@@ -327,7 +327,7 @@ pub mod api_key {
 
 /// System config errors.
 pub mod sys_config {
-    use super::*;
+    use super::{err_forbidden, forbidden, Error, Response, Result};
 
     /// 403 — 仅超级管理员可管理其他租户的配置
     pub fn super_admin_required() -> Result<Response> {
@@ -348,7 +348,7 @@ pub mod sys_config {
 
 /// i18n errors.
 pub mod i18n {
-    use super::*;
+    use super::{forbidden, Response, Result};
 
     /// 403 — 命名空间不对外公开
     pub fn namespace_not_public(ns: &str) -> Result<Response> {
@@ -361,7 +361,7 @@ pub mod i18n {
 
 /// Authentication / token errors (service & extractor layer).
 pub mod auth {
-    use super::*;
+    use super::{err_unauthorized, Error};
 
     /// 401 — 无效的认证令牌
     pub fn err_invalid_token() -> Error {

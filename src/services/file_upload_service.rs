@@ -1075,7 +1075,7 @@ pub async fn initiate_upload(
                 Some(s3_upload_id),
             )
             .await;
-            return Err(db_err_into(e));
+            return Err(db_err_into(&e));
         }
     };
 
@@ -1116,7 +1116,7 @@ pub async fn initiate_upload(
                 Some(s3_upload_id),
             )
             .await;
-            return Err(db_err_into(e));
+            return Err(db_err_into(&e));
         }
     };
 
@@ -1144,7 +1144,7 @@ pub async fn initiate_upload(
             Some(s3_upload_id),
         )
         .await;
-        return Err(db_err_into(err));
+        return Err(db_err_into(&err));
     }
 
     Ok(response)
@@ -1628,7 +1628,7 @@ pub async fn complete_upload(
                 true,
             )
             .await;
-            return Err(db_err_into(err));
+            return Err(db_err_into(&err));
         }
     }
     // From this point onward, `upload.expected_hash` is guaranteed to be Some.
@@ -1749,7 +1749,7 @@ pub async fn complete_upload(
                 false,
             )
             .await;
-            return Err(db_err_into(e));
+            return Err(db_err_into(&e));
         }
     };
 
@@ -1894,7 +1894,7 @@ pub async fn complete_upload(
                     true,
                 )
                 .await;
-                return Err(db_err_into(err));
+                return Err(db_err_into(&err));
             }
 
             response
@@ -2066,7 +2066,7 @@ pub async fn complete_upload(
                     true,
                 )
                 .await;
-                return Err(db_err_into(err));
+                return Err(db_err_into(&err));
             }
 
             response
@@ -2090,7 +2090,7 @@ pub async fn complete_upload(
                 true,
             )
             .await;
-            return Err(db_err_into(err));
+            return Err(db_err_into(&err));
         }
     };
 

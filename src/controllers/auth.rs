@@ -206,10 +206,10 @@ pub(crate) async fn captcha(State(ctx): State<AppContext>) -> Result<Response> {
 /// Build a JSON error response with a specific HTTP status code.
 fn login_error_with_status(
     status: StatusCode,
-    body: LoginErrorResponse,
+    body: &LoginErrorResponse,
 ) -> Result<Response> {
     log_error!(&body.code, status.as_u16(), "login error");
-    let payload = serde_json::to_value(&body).loco_err()?;
+    let payload = serde_json::to_value(body).loco_err()?;
     Ok((status, axum::Json(payload)).into_response())
 }
 
@@ -228,7 +228,7 @@ async fn record_and_respond(
     if let Some(unlock_at) = lock_until {
         return login_error_with_status(
             StatusCode::LOCKED,
-            LoginErrorResponse::account_locked(unlock_at),
+            &LoginErrorResponse::account_locked(unlock_at),
         );
     }
     // Promote requireCaptcha if the new failure count crossed the captcha
@@ -241,7 +241,7 @@ async fn record_and_respond(
         "CAPTCHA_REQUIRED" | "CAPTCHA_INVALID" => StatusCode::BAD_REQUEST,
         _ => StatusCode::UNAUTHORIZED,
     };
-    login_error_with_status(status, fallback)
+    login_error_with_status(status, &fallback)
 }
 
 /// Creates a user login and returns a token
@@ -269,7 +269,7 @@ pub(crate) async fn login(
             tracing::info!(email = %email_lc, "LOGIN_LOCKED email={email_lc}");
             return login_error_with_status(
                 StatusCode::LOCKED,
-                LoginErrorResponse::account_locked(unlock_at_epoch),
+                &LoginErrorResponse::account_locked(unlock_at_epoch),
             );
         }
         login_guard::LoginGate::RequireCaptcha => {
@@ -357,7 +357,7 @@ pub(crate) async fn login(
         login_guard::record_success(&ctx, &email_lc).await;
         return login_error_with_status(
             StatusCode::UNAUTHORIZED,
-            LoginErrorResponse::account_disabled(),
+            &LoginErrorResponse::account_disabled(),
         );
     }
 
@@ -372,7 +372,7 @@ pub(crate) async fn login(
             tracing::error!(email = %email_lc, error = %e, "LOGIN_JWT_GENERATION_FAILED email={email_lc} error={e}");
             return login_error_with_status(
                 StatusCode::UNAUTHORIZED,
-                LoginErrorResponse::invalid_credentials(false),
+                &LoginErrorResponse::invalid_credentials(false),
             );
         }
     };

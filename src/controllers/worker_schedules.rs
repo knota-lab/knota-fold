@@ -12,7 +12,10 @@ use crate::models::{
 };
 use crate::services::task_scheduler_service;
 use crate::views::errors::parse_uuid;
-use crate::views::worker_scheduler::*;
+use crate::views::worker_scheduler::{
+    CreateWorkerScheduleRequest, PatchEnabledRequest, TriggerResponse,
+    UpdateWorkerScheduleRequest, WorkerScheduleResponse,
+};
 
 #[utoipa::path(
     get,

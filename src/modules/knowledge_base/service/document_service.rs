@@ -70,8 +70,7 @@ pub async fn update_status(
     let current = doc.status.as_str();
     let valid = match new_status {
         "indexing" => current == "pending",
-        "ready" => current == "indexing",
-        "error" => current == "indexing",
+        "ready" | "error" => current == "indexing",
         _ => false,
     };
     if !valid {
