@@ -73,15 +73,17 @@ pub(crate) async fn search(
         .limit
         .unwrap_or(kb_config.search.default_limit as usize);
 
-    let results = service::hybrid_search(
+    let results = service::search_service::hybrid_search(
         &embedding_client,
         &search_provider,
-        &kb_config.embedding.model,
-        &params.query,
-        tc.tenant_id,
-        tc.user_id,
-        limit,
-        params.document_ids,
+        &service::search_service::HybridSearchParams {
+            model_name: kb_config.embedding.model.clone(),
+            query: params.query,
+            tenant_id: tc.tenant_id,
+            user_id: tc.user_id,
+            limit,
+            document_ids: params.document_ids,
+        },
     )
     .await
     .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_err())?;
@@ -250,17 +252,19 @@ pub(crate) async fn qa_v3_stream(
                 &db,
                 &embedding_client,
                 &qa_client,
-                &search_provider,
-                &memory_store,
-                params,
-                tenant_id,
-                user_id,
-                &qa_config,
-                &embedding_model,
-                tx,
-                &session_locks,
-                &compaction_guard,
-                &broker,
+                &crate::modules::knowledge_base::service::qa_v3_service::QaStreamParams {
+                    search_provider,
+                    memory_store,
+                    request: params,
+                    tenant_id,
+                    user_id,
+                    config: qa_config,
+                    embedding_model_name: embedding_model,
+                    tx,
+                    session_locks,
+                    compaction_guard,
+                    broker,
+                },
             )
             .await;
 
@@ -271,10 +275,9 @@ pub(crate) async fn qa_v3_stream(
     });
 
     let stream = futures_util::stream::unfold(rx, |mut rx| async move {
-        match rx.recv().await {
-            Some(msg) => Some((Ok::<_, Infallible>(Event::default().data(msg)), rx)),
-            None => None,
-        }
+        rx.recv()
+            .await
+            .map(|msg| (Ok::<_, Infallible>(Event::default().data(msg)), rx))
     });
 
     Ok(Sse::new(stream).keep_alive(

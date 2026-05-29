@@ -40,7 +40,7 @@ fn extract_jwt_claims(token: &str) -> Option<(String, String)> {
     }
     // JWT payload is URL-safe base64. Pad if needed.
     let input = parts[1];
-    let padded = if input.len() % 4 != 0 {
+    let padded = if !input.len().is_multiple_of(4) {
         format!("{input}{}", "=".repeat(4 - input.len() % 4))
     } else {
         input.to_string()
@@ -144,8 +144,7 @@ where
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
             .and_then(extract_jwt_claims)
-            .map(|(pid, code)| (Some(pid), Some(code)))
-            .unwrap_or((None, None));
+            .map_or((None, None), |(pid, code)| (Some(pid), Some(code)));
 
         Box::pin(async move {
             // Extract incoming X-Trace-Id or generate UUIDv4.

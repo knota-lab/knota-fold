@@ -12,33 +12,39 @@ use crate::modules::knowledge_base::models::{
 };
 use crate::utils::error::IntoAppError;
 
+/// Parameters for [`create_document`].
+#[derive(Debug)]
+pub struct CreateDocumentParams {
+    pub tenant_id: Uuid,
+    pub title: String,
+    pub description: Option<String>,
+    pub source_type: String,
+    pub scope: String,
+    pub file_id: Option<Uuid>,
+    pub created_by: Uuid,
+}
+
 /// Create a new kb_documents record with status='pending'.
 /// Returns the created model.
 #[tracing::instrument(skip(db))]
 pub async fn create_document(
     db: &DatabaseConnection,
-    tenant_id: Uuid,
-    title: String,
-    description: Option<String>,
-    source_type: String,
-    scope: String,
-    file_id: Option<Uuid>,
-    created_by: Uuid,
+    params: &CreateDocumentParams,
 ) -> loco_rs::Result<kb_documents::Model> {
     let model = kd_models::ActiveModel {
-        tenant_id: ActiveValue::Set(tenant_id),
-        title: ActiveValue::Set(title),
-        description: ActiveValue::Set(description),
-        source_type: ActiveValue::Set(source_type),
-        scope: ActiveValue::Set(scope),
-        file_id: ActiveValue::Set(file_id),
+        tenant_id: ActiveValue::Set(params.tenant_id),
+        title: ActiveValue::Set(params.title.clone()),
+        description: ActiveValue::Set(params.description.clone()),
+        source_type: ActiveValue::Set(params.source_type.clone()),
+        scope: ActiveValue::Set(params.scope.clone()),
+        file_id: ActiveValue::Set(params.file_id),
         full_text: ActiveValue::Set(None),
         status: ActiveValue::Set("pending".to_string()),
         chunk_count: ActiveValue::Set(0),
         total_tokens: ActiveValue::Set(0),
         metadata: ActiveValue::Set(None),
         error_message: ActiveValue::Set(None),
-        created_by: ActiveValue::Set(created_by),
+        created_by: ActiveValue::Set(params.created_by),
         ..Default::default()
     };
     model.insert(db).await.db_err()

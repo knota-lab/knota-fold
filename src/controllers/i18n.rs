@@ -102,20 +102,6 @@ fn etag_matches(if_none_match: &str, our_etag: &str) -> bool {
         .any(|tag| tag == our_etag)
 }
 
-/// User-facing routes — JWT-authenticated (via TenantContext extractor) but
-/// **no Casbin authorization**. Every logged-in user can access their own
-/// locale preference and fetch bundles for their tenant.
-// pub fn user_routes() -> Routes {
-//     Routes::new()
-//         .prefix("/api/i18n")
-//         .add(
-//             "/bundles/{namespace}/{locale}",
-//             openapi(get(get_bundle), routes!(get_bundle)),
-//         )
-//         .add("/me", openapi(get(get_i18n_me), routes!(get_i18n_me)))
-//         .add("/me", openapi(put(update_i18n_me), routes!(update_i18n_me)))
-// }
-
 // ── Public (unauthenticated) bundle endpoint ──────────────────────────────
 
 /// Namespaces safe to expose without authentication (login page, etc.).

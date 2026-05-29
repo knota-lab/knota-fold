@@ -139,10 +139,7 @@ impl Tool for SearchMaterialTool {
             match mat {
                 Some(m) => vec![m],
                 None => {
-                    return Err(SearchMaterialError(format!(
-                        "材料 {} 不在当前会话中",
-                        mid
-                    )))
+                    return Err(SearchMaterialError(format!("材料 {mid} 不在当前会话中")))
                 }
             }
         } else {
@@ -191,17 +188,20 @@ impl Tool for SearchMaterialTool {
                     // Collect context lines (before)
                     let mut context = Vec::new();
                     let ctx_start = i.saturating_sub(CONTEXT_LINES);
-                    for ci in ctx_start..i {
-                        context.push(format!("    {}: {}", ci + 1, lines[ci]));
+                    for (ci, ctx_line) in lines.iter().enumerate().take(i).skip(ctx_start)
+                    {
+                        context.push(format!("    {}: {}", ci + 1, ctx_line));
                     }
 
                     // The matched line
-                    let matched = format!("  {}: {}", line_num, line);
+                    let matched = format!("  {line_num}: {line}");
 
                     // Collect context lines (after)
                     let ctx_end = (i + CONTEXT_LINES + 1).min(lines.len());
-                    for ci in (i + 1)..ctx_end {
-                        context.push(format!("    {}: {}", ci + 1, lines[ci]));
+                    for (ci, ctx_line) in
+                        lines.iter().enumerate().take(ctx_end).skip(i + 1)
+                    {
+                        context.push(format!("    {}: {}", ci + 1, ctx_line));
                     }
 
                     mat_matches.push(format!("{}\n{}", matched, context.join("\n")));

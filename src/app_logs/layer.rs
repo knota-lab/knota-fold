@@ -317,15 +317,14 @@ where
         }
 
         let current_span = ctx.lookup_current();
-        let trace_id = current_span
-            .as_ref()
-            .map(|s| {
+        let trace_id = current_span.as_ref().map_or_else(
+            || "untraced".to_string(),
+            |s| {
                 s.extensions()
                     .get::<TracedId>()
-                    .map(|tid| tid.0.clone())
-                    .unwrap_or_else(|| "untraced".to_string())
-            })
-            .unwrap_or_else(|| "untraced".to_string());
+                    .map_or_else(|| "untraced".to_string(), |tid| tid.0.clone())
+            },
+        );
         let span_id = current_span.as_ref().map(|s| s.id().into_u64().to_string());
 
         let mut visitor = MessageVisitor::default();
@@ -472,7 +471,7 @@ static DROPPED_COUNT: AtomicU64 = AtomicU64::new(0);
 pub fn try_send_log(sender: &LogSender, entry: LogEntry) {
     if sender.try_send(entry).is_err() {
         let prev = DROPPED_COUNT.fetch_add(1, Ordering::Relaxed);
-        if prev > 0 && prev % 1000 == 0 {
+        if prev > 0 && prev.is_multiple_of(1000) {
             tracing::warn!(dropped = prev + 1, "[app-logs] logs dropped (channel full)");
         }
     }

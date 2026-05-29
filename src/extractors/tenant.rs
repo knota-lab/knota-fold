@@ -89,7 +89,7 @@ impl FromRequestParts<AppContext> for TenantContext {
         let is_super_admin = role_codes.iter().any(|code| code == SUPER_ADMIN_ROLE);
         let is_tenant_admin = role_codes.iter().any(|code| code == TENANT_ADMIN_ROLE);
 
-        Ok(TenantContext {
+        Ok(Self {
             user_id,
             tenant_id: tenant.id,
             tenant_code,

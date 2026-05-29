@@ -354,7 +354,7 @@ pub mod i18n {
     pub fn namespace_not_public(ns: &str) -> Result<Response> {
         forbidden(
             "i18n.namespace_not_public",
-            format!("命名空间 '{}' 不对外公开", ns),
+            format!("命名空间 '{ns}' 不对外公开"),
         )
     }
 }

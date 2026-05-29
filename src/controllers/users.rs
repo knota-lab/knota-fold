@@ -68,7 +68,7 @@ pub(crate) async fn create(
         if let Some(ref code) = params.tenant_code {
             if code != &tc.tenant_code {
                 let t = tenant_service::find_tenant_by_code(&ctx.db, code).await?;
-                (t.code.clone(), t.name.clone())
+                (t.code.clone(), t.name)
             } else {
                 (tc.tenant_code.clone(), tc.tenant_name.clone())
             }

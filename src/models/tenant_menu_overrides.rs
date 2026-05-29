@@ -52,27 +52,24 @@ impl Model {
     ) -> ModelResult<Self> {
         let existing = Self::find_by_tenant_and_menu(db, tenant_id, sys_menu_id).await?;
 
-        match existing {
-            Some(record) => {
-                active_model.id = ActiveValue::Unchanged(record.id);
-                active_model.tenant_id = ActiveValue::Unchanged(tenant_id);
-                active_model.sys_menu_id = ActiveValue::Unchanged(sys_menu_id);
-                active_model.version = ActiveValue::Set(record.version + 1);
-                active_model.updated_by = ActiveValue::Set(Some(current_user_id));
-                Ok(active_model.update(db).await?)
-            }
-            None => {
-                active_model.tenant_id = ActiveValue::Set(tenant_id);
-                active_model.sys_menu_id = ActiveValue::Set(sys_menu_id);
-                active_model.version = ActiveValue::Set(1);
-                active_model.updated_by = ActiveValue::Set(Some(current_user_id));
+        if let Some(record) = existing {
+            active_model.id = ActiveValue::Unchanged(record.id);
+            active_model.tenant_id = ActiveValue::Unchanged(tenant_id);
+            active_model.sys_menu_id = ActiveValue::Unchanged(sys_menu_id);
+            active_model.version = ActiveValue::Set(record.version + 1);
+            active_model.updated_by = ActiveValue::Set(Some(current_user_id));
+            Ok(active_model.update(db).await?)
+        } else {
+            active_model.tenant_id = ActiveValue::Set(tenant_id);
+            active_model.sys_menu_id = ActiveValue::Set(sys_menu_id);
+            active_model.version = ActiveValue::Set(1);
+            active_model.updated_by = ActiveValue::Set(Some(current_user_id));
 
-                if matches!(&active_model.is_hidden, ActiveValue::NotSet) {
-                    active_model.is_hidden = ActiveValue::Set(false);
-                }
-
-                Ok(active_model.insert(db).await?)
+            if matches!(&active_model.is_hidden, ActiveValue::NotSet) {
+                active_model.is_hidden = ActiveValue::Set(false);
             }
+
+            Ok(active_model.insert(db).await?)
         }
     }
 

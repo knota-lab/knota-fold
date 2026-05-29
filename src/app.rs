@@ -43,8 +43,7 @@ fn casbin_authz_layer(ctx: &AppContext) -> CasbinAuthzLayer {
     let enforcer = ctx
         .shared_store
         .get::<SharedEnforcer>()
-        .expect("Casbin enforcer not initialized")
-        .clone();
+        .expect("Casbin enforcer not initialized");
     let jwt_secret = ctx
         .config
         .get_jwt_config()
@@ -187,7 +186,7 @@ impl Hooks for App {
             // Knowledge base — manage routes (Casbin-gated CRUD)
             .add_route(
                 crate::modules::knowledge_base::controller::manage_routes()
-                    .layer(authz_layer.clone()),
+                    .layer(authz_layer),
             )
             // Knowledge base — user routes (search + QA, JWT only)
             .add_route(crate::modules::knowledge_base::controller::user_routes())

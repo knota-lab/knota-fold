@@ -4,17 +4,17 @@
 //! - `i18n_supported_locales`     — platform-wide enabled locales.
 //! - `i18n_entries`               — registry of (namespace + key) with status + description.
 //! - `i18n_entry_locations`       — extractor-discovered call sites; FK → entries with cascade.
-//! - `i18n_translations`          — actual translation rows; scope=global|tenant + tenant_id NULL=global.
-//! - `i18n_bundle_revisions`      — monotonic revision per (locale, namespace, scope, tenant_id?), drives ETag.
+//! - `i18n_translations`          — actual translation rows; scope=global|tenant + `tenant_id` NULL=global.
+//! - `i18n_bundle_revisions`      — monotonic revision per (locale, namespace, scope, `tenant_id`?), drives `ETag`.
 //!
-//! NOTE on UNIQUE-with-NULL: PostgreSQL and SQLite both treat NULL as distinct
+//! NOTE on UNIQUE-with-NULL: `PostgreSQL` and `SQLite` both treat NULL as distinct
 //! in unique indexes, so `(…, tenant_id)` uniques will NOT prevent duplicate
 //! NULL-tenant rows. Service layer must guard global duplicates (same pattern
 //! as `sys_configs`).
 //!
 //! Also seeds:
 //! - `i18n_supported_locales` with zh-CN + en-US
-//! - `i18n_translations` with the minimal Common + CommonError bundles (§10)
+//! - `i18n_translations` with the minimal Common + `CommonError` bundles (§10)
 //! - `i18n_bundle_revisions` rows aligned with the seeded bundles
 //!
 //! Casbin permissions are NOT seeded here. The codebase uses URL-based auth:
@@ -408,7 +408,7 @@ impl MigrationTrait for Migration {
 
 // ── seed helpers ─────────────────────────────────────────────────────────────
 
-/// Application-layer UUIDv7 generation, matching `crate::utils::id::generate_id`
+/// Application-layer `UUIDv7` generation, matching `crate::utils::id::generate_id`
 /// in the main crate. Migration crate cannot depend on the app crate, so we
 /// inline `Uuid::now_v7()` here.
 fn new_id() -> Uuid {

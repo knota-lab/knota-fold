@@ -30,14 +30,13 @@ pub(crate) async fn create(
         return NotificationError::PlatformRequiresSuperAdmin.to_response();
     }
     // Validate: tenant_role requires roles
-    if params.notification_type == "tenant_role" {
-        if params
+    if params.notification_type == "tenant_role"
+        && params
             .target_role_codes
             .as_ref()
-            .map_or(true, |c| c.is_empty())
-        {
-            return NotificationError::NoRolesSelected.to_response();
-        }
+            .is_none_or(|c| c.is_empty())
+    {
+        return NotificationError::NoRolesSelected.to_response();
     }
 
     // Determine tenant_id: platform = None, others = Some(tc.tenant_id)
@@ -50,13 +49,15 @@ pub(crate) async fn create(
 
     let notification = service::create::create_notification(
         &ctx.db,
-        tenant_id,
-        tc.user_id,
-        &params.title,
-        &params.content,
-        &params.notification_type,
-        params.priority.as_deref().unwrap_or("normal"),
-        params.target_role_codes.as_deref(),
+        &service::create::CreateNotificationParams {
+            tenant_id,
+            created_by: tc.user_id,
+            title: &params.title,
+            content: &params.content,
+            notification_type: &params.notification_type,
+            priority: params.priority.as_deref().unwrap_or("normal"),
+            target_role_codes: params.target_role_codes.as_deref(),
+        },
     )
     .await
     .model_err()?;
@@ -100,7 +101,7 @@ pub(crate) async fn list(
     let total_pages = if total_items == 0 {
         0
     } else {
-        total_items.div_ceil(page_size as u64)
+        total_items.div_ceil(page_size)
     };
 
     let responses: Vec<NotificationResponse> =

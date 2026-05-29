@@ -134,9 +134,9 @@ impl Tool for ListConversationHistoryTool {
 
             // User message
             let user_char_count = user_content.chars().count();
-            lines.push(format!("  [用户] ({} 字符)", user_char_count));
+            lines.push(format!("  [用户] ({user_char_count} 字符)"));
             let user_preview = truncate_preview(user_content, 100);
-            lines.push(format!("    {}", user_preview));
+            lines.push(format!("    {user_preview}"));
 
             // Assistant message
             if let Some(asst_content) = assistant_content {
@@ -144,14 +144,13 @@ impl Tool for ListConversationHistoryTool {
                 let tool_count = count_tool_calls(*tool_usage);
                 if tool_count > 0 {
                     lines.push(format!(
-                        "  [助手] ({} 字符, 含 {} 次工具调用)",
-                        asst_char_count, tool_count
+                        "  [助手] ({asst_char_count} 字符, 含 {tool_count} 次工具调用)"
                     ));
                 } else {
-                    lines.push(format!("  [助手] ({} 字符)", asst_char_count));
+                    lines.push(format!("  [助手] ({asst_char_count} 字符)"));
                 }
                 let asst_preview = truncate_preview(asst_content, 100);
-                lines.push(format!("    {}", asst_preview));
+                lines.push(format!("    {asst_preview}"));
             } else {
                 lines.push("  [待回复]".to_string());
             }
@@ -171,7 +170,7 @@ fn truncate_preview(content: &str, max_chars: usize) -> String {
         content.to_string()
     } else {
         let truncated: String = content.chars().take(max_chars).collect();
-        format!("{}…", truncated)
+        format!("{truncated}…")
     }
 }
 
@@ -181,6 +180,5 @@ fn count_tool_calls(token_usage: Option<&serde_json::Value>) -> usize {
     token_usage
         .and_then(|v| v.get("toolCalls"))
         .and_then(|v| v.as_array())
-        .map(|arr| arr.len())
-        .unwrap_or(0)
+        .map_or(0, |arr| arr.len())
 }

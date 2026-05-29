@@ -51,9 +51,7 @@ impl MergedMenuItem {
             sort_order: override_record
                 .and_then(|record| record.custom_sort)
                 .unwrap_or(menu.sort_order),
-            is_hidden: override_record
-                .map(|record| record.is_hidden)
-                .unwrap_or(false),
+            is_hidden: override_record.is_some_and(|record| record.is_hidden),
         }
     }
 

@@ -175,7 +175,7 @@ fn rfc8187_encode(value: &str) -> String {
             | b'`'
             | b'|'
             | b'~' => encoded.push(*byte as char),
-            _ => encoded.push_str(&format!("%{:02X}", byte)),
+            _ => encoded.push_str(&format!("%{byte:02X}")),
         }
     }
     encoded
@@ -819,19 +819,33 @@ async fn dedup_check_inner(
     })
 }
 
+/// Parameters for [`sys_small_upload`].
+pub struct SysSmallUploadParams<'a> {
+    pub tc: &'a crate::extractors::TenantContext,
+    pub tenant_code: &'a str,
+    pub params: &'a SmallUploadRequest,
+    pub bytes: bytes::Bytes,
+    pub audit_ctx: &'a AuditContext,
+    pub attach: Option<file_reference_service::AttachRequest>,
+}
+
 #[tracing::instrument(skip_all)]
 pub async fn sys_small_upload(
     db: &DatabaseConnection,
     ctx: &AppContext,
-    tc: &crate::extractors::TenantContext,
-    tenant_code: &str,
-    params: &SmallUploadRequest,
-    bytes: bytes::Bytes,
-    audit_ctx: &AuditContext,
-    attach: Option<file_reference_service::AttachRequest>,
+    p: &SysSmallUploadParams<'_>,
 ) -> loco_rs::Result<FileResponse> {
-    let tenant = resolve_target_tenant(db, tenant_code).await?;
-    small_upload_inner(ctx, tenant.id, tc.user_id, params, bytes, audit_ctx, attach).await
+    let tenant = resolve_target_tenant(db, p.tenant_code).await?;
+    small_upload_inner(
+        ctx,
+        tenant.id,
+        p.tc.user_id,
+        p.params,
+        p.bytes.clone(),
+        p.audit_ctx,
+        p.attach.clone(),
+    )
+    .await
 }
 
 #[tracing::instrument(skip_all)]

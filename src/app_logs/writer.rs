@@ -82,7 +82,7 @@ pub fn spawn_writer(rx: flume::Receiver<LogEntry>, config: &AppLogsConfig) {
                         let fails = CONSECUTIVE_FAILS.fetch_add(1, Ordering::Relaxed);
                         if fails < 3 {
                             eprintln!("[app-logs] write error: {e}");
-                        } else if fails % 10 == 0 {
+                        } else if fails.is_multiple_of(10) {
                             tracing::error!(
                                 fails,
                                 error = %e,

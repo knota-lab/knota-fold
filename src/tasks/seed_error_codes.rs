@@ -211,9 +211,8 @@ impl Task for SeedErrorCodes {
     }
 
     async fn run(&self, ctx: &AppContext, vars: &task::Vars) -> Result<()> {
-        let apply = resolve(vars, "apply", "SEED_APPLY")
-            .map(|v| v == "true" || v == "1")
-            .unwrap_or(false);
+        let apply =
+            resolve(vars, "apply", "SEED_APPLY").is_some_and(|v| v == "true" || v == "1");
 
         let report = extract_error_codes();
         let total_codes = report.codes.len();

@@ -315,13 +315,14 @@ where
             .ok()
             .and_then(|mut map| map.remove(internal_call_id));
 
-        let (saved_call_id, saved_args) = pending
-            .map(|p| (p.tool_call_id, p.arguments))
-            .unwrap_or_else(|| {
+        let (saved_call_id, saved_args) = pending.map_or_else(
+            || {
                 let parsed_args: serde_json::Value =
                     serde_json::from_str(args).unwrap_or(serde_json::Value::Null);
                 (tool_call_id.clone().unwrap_or_default(), parsed_args)
-            });
+            },
+            |p| (p.tool_call_id, p.arguments),
+        );
 
         // Record completed tool call for persistence/export (legacy flat list)
         if let Ok(mut records) = self.tool_records.lock() {
@@ -450,11 +451,11 @@ fn extract_citations_from_result(result: &str, citations: &Arc<Mutex<Vec<Citatio
                 continue;
             };
 
-            let doc_id = match uuid::Uuid::parse_str(&doc_id_str) {
+            let doc_id = match uuid::Uuid::parse_str(doc_id_str) {
                 Ok(id) => id,
                 Err(_) => continue,
             };
-            let chunk_id = uuid::Uuid::parse_str(&chunk_id_str).ok();
+            let chunk_id = uuid::Uuid::parse_str(chunk_id_str).ok();
 
             // Extract content after "相关内容:\n" on the next line
             // Since we're iterating line by line, we'll grab a truncated preview
@@ -482,9 +483,7 @@ fn extract_citations_from_result(result: &str, citations: &Arc<Mutex<Vec<Citatio
 fn extract_field<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
     let start = line.find(marker)?;
     let rest = &line[start + marker.len()..];
-    let end = rest
-        .find(|c: char| c == ',' || c == ')')
-        .unwrap_or(rest.len());
+    let end = rest.find([',', ')']).unwrap_or(rest.len());
     Some(rest[..end].trim())
 }
 

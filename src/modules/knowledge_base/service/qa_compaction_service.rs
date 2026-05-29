@@ -87,7 +87,7 @@ fn format_history_for_summary(messages: &[chat_messages::Model]) -> String {
                             } else {
                                 ""
                             };
-                            block.push_str(&format!("{}: {}", role_label, truncated));
+                            block.push_str(&format!("{role_label}: {truncated}"));
                             block.push_str(ellipsis);
                             block.push('\n');
                         }
@@ -102,8 +102,7 @@ fn format_history_for_summary(messages: &[chat_messages::Model]) -> String {
                                 tc.get("resultPreview").and_then(|v| v.as_str())
                             {
                                 block.push_str(&format!(
-                                    "[工具调用 {}] {}\n",
-                                    tool_name, preview
+                                    "[工具调用 {tool_name}] {preview}\n"
                                 ));
                             }
                         }
@@ -122,7 +121,7 @@ fn format_history_for_summary(messages: &[chat_messages::Model]) -> String {
         } else {
             ""
         };
-        parts.push(format!("{}: {}{}", role_label, truncated, ellipsis));
+        parts.push(format!("{role_label}: {truncated}{ellipsis}"));
     }
 
     parts.join("\n")
@@ -144,7 +143,7 @@ pub async fn get_cached_summary(
         .one(db)
         .await
         .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()))?
-        .ok_or_else(|| KnowledgeBaseError::NotFound)?;
+        .ok_or(KnowledgeBaseError::NotFound)?;
 
     match session.summary_cache {
         Some(ref json_str) => {
@@ -179,7 +178,7 @@ async fn cache_summary(
         .one(db)
         .await
         .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()))?
-        .ok_or_else(|| KnowledgeBaseError::NotFound)?;
+        .ok_or(KnowledgeBaseError::NotFound)?;
 
     let mut active: cs_models::ActiveModel = session.into();
     active.summary_cache = ActiveValue::Set(Some(json_str));
@@ -195,6 +194,16 @@ async fn cache_summary(
 // Core: compact_history
 // ---------------------------------------------------------------------------
 
+/// Parameters for [`compact_history`].
+#[derive(Debug)]
+pub struct CompactHistoryParams {
+    pub session_id: Uuid,
+    pub tenant_id: Uuid,
+    pub max_context_tokens: i32,
+    pub recent_turns: usize,
+    pub compaction_reserve_tokens: usize,
+}
+
 /// Token-based trigger + iterative summary merge.
 ///
 /// 1. Token-based trigger: total estimated tokens > (max_context_tokens - compaction_reserve_tokens)
@@ -206,23 +215,19 @@ async fn cache_summary(
 ///    - No cache → format ALL older messages, use INITIAL_SUMMARY_PROMPT.
 /// 5. Non-streaming LLM call via rig Prompt trait.
 /// 6. Cache the result.
-#[tracing::instrument(skip(db, qa_client, history))]
+#[tracing::instrument(skip(db, qa_client, history, params))]
 pub async fn compact_history(
     db: &sea_orm::DatabaseConnection,
     qa_client: &rig::providers::deepseek::Client,
-    session_id: Uuid,
-    tenant_id: Uuid,
     history: &[chat_messages::Model],
     summary_model: &str,
     compaction_threshold: usize,
-    recent_turns: usize,
-    max_context_tokens: i32,
-    compaction_reserve_tokens: usize,
+    params: &CompactHistoryParams,
 ) -> Result<String, KnowledgeBaseError> {
     // ── 1. Token-based trigger ────────────────────────────────────
-    let history_tokens: usize = history.iter().map(|m| estimate_message_tokens(m)).sum();
-    let token_threshold =
-        (max_context_tokens as usize).saturating_sub(compaction_reserve_tokens);
+    let history_tokens: usize = history.iter().map(estimate_message_tokens).sum();
+    let token_threshold = (params.max_context_tokens as usize)
+        .saturating_sub(params.compaction_reserve_tokens);
     let needs_compaction =
         history_tokens > token_threshold && history.len() > compaction_threshold;
 
@@ -231,7 +236,7 @@ pub async fn compact_history(
     }
 
     // ── 2. Fixed recent window ────────────────────────────────────
-    let boundary_idx = history.len().saturating_sub(recent_turns);
+    let boundary_idx = history.len().saturating_sub(params.recent_turns);
     if boundary_idx == 0 {
         // Not enough messages to split
         return Ok(String::new());
@@ -240,7 +245,7 @@ pub async fn compact_history(
     let older_messages = &history[..boundary_idx];
 
     // ── 3. Cache check ────────────────────────────────────────────
-    let cached = get_cached_summary(db, session_id, tenant_id).await?;
+    let cached = get_cached_summary(db, params.session_id, params.tenant_id).await?;
 
     // Count new messages since last compaction
     let new_msg_count = match &cached {
@@ -287,21 +292,20 @@ pub async fn compact_history(
         // The last compacted msg is the last of the older_messages
         let last_id = older_messages
             .last()
-            .map(|m| m.id)
-            .unwrap_or(c.last_compacted_msg_id);
+            .map_or(c.last_compacted_msg_id, |m| m.id);
 
         (prompt, last_id)
     } else {
         // Initial mode: format ALL older messages
         let text = format_history_for_summary(older_messages);
-        let prompt = format!("{}\n\n{}", INITIAL_SUMMARY_PROMPT, text);
+        let prompt = format!("{INITIAL_SUMMARY_PROMPT}\n\n{text}");
         let last_id = older_messages.last().map(|m| m.id).unwrap_or_default();
         (prompt, last_id)
     };
 
     // ── 5. Non-streaming LLM call ────────────────────────────────
     tracing::info!(
-        session_id = %session_id,
+        session_id = %params.session_id,
         prompt_len = prompt.len(),
         "Running compaction LLM call"
     );
@@ -318,13 +322,20 @@ pub async fn compact_history(
         })?;
 
     tracing::info!(
-        session_id = %session_id,
+        session_id = %params.session_id,
         summary_len = summary.len(),
         "Compaction summary generated"
     );
 
     // ── 6. Cache the result ───────────────────────────────────────
-    cache_summary(db, session_id, tenant_id, &summary, last_compacted_msg_id).await?;
+    cache_summary(
+        db,
+        params.session_id,
+        params.tenant_id,
+        &summary,
+        last_compacted_msg_id,
+    )
+    .await?;
 
     Ok(summary)
 }

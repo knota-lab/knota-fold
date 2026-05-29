@@ -22,7 +22,11 @@ use crate::models::_entities::{chat_messages, kb_documents};
 use crate::modules::knowledge_base::providers::{SharedEmbeddingClient, SharedQaClient};
 
 use super::chat_service;
+use super::chat_service::CreateMessageParams;
 use super::memory_service;
+use super::memory_service::IndexMessageParams;
+use super::memory_service::RecallHistoryParams;
+use super::qa_compaction_service::CompactHistoryParams;
 use super::qa_stream_types::{QaEvent, QaPhase, QaStreamResponse};
 use super::qa_types::{QaRequest, TokenUsage};
 use super::tools::qa_v3_hook::QaV3Hook;
@@ -105,41 +109,53 @@ fn send_event_blocking(tx: &EventSender, event: QaEvent) -> Result<(), ()> {
     })
 }
 
+/// Parameters for [`spawn_index_message`].
+#[derive(Debug)]
+struct SpawnIndexParams {
+    embedding_model_name: String,
+    session_id: Uuid,
+    tenant_id: Uuid,
+    msg_id: Uuid,
+    role: String,
+    content: String,
+    has_material: bool,
+    turn_index: i32,
+}
+
 /// Async fire-and-forget message indexing to Qdrant chat_memory.
 /// Call after both user and assistant message persistence.
 fn spawn_index_message(
     memory_store: &SharedMemoryStore,
     embedding_client: &SharedEmbeddingClient,
-    embedding_model_name: &str,
-    session_id: Uuid,
-    tenant_id: Uuid,
-    msg_id: Uuid,
-    role: &str,
-    content: &str,
-    has_material: bool,
-    turn_index: i32,
+    params: &SpawnIndexParams,
 ) {
     let ms = memory_store.clone();
     let ec = embedding_client.clone();
-    let model_name = embedding_model_name.to_string();
-    let sid = session_id;
-    let tid = tenant_id;
-    let role_s = role.to_string();
-    let content_s = content.to_string();
+    let collection_name = ms.collection_name.clone();
+    let embedding_model_name = params.embedding_model_name.clone();
+    let session_id = params.session_id;
+    let tenant_id = params.tenant_id;
+    let msg_id = params.msg_id;
+    let role = params.role.clone();
+    let content = params.content.clone();
+    let has_material = params.has_material;
+    let turn_index = params.turn_index;
 
     tokio::spawn(async move {
         if let Err(e) = memory_service::index_message(
             &ec.0,
             &ms.client,
-            &ms.collection_name,
-            &model_name,
-            sid,
-            tid,
-            msg_id,
-            &role_s,
-            &content_s,
-            has_material,
-            turn_index,
+            &IndexMessageParams {
+                collection_name,
+                model_name: embedding_model_name,
+                session_id,
+                tenant_id,
+                message_id: msg_id,
+                role,
+                content,
+                has_material,
+                turn_index,
+            },
         )
         .await
         {
@@ -208,23 +224,20 @@ pub(crate) fn estimate_message_tokens(msg: &chat_messages::Model) -> usize {
         .token_usage
         .as_ref()
         .and_then(|u| u.get("toolCalls").and_then(|v| v.as_array()))
-        .map(|arr| {
+        .map_or(0, |arr| {
             arr.iter()
                 .map(|tc| {
                     let args_tokens = tc
                         .get("arguments")
-                        .map(|a| estimate_text_tokens(&a.to_string(), true))
-                        .unwrap_or(0);
+                        .map_or(0, |a| estimate_text_tokens(&a.to_string(), true));
                     let preview_tokens = tc
                         .get("resultPreview")
                         .and_then(|v| v.as_str())
-                        .map(|s| estimate_text_tokens(s, false))
-                        .unwrap_or(0);
+                        .map_or(0, |s| estimate_text_tokens(s, false));
                     args_tokens + preview_tokens + 20
                 })
                 .sum::<usize>()
-        })
-        .unwrap_or(0);
+        });
 
     content_tokens + tool_tokens
 }
@@ -275,8 +288,10 @@ fn build_chat_history(
                                     .get("toolCallId")
                                     .and_then(|v| v.as_str())
                                     .filter(|s| !s.is_empty())
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_else(|| format!("hist-{}", idx));
+                                    .map_or_else(
+                                        || format!("hist-{idx}"),
+                                        |s| s.to_string(),
+                                    );
 
                                 // Use tool_call_with_call_id to satisfy Ollama's
                                 // OpenAI Responses API requirement (call_id is mandatory).
@@ -294,7 +309,7 @@ fn build_chat_history(
                                 tool_results.push((
                                     tool_call_id.clone(),
                                     tool_call_id,
-                                    format!("[历史工具调用结果] {}", result_preview),
+                                    format!("[历史工具调用结果] {result_preview}"),
                                 ));
                             }
 
@@ -396,17 +411,28 @@ fn register_doc_from_model(registry: &mut MaterialRegistry, doc: &kb_documents::
         title: doc.title.clone(),
         content,
         doc_type: doc.source_type.clone(),
-        total_lines: doc
-            .full_text
-            .as_deref()
-            .map(|t| t.lines().count())
-            .unwrap_or(0),
+        total_lines: doc.full_text.as_deref().map_or(0, |t| t.lines().count()),
     });
 }
 
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
+
+/// Parameters for [`process_qa_v3_stream`].
+pub struct QaStreamParams {
+    pub search_provider: SharedSearchProvider,
+    pub memory_store: SharedMemoryStore,
+    pub request: QaRequest,
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub config: QaConfig,
+    pub embedding_model_name: String,
+    pub tx: mpsc::Sender<String>,
+    pub session_locks: SessionLockMap,
+    pub compaction_guard: CompactionGuard,
+    pub broker: Arc<dyn ToolResultBroker>,
+}
 
 /// v3 streaming QA pipeline: tool-augmented multi-turn agent.
 ///
@@ -419,25 +445,27 @@ fn register_doc_from_model(registry: &mut MaterialRegistry, doc: &kb_documents::
 /// 5. Persistence
 /// 6. Complete
 #[tracing::instrument(
-    skip(db, embedding_client, qa_client, search_provider, memory_store, config, tx, session_locks, compaction_guard, broker),
-    fields(tenant_id = %tenant_id, user_id = %user_id)
+    skip(db, embedding_client, qa_client, params),
+    fields(tenant_id = %params.tenant_id, user_id = %params.user_id)
 )]
 pub async fn process_qa_v3_stream(
     db: &sea_orm::DatabaseConnection,
     embedding_client: &SharedEmbeddingClient,
     qa_client: &SharedQaClient,
-    search_provider: &SharedSearchProvider,
-    memory_store: &SharedMemoryStore,
-    request: QaRequest,
-    tenant_id: Uuid,
-    user_id: Uuid,
-    config: &QaConfig,
-    embedding_model_name: &str,
-    tx: mpsc::Sender<String>,
-    session_locks: &SessionLockMap,
-    compaction_guard: &CompactionGuard,
-    broker: &Arc<dyn ToolResultBroker>,
+    params: &QaStreamParams,
 ) -> Result<(), ()> {
+    // Destructure params for convenient access
+    let request = &params.request;
+    let tenant_id = params.tenant_id;
+    let user_id = params.user_id;
+    let config = &params.config;
+    let embedding_model_name = &params.embedding_model_name;
+    let tx = &params.tx;
+    let search_provider = &params.search_provider;
+    let memory_store = &params.memory_store;
+    let session_locks = &params.session_locks;
+    let compaction_guard = &params.compaction_guard;
+    let broker = &params.broker;
     // ── Step 0: Session management ──────────────────────────────────
     let session_span = tracing::info_span!("qa.session");
     let _session_guard = session_span.enter();
@@ -456,18 +484,17 @@ pub async fn process_qa_v3_stream(
             .ok(),
     };
 
-    let session = match session {
-        Some(s) => s,
-        None => {
-            let _ = send_event(
-                &tx,
-                QaEvent::Error {
-                    message: "Failed to create or retrieve session".to_string(),
-                },
-            )
-            .await;
-            return Err(());
-        }
+    let session = if let Some(s) = session {
+        s
+    } else {
+        let _ = send_event(
+            tx,
+            QaEvent::Error {
+                message: "Failed to create or retrieve session".to_string(),
+            },
+        )
+        .await;
+        return Err(());
     };
 
     session_span.record("session_id", session.id.to_string());
@@ -513,7 +540,7 @@ pub async fn process_qa_v3_stream(
     let material_span = tracing::info_span!("qa.material");
     let _material_guard = material_span.enter();
     send_event(
-        &tx,
+        tx,
         QaEvent::PhaseChanged {
             phase: QaPhase::MaterialProcessing {
                 strategy: "v3_registry".to_string(),
@@ -556,7 +583,7 @@ pub async fn process_qa_v3_stream(
             content,
             total_lines,
         });
-        current_turn_materials.push(format!("{} 用户粘贴文本 ({}行)", id, total_lines));
+        current_turn_materials.push(format!("{id} 用户粘贴文本 ({total_lines}行)"));
     }
 
     // Register document materials
@@ -571,7 +598,7 @@ pub async fn process_qa_v3_stream(
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to fetch documents by ID");
                 let _ = send_event_blocking(
-                    &tx,
+                    tx,
                     QaEvent::Error {
                         message: format!("Failed to fetch documents: {e}"),
                     },
@@ -591,11 +618,7 @@ pub async fn process_qa_v3_stream(
 
         for doc in &docs {
             register_doc_from_model(&mut registry, doc);
-            let total_lines = doc
-                .full_text
-                .as_deref()
-                .map(|t| t.lines().count())
-                .unwrap_or(0);
+            let total_lines = doc.full_text.as_deref().map_or(0, |t| t.lines().count());
             current_turn_materials
                 .push(format!("{} {} ({}行)", doc.id, doc.title, total_lines));
         }
@@ -611,7 +634,7 @@ pub async fn process_qa_v3_stream(
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to resolve file_ids to documents");
                 let _ = send_event_blocking(
-                    &tx,
+                    tx,
                     QaEvent::Error {
                         message: format!("Failed to resolve file_ids: {e}"),
                     },
@@ -620,11 +643,7 @@ pub async fn process_qa_v3_stream(
 
         for doc in &docs {
             register_doc_from_model(&mut registry, doc);
-            let total_lines = doc
-                .full_text
-                .as_deref()
-                .map(|t| t.lines().count())
-                .unwrap_or(0);
+            let total_lines = doc.full_text.as_deref().map_or(0, |t| t.lines().count());
             current_turn_materials
                 .push(format!("{} {} ({}行)", doc.id, doc.title, total_lines));
         }
@@ -752,18 +771,20 @@ pub async fn process_qa_v3_stream(
     // Save user message
     let user_msg = chat_service::create_message(
         db,
-        session.id,
-        tenant_id,
-        user_id,
-        "user".to_string(),
-        request.instruction.clone(),
-        material_refs_json,
-        None,
-        None,
-        None,
-        0,
-        0,
-        0,
+        &CreateMessageParams {
+            session_id: session.id,
+            tenant_id,
+            user_id,
+            role: "user".to_string(),
+            content: request.instruction.clone(),
+            material_refs: material_refs_json,
+            intent: None,
+            strategy: None,
+            token_usage: None,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        },
     )
     .await
     .map_err(|e| {
@@ -774,14 +795,16 @@ pub async fn process_qa_v3_stream(
     spawn_index_message(
         memory_store,
         embedding_client,
-        embedding_model_name,
-        session.id,
-        tenant_id,
-        user_msg.id,
-        "user",
-        &request.instruction,
-        has_material,
-        (history.len() as i32 + 1) / 2,
+        &SpawnIndexParams {
+            embedding_model_name: embedding_model_name.to_string(),
+            session_id: session.id,
+            tenant_id,
+            msg_id: user_msg.id,
+            role: "user".to_string(),
+            content: request.instruction.clone(),
+            has_material,
+            turn_index: (history.len() as i32 + 1) / 2,
+        },
     );
 
     // ── Step 2: Construct tools ─────────────────────────────────────
@@ -834,7 +857,7 @@ pub async fn process_qa_v3_stream(
     let _compaction_guard = compaction_span.enter();
 
     // Token-based trigger check
-    let history_tokens: usize = history.iter().map(|m| estimate_message_tokens(m)).sum();
+    let history_tokens: usize = history.iter().map(estimate_message_tokens).sum();
     let token_threshold =
         config.max_context_tokens as usize - config.compaction_reserve_tokens;
     let needs_compaction =
@@ -909,17 +932,21 @@ pub async fn process_qa_v3_stream(
                     "Spawning background compaction"
                 );
 
+                let bg_params = CompactHistoryParams {
+                    session_id: bg_session_id,
+                    tenant_id: bg_tenant_id,
+                    max_context_tokens: bg_max_ctx,
+                    recent_turns: bg_recent_turns,
+                    compaction_reserve_tokens: bg_reserve,
+                };
+
                 let result = super::qa_compaction_service::compact_history(
                     &bg_db,
                     &bg_qa_client.0,
-                    bg_session_id,
-                    bg_tenant_id,
                     &bg_history,
                     &bg_model,
                     bg_threshold,
-                    bg_recent_turns,
-                    bg_max_ctx,
-                    bg_reserve,
+                    &bg_params,
                 )
                 .await;
 
@@ -963,9 +990,9 @@ pub async fn process_qa_v3_stream(
     };
 
     // Build system_prompt with summary
-    let mut system_prompt = format!("{}{}\n\n", BASE_SYSTEM_PROMPT, material_hint);
+    let mut system_prompt = format!("{BASE_SYSTEM_PROMPT}{material_hint}\n\n");
     if !summary.is_empty() {
-        system_prompt.push_str(&format!("\n\n[对话历史摘要]\n{}\n", summary));
+        system_prompt.push_str(&format!("\n\n[对话历史摘要]\n{summary}\n"));
     }
 
     // Inject page context when present
@@ -983,8 +1010,8 @@ pub async fn process_qa_v3_stream(
             })
             .collect();
 
-        let active_title = active_ctx.map(|c| c.title.as_str()).unwrap_or("未知");
-        let active_route = active_ctx.map(|c| c.route.as_str()).unwrap_or("未知");
+        let active_title = active_ctx.map_or("未知", |c| c.title.as_str());
+        let active_route = active_ctx.map_or("未知", |c| c.route.as_str());
 
         system_prompt.push_str(&format!(
             "\n\n## 已注册页面上下文\n\
@@ -1032,11 +1059,13 @@ pub async fn process_qa_v3_stream(
                 &memory_store.client,
                 &memory_store.collection_name,
                 embedding_model_name,
-                session.id,
-                tenant_id,
-                &request.instruction,
                 &strategy,
-                &history,
+                &RecallHistoryParams {
+                    session_id: session.id,
+                    tenant_id,
+                    query: &request.instruction,
+                    history_db: &history,
+                },
             )
             .await
             .unwrap_or_default();
@@ -1045,7 +1074,7 @@ pub async fn process_qa_v3_stream(
             let recent_msg_ids: std::collections::HashSet<Uuid> =
                 recent_history.iter().map(|m| m.id).collect();
 
-            let mut deduped = recalled.clone();
+            let mut deduped = recalled;
             deduped
                 .relevant_messages
                 .retain(|m| !recent_msg_ids.contains(&m.message_id));
@@ -1084,7 +1113,7 @@ pub async fn process_qa_v3_stream(
     let _agent_guard = agent_span.enter();
 
     send_event(
-        &tx,
+        tx,
         QaEvent::PhaseChanged {
             phase: QaPhase::GeneratingAnswer,
         },
@@ -1172,7 +1201,7 @@ pub async fn process_qa_v3_stream(
             },
             "semantic_recall": {
                 "strategy": config.history_strategy,
-                "context_length": relevant_context.as_ref().map(|c| c.len()).unwrap_or(0),
+                "context_length": relevant_context.as_ref().map_or(0, |c| c.len()),
                 "has_recall": relevant_context.is_some(),
             }
         });
@@ -1224,7 +1253,7 @@ pub async fn process_qa_v3_stream(
                 StreamedAssistantContent::Text(text),
             )) => {
                 final_answer.push_str(&text.text);
-                if send_event(&tx, QaEvent::AnswerToken { token: text.text })
+                if send_event(tx, QaEvent::AnswerToken { token: text.text })
                     .await
                     .is_err()
                 {
@@ -1295,29 +1324,31 @@ pub async fn process_qa_v3_stream(
                     Some(serde_json::Value::Object(obj))
                 };
                 let error_content = if final_answer.is_empty() {
-                    format!("⚠️ 回答生成失败：{}", e)
+                    format!("⚠️ 回答生成失败：{e}")
                 } else {
-                    format!("{}\n\n⚠️ 后续生成失败：{}", final_answer, e)
+                    format!("{final_answer}\n\n⚠️ 后续生成失败：{e}")
                 };
                 let _ = chat_service::create_message(
                     db,
-                    session.id,
-                    tenant_id,
-                    user_id,
-                    "assistant".to_string(),
-                    error_content,
-                    None,
-                    None,
-                    None,
-                    tool_usage_json,
-                    0,
-                    0,
-                    0,
+                    &CreateMessageParams {
+                        session_id: session.id,
+                        tenant_id,
+                        user_id,
+                        role: "assistant".to_string(),
+                        content: error_content,
+                        material_refs: None,
+                        intent: None,
+                        strategy: None,
+                        token_usage: tool_usage_json,
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
                 )
                 .await;
 
                 let _ = send_event(
-                    &tx,
+                    tx,
                     QaEvent::Error {
                         message: e.to_string(),
                     },
@@ -1342,7 +1373,7 @@ pub async fn process_qa_v3_stream(
 
     if client_connected {
         send_event(
-            &tx,
+            tx,
             QaEvent::PhaseChanged {
                 phase: QaPhase::Persisting,
             },
@@ -1385,30 +1416,31 @@ pub async fn process_qa_v3_stream(
     // Collect citations from search_knowledge_base tool calls
     let citations = records_hook.take_citations();
 
-    let (prompt_tokens, completion_tokens, total_tokens) = captured_usage
-        .map(|u| {
+    let (prompt_tokens, completion_tokens, total_tokens) =
+        captured_usage.map_or((0, 0, 0), |u| {
             (
                 u.input_tokens as i32,
                 u.output_tokens as i32,
                 u.total_tokens as i32,
             )
-        })
-        .unwrap_or((0, 0, 0));
+        });
 
     let assistant_msg = chat_service::create_message(
         db,
-        session.id,
-        tenant_id,
-        user_id,
-        "assistant".to_string(),
-        final_answer.clone(),
-        None,
-        None,
-        None,
-        tool_usage_json,
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
+        &CreateMessageParams {
+            session_id: session.id,
+            tenant_id,
+            user_id,
+            role: "assistant".to_string(),
+            content: final_answer.clone(),
+            material_refs: None,
+            intent: None,
+            strategy: None,
+            token_usage: tool_usage_json,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+        },
     )
     .await
     .map_err(|e| {
@@ -1419,14 +1451,16 @@ pub async fn process_qa_v3_stream(
     spawn_index_message(
         memory_store,
         embedding_client,
-        embedding_model_name,
-        session.id,
-        tenant_id,
-        assistant_msg.id,
-        "assistant",
-        &final_answer,
-        false,
-        ((history.len() + 1) as i32 + 1) / 2,
+        &SpawnIndexParams {
+            embedding_model_name: embedding_model_name.to_string(),
+            session_id: session.id,
+            tenant_id,
+            msg_id: assistant_msg.id,
+            role: "assistant".to_string(),
+            content: final_answer.clone(),
+            has_material: false,
+            turn_index: ((history.len() + 1) as i32 + 1) / 2,
+        },
     );
 
     // Update session title if first message
@@ -1451,7 +1485,7 @@ pub async fn process_qa_v3_stream(
 
     if client_connected {
         send_event(
-            &tx,
+            tx,
             QaEvent::Completed {
                 response: QaStreamResponse {
                     answer: final_answer,

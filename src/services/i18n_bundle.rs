@@ -60,9 +60,7 @@ fn cache_key_etag(locale: &str, namespace: &str, tenant: &str) -> String {
 }
 
 fn tenant_str(tenant_id: Option<Uuid>) -> String {
-    tenant_id
-        .map(|id| id.to_string())
-        .unwrap_or_else(|| "global".to_string())
+    tenant_id.map_or_else(|| "global".to_string(), |id| id.to_string())
 }
 
 // ── Revision helpers ────────────────────────────────────────────────────────
@@ -88,29 +86,26 @@ where
 
     let existing = query.one(txn).await.db_err()?;
 
-    let new_rev = match existing {
-        Some(row) => {
-            let next = row.revision + 1;
-            let am = i18n_bundle_revisions::ActiveModel {
-                id: ActiveValue::Unchanged(row.id),
-                revision: ActiveValue::Set(next),
-                ..Default::default()
-            };
-            am.update(txn).await.db_err()?;
-            next
-        }
-        None => {
-            let am = i18n_bundle_revisions::ActiveModel {
-                locale: ActiveValue::Set(locale.to_string()),
-                namespace: ActiveValue::Set(namespace.to_string()),
-                scope: ActiveValue::Set(scope.to_string()),
-                tenant_id: ActiveValue::Set(tenant_id),
-                revision: ActiveValue::Set(1),
-                ..Default::default()
-            };
-            am.insert(txn).await.db_err()?;
-            1
-        }
+    let new_rev = if let Some(row) = existing {
+        let next = row.revision + 1;
+        let am = i18n_bundle_revisions::ActiveModel {
+            id: ActiveValue::Unchanged(row.id),
+            revision: ActiveValue::Set(next),
+            ..Default::default()
+        };
+        am.update(txn).await.db_err()?;
+        next
+    } else {
+        let am = i18n_bundle_revisions::ActiveModel {
+            locale: ActiveValue::Set(locale.to_string()),
+            namespace: ActiveValue::Set(namespace.to_string()),
+            scope: ActiveValue::Set(scope.to_string()),
+            tenant_id: ActiveValue::Set(tenant_id),
+            revision: ActiveValue::Set(1),
+            ..Default::default()
+        };
+        am.insert(txn).await.db_err()?;
+        1
     };
 
     Ok(new_rev)

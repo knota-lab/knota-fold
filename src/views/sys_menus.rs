@@ -57,13 +57,13 @@ pub struct SysMenuTreeResponse {
     pub remark: Option<String>,
     pub status: String,
     pub version: i32,
-    pub children: Vec<SysMenuTreeResponse>,
+    pub children: Vec<Self>,
 }
 
 impl SysMenuTreeResponse {
     pub fn from_model(
         m: &crate::models::_entities::sys_menus::Model,
-        children: Vec<SysMenuTreeResponse>,
+        children: Vec<Self>,
     ) -> Self {
         Self {
             id: m.id.to_string(),

@@ -14,7 +14,7 @@ pub struct MergedMenuTreeResponse {
     pub menu_type: String,
     pub is_cache: bool,
     pub sort_order: i32,
-    pub children: Vec<MergedMenuTreeResponse>,
+    pub children: Vec<Self>,
 }
 
 #[derive(Debug, Deserialize)]

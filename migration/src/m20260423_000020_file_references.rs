@@ -83,14 +83,7 @@ impl MigrationTrait for Migration {
         let backend = m.get_database_backend();
         m.get_connection()
             .execute_unprepared(match backend {
-                sea_orm::DatabaseBackend::Postgres => {
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_file_refs_active \
-                     ON file_references (tenant_id, file_id, resource_type, resource_id, field_name) \
-                     WHERE deleted_at IS NULL"
-                }
-                // SQLite (used by some integration tests) supports partial
-                // indexes with the same syntax.
-                sea_orm::DatabaseBackend::Sqlite => {
+                sea_orm::DatabaseBackend::Postgres | sea_orm::DatabaseBackend::Sqlite => {
                     "CREATE UNIQUE INDEX IF NOT EXISTS uq_file_refs_active \
                      ON file_references (tenant_id, file_id, resource_type, resource_id, field_name) \
                      WHERE deleted_at IS NULL"

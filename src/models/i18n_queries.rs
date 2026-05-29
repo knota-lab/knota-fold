@@ -38,14 +38,12 @@ pub async fn read_revisions(
 ) -> Result<(i64, i64), DbErr> {
     let global_rev = rev_model::Model::find_global(db, locale, namespace)
         .await?
-        .map(|r| r.revision)
-        .unwrap_or(0);
+        .map_or(0, |r| r.revision);
 
     let tenant_rev = if let Some(tid) = tenant_id {
         rev_model::Model::find_tenant(db, locale, namespace, tid)
             .await?
-            .map(|r| r.revision)
-            .unwrap_or(0)
+            .map_or(0, |r| r.revision)
     } else {
         0
     };

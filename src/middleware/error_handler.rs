@@ -85,12 +85,11 @@ async fn patch_response(response: Response) -> Response {
 
     // Read body bytes — need to take ownership since `to_bytes` consumes Body.
     let (parts, body) = response.into_parts();
-    let body_bytes = match axum::body::to_bytes(body, 4096).await {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            let fallback = Response::from_parts(parts, Body::from(Bytes::new()));
-            return fallback;
-        }
+    let body_bytes = if let Ok(bytes) = axum::body::to_bytes(body, 4096).await {
+        bytes
+    } else {
+        let fallback = Response::from_parts(parts, Body::from(Bytes::new()));
+        return fallback;
     };
     let mut response = Response::from_parts(parts, Body::from(body_bytes.clone()));
 
@@ -128,7 +127,7 @@ async fn patch_response(response: Response) -> Response {
     let (code, status_text) = if error_val.contains('.') {
         // Format B: Error::CustomError — error field is the code.
         (
-            error_val.clone(),
+            error_val,
             status.canonical_reason().unwrap_or("Error").to_string(),
         )
     } else {

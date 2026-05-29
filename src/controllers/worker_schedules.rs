@@ -351,60 +351,60 @@ pub(crate) async fn trigger(
 
     // Extract the current span ID so the worker can set it as parent.
     // The controller runs inside TracingLayer's "http.request" span.
-    let parent_span_id: Option<String> = tracing::Span::current()
-        .with_subscriber(|(id, _)| id.into_u64().to_string())
-        .into();
+    let parent_span_id: Option<String> =
+        tracing::Span::current().with_subscriber(|(id, _)| id.into_u64().to_string());
 
     let execution = scheduled_worker_executions::Model::create_pending(
         db,
-        schedule.id,
-        worker_def.id,
-        tc.tenant_id,
-        "manual",
-        schedule.params_json.clone(),
-        Some(tc.user_id),
-        trace_id.clone(),
-        parent_span_id.clone(),
+        &scheduled_worker_executions::CreateExecutionParams {
+            schedule_id: schedule.id,
+            worker_def_id: worker_def.id,
+            tenant_id: tc.tenant_id,
+            trigger_type: "manual".to_string(),
+            params_json: schedule.params_json.clone(),
+            triggered_by: Some(tc.user_id),
+            traceparent: trace_id.clone(),
+            parent_span_id: parent_span_id.clone(),
+        },
     )
     .await?;
 
-    let result = match worker_code.as_str() {
-        "test_job" => {
-            use crate::workers::test_job_worker::{TestJobWorker, TestJobWorkerArgs};
+    let result = if worker_code.as_str() == "test_job" {
+        use crate::workers::test_job_worker::{TestJobWorker, TestJobWorkerArgs};
 
-            TestJobWorker::perform_later(
-                &ctx,
-                TestJobWorkerArgs {
-                    execution_id: execution.id,
-                    worker_code: worker_def.code.clone(),
-                    tenant_id: tc.tenant_id,
-                    params_json: schedule.params_json.clone(),
-                    retry_count: 0,
-                    trace_id,
-                    parent_span_id,
-                },
-            )
-            .await
-        }
-        _ => {
-            tracing::error!(worker_code = %worker_code, "unknown worker code");
-            scheduled_worker_executions::Model::update_status(
-                db,
-                execution.id,
-                "skipped",
-                None,
-                None,
-                None,
-                None,
-                Some(format!("unknown worker code: {worker_code}")),
-                None,
-            )
-            .await?;
-            return crate::views::errors::bad_request(
-                "worker_schedule.create_failed",
-                &format!("unknown worker code: {worker_code}"),
-            );
-        }
+        TestJobWorker::perform_later(
+            &ctx,
+            TestJobWorkerArgs {
+                execution_id: execution.id,
+                worker_code: worker_def.code.clone(),
+                tenant_id: tc.tenant_id,
+                params_json: schedule.params_json.clone(),
+                retry_count: 0,
+                trace_id,
+                parent_span_id,
+            },
+        )
+        .await
+    } else {
+        tracing::error!(worker_code = %worker_code, "unknown worker code");
+        scheduled_worker_executions::Model::update_status(
+            db,
+            execution.id,
+            &scheduled_worker_executions::UpdateStatusParams {
+                status: "skipped".to_string(),
+                started_at: None,
+                finished_at: None,
+                duration_ms: None,
+                output: None,
+                error_message: Some(format!("unknown worker code: {worker_code}")),
+                traceparent: None,
+            },
+        )
+        .await?;
+        return crate::views::errors::bad_request(
+            "worker_schedule.create_failed",
+            format!("unknown worker code: {worker_code}"),
+        );
     };
 
     if let Err(e) = result {

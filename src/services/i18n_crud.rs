@@ -58,29 +58,26 @@ pub async fn upsert_global_translation(
         .as_ref()
         .map(|m| serde_json::json!({ "value": m.value }));
 
-    let model = match existing {
-        Some(row) => {
-            let am = i18n_translations::ActiveModel {
-                id: ActiveValue::Unchanged(row.id),
-                value: ActiveValue::Set(params.value.clone()),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.update(&txn).await.db_err()?
-        }
-        None => {
-            let am = i18n_translations::ActiveModel {
-                namespace: ActiveValue::Set(params.namespace.clone()),
-                key: ActiveValue::Set(params.key.clone()),
-                locale: ActiveValue::Set(params.locale.clone()),
-                value: ActiveValue::Set(params.value.clone()),
-                scope: ActiveValue::Set(trans_model::SCOPE_GLOBAL.to_string()),
-                tenant_id: ActiveValue::Set(None),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.insert(&txn).await.db_err()?
-        }
+    let model = if let Some(row) = existing {
+        let am = i18n_translations::ActiveModel {
+            id: ActiveValue::Unchanged(row.id),
+            value: ActiveValue::Set(params.value.clone()),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.update(&txn).await.db_err()?
+    } else {
+        let am = i18n_translations::ActiveModel {
+            namespace: ActiveValue::Set(params.namespace.clone()),
+            key: ActiveValue::Set(params.key.clone()),
+            locale: ActiveValue::Set(params.locale.clone()),
+            value: ActiveValue::Set(params.value.clone()),
+            scope: ActiveValue::Set(trans_model::SCOPE_GLOBAL.to_string()),
+            tenant_id: ActiveValue::Set(None),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.insert(&txn).await.db_err()?
     };
 
     bump_global_revision(&txn, &params.locale, &params.namespace).await?;
@@ -253,29 +250,26 @@ pub async fn upsert_tenant_override(
         .as_ref()
         .map(|m| serde_json::json!({ "value": m.value }));
 
-    let model = match existing {
-        Some(row) => {
-            let am = i18n_translations::ActiveModel {
-                id: ActiveValue::Unchanged(row.id),
-                value: ActiveValue::Set(params.value.clone()),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.update(&txn).await.db_err()?
-        }
-        None => {
-            let am = i18n_translations::ActiveModel {
-                namespace: ActiveValue::Set(params.namespace.clone()),
-                key: ActiveValue::Set(params.key.clone()),
-                locale: ActiveValue::Set(params.locale.clone()),
-                value: ActiveValue::Set(params.value.clone()),
-                scope: ActiveValue::Set(trans_model::SCOPE_TENANT.to_string()),
-                tenant_id: ActiveValue::Set(Some(tenant_id)),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.insert(&txn).await.db_err()?
-        }
+    let model = if let Some(row) = existing {
+        let am = i18n_translations::ActiveModel {
+            id: ActiveValue::Unchanged(row.id),
+            value: ActiveValue::Set(params.value.clone()),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.update(&txn).await.db_err()?
+    } else {
+        let am = i18n_translations::ActiveModel {
+            namespace: ActiveValue::Set(params.namespace.clone()),
+            key: ActiveValue::Set(params.key.clone()),
+            locale: ActiveValue::Set(params.locale.clone()),
+            value: ActiveValue::Set(params.value.clone()),
+            scope: ActiveValue::Set(trans_model::SCOPE_TENANT.to_string()),
+            tenant_id: ActiveValue::Set(Some(tenant_id)),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.insert(&txn).await.db_err()?
     };
 
     bump_tenant_revision(&txn, &params.locale, &params.namespace, tenant_id).await?;
@@ -532,29 +526,26 @@ where
         .await
         .db_err()?;
     let was_update = existing.is_some();
-    match existing {
-        Some(row) => {
-            let am = i18n_translations::ActiveModel {
-                id: ActiveValue::Unchanged(row.id),
-                value: ActiveValue::Set(value.to_string()),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.update(txn).await.db_err()?;
-        }
-        None => {
-            let am = i18n_translations::ActiveModel {
-                namespace: ActiveValue::Set(namespace.to_string()),
-                key: ActiveValue::Set(key.to_string()),
-                locale: ActiveValue::Set(locale.to_string()),
-                value: ActiveValue::Set(value.to_string()),
-                scope: ActiveValue::Set(trans_model::SCOPE_GLOBAL.to_string()),
-                tenant_id: ActiveValue::Set(None),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.insert(txn).await.db_err()?;
-        }
+    if let Some(row) = existing {
+        let am = i18n_translations::ActiveModel {
+            id: ActiveValue::Unchanged(row.id),
+            value: ActiveValue::Set(value.to_string()),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.update(txn).await.db_err()?;
+    } else {
+        let am = i18n_translations::ActiveModel {
+            namespace: ActiveValue::Set(namespace.to_string()),
+            key: ActiveValue::Set(key.to_string()),
+            locale: ActiveValue::Set(locale.to_string()),
+            value: ActiveValue::Set(value.to_string()),
+            scope: ActiveValue::Set(trans_model::SCOPE_GLOBAL.to_string()),
+            tenant_id: ActiveValue::Set(None),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.insert(txn).await.db_err()?;
     }
     Ok(was_update)
 }
@@ -576,29 +567,26 @@ where
             .await
             .db_err()?;
     let was_update = existing.is_some();
-    match existing {
-        Some(row) => {
-            let am = i18n_translations::ActiveModel {
-                id: ActiveValue::Unchanged(row.id),
-                value: ActiveValue::Set(value.to_string()),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.update(txn).await.db_err()?;
-        }
-        None => {
-            let am = i18n_translations::ActiveModel {
-                namespace: ActiveValue::Set(namespace.to_string()),
-                key: ActiveValue::Set(key.to_string()),
-                locale: ActiveValue::Set(locale.to_string()),
-                value: ActiveValue::Set(value.to_string()),
-                scope: ActiveValue::Set(trans_model::SCOPE_TENANT.to_string()),
-                tenant_id: ActiveValue::Set(Some(tenant_id)),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.insert(txn).await.db_err()?;
-        }
+    if let Some(row) = existing {
+        let am = i18n_translations::ActiveModel {
+            id: ActiveValue::Unchanged(row.id),
+            value: ActiveValue::Set(value.to_string()),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.update(txn).await.db_err()?;
+    } else {
+        let am = i18n_translations::ActiveModel {
+            namespace: ActiveValue::Set(namespace.to_string()),
+            key: ActiveValue::Set(key.to_string()),
+            locale: ActiveValue::Set(locale.to_string()),
+            value: ActiveValue::Set(value.to_string()),
+            scope: ActiveValue::Set(trans_model::SCOPE_TENANT.to_string()),
+            tenant_id: ActiveValue::Set(Some(tenant_id)),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.insert(txn).await.db_err()?;
     }
     Ok(was_update)
 }

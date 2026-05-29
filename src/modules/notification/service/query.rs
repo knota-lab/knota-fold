@@ -20,7 +20,7 @@ pub async fn get_inbox(
 ) -> loco_rs::Result<crate::views::pagination::PaginatedResponse<views::InboxItemResponse>>
 {
     let page = page.max(1);
-    let page_size = page_size.max(1).min(100);
+    let page_size = page_size.clamp(1, 100);
 
     // Fetch recipient records
     let recipients =
@@ -38,7 +38,7 @@ pub async fn get_inbox(
     let total_pages = if total_items == 0 {
         0
     } else {
-        total_items.div_ceil(page_size as u64) as u64
+        total_items.div_ceil(page_size) as u64
     };
 
     // Resolve notification + sender info for each recipient

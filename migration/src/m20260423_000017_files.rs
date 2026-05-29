@@ -125,14 +125,14 @@ impl MigrationTrait for Migration {
         // so we use raw SQL. Both SQLite and PostgreSQL accept this syntax.
         m.get_connection()
             .execute_unprepared(
-                r#"CREATE INDEX IF NOT EXISTS idx_files_fast_dedup ON files(tenant_id, content_hash_fast, size) WHERE content_hash_fast IS NOT NULL AND deleted_at IS NULL"#,
+                r"CREATE INDEX IF NOT EXISTS idx_files_fast_dedup ON files(tenant_id, content_hash_fast, size) WHERE content_hash_fast IS NOT NULL AND deleted_at IS NULL",
             )
             .await?;
 
         // Partial index for purge sweeper: only soft-deleted rows with purge_at scheduled.
         m.get_connection()
             .execute_unprepared(
-                r#"CREATE INDEX IF NOT EXISTS idx_files_purge_at ON files(purge_at) WHERE status = 'DELETED' AND purge_at IS NOT NULL"#,
+                r"CREATE INDEX IF NOT EXISTS idx_files_purge_at ON files(purge_at) WHERE status = 'DELETED' AND purge_at IS NOT NULL",
             )
             .await?;
 

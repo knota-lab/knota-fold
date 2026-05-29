@@ -80,8 +80,7 @@ pub async fn list_users(
         |m| {
             let (code, name) = tenant_info
                 .get(&m.tenant_id)
-                .map(|(c, n)| (c.as_str(), n.as_str()))
-                .unwrap_or(("", ""));
+                .map_or(("", ""), |(c, n)| (c.as_str(), n.as_str()));
             let unlock_at = lock_map.get(&m.email.to_lowercase()).copied();
             UserResponse::from_model_with_lock(m, code, name, unlock_at)
         },

@@ -263,64 +263,62 @@ pub async fn toggle_dict_type_status(
         Some(tid) => {
             if existing.tenant_id.is_none() {
                 // System row → check for existing override first
-                match dict_types_model::Model::find_override_by_tenant_and_source(
-                    db,
-                    tid,
-                    existing.id,
-                )
-                .await
+                if let Ok(override_row) =
+                    dict_types_model::Model::find_override_by_tenant_and_source(
+                        db,
+                        tid,
+                        existing.id,
+                    )
+                    .await
                 {
-                    Ok(override_row) => {
-                        // Toggle existing override
-                        let before = DictTypeAuditSnapshot::from(&override_row);
-                        let new_status = flip_status(&override_row.status);
-                        let am = dict_types_model::ActiveModel {
-                            status: ActiveValue::Set(new_status),
-                            version: ActiveValue::Set(version),
-                            ..Default::default()
-                        };
-                        let updated = dict_types_model::Model::update_with_version(
-                            db,
-                            override_row.id,
-                            am,
-                            user_id,
-                        )
-                        .await
-                        .model_err()?;
-                        let after = DictTypeAuditSnapshot::from(&updated);
-                        audit_service::log(
-                            db,
-                            audit_ctx,
-                            AuditAction::Update,
-                            "dict_type",
-                            &updated.id.to_string(),
-                            Some(&before),
-                            Some(&after),
-                        )
-                        .await
-                        .model_err()?;
-                        Ok(updated)
-                    }
-                    Err(_) => {
-                        // No override yet → create one with disabled status
-                        let updated = create_type_override_with_status(
-                            db, &existing, tid, user_id, "disabled",
-                        )
-                        .await?;
-                        let after = DictTypeAuditSnapshot::from(&updated);
-                        audit_service::log(
-                            db,
-                            audit_ctx,
-                            AuditAction::Update,
-                            "dict_type",
-                            &updated.id.to_string(),
-                            None::<&DictTypeAuditSnapshot>,
-                            Some(&after),
-                        )
-                        .await
-                        .model_err()?;
-                        Ok(updated)
-                    }
+                    // Toggle existing override
+                    let before = DictTypeAuditSnapshot::from(&override_row);
+                    let new_status = flip_status(&override_row.status);
+                    let am = dict_types_model::ActiveModel {
+                        status: ActiveValue::Set(new_status),
+                        version: ActiveValue::Set(version),
+                        ..Default::default()
+                    };
+                    let updated = dict_types_model::Model::update_with_version(
+                        db,
+                        override_row.id,
+                        am,
+                        user_id,
+                    )
+                    .await
+                    .model_err()?;
+                    let after = DictTypeAuditSnapshot::from(&updated);
+                    audit_service::log(
+                        db,
+                        audit_ctx,
+                        AuditAction::Update,
+                        "dict_type",
+                        &updated.id.to_string(),
+                        Some(&before),
+                        Some(&after),
+                    )
+                    .await
+                    .model_err()?;
+                    Ok(updated)
+                } else {
+                    // No override yet → create one with disabled status
+                    let updated = create_type_override_with_status(
+                        db, &existing, tid, user_id, "disabled",
+                    )
+                    .await?;
+                    let after = DictTypeAuditSnapshot::from(&updated);
+                    audit_service::log(
+                        db,
+                        audit_ctx,
+                        AuditAction::Update,
+                        "dict_type",
+                        &updated.id.to_string(),
+                        None::<&DictTypeAuditSnapshot>,
+                        Some(&after),
+                    )
+                    .await
+                    .model_err()?;
+                    Ok(updated)
                 }
             } else if existing.tenant_id == Some(tid) {
                 // Own row → direct toggle
@@ -684,64 +682,62 @@ pub async fn toggle_dict_item_status(
         Some(tid) => {
             if existing.tenant_id.is_none() {
                 // System row → check for existing override
-                match dict_items_model::Model::find_override_by_tenant_and_source(
-                    db,
-                    tid,
-                    existing.id,
-                )
-                .await
+                if let Ok(override_row) =
+                    dict_items_model::Model::find_override_by_tenant_and_source(
+                        db,
+                        tid,
+                        existing.id,
+                    )
+                    .await
                 {
-                    Ok(override_row) => {
-                        // Toggle existing override
-                        let before = DictItemAuditSnapshot::from(&override_row);
-                        let new_status = flip_status(&override_row.status);
-                        let am = dict_items_model::ActiveModel {
-                            status: ActiveValue::Set(new_status),
-                            version: ActiveValue::Set(version),
-                            ..Default::default()
-                        };
-                        let updated = dict_items_model::Model::update_with_version(
-                            db,
-                            override_row.id,
-                            am,
-                            user_id,
-                        )
-                        .await
-                        .model_err()?;
-                        let after = DictItemAuditSnapshot::from(&updated);
-                        audit_service::log(
-                            db,
-                            audit_ctx,
-                            AuditAction::Update,
-                            "dict_item",
-                            &updated.id.to_string(),
-                            Some(&before),
-                            Some(&after),
-                        )
-                        .await
-                        .model_err()?;
-                        Ok(updated)
-                    }
-                    Err(_) => {
-                        // No override yet → create one with disabled status
-                        let updated = create_item_override_with_status(
-                            db, &existing, tid, user_id, "disabled",
-                        )
-                        .await?;
-                        let after = DictItemAuditSnapshot::from(&updated);
-                        audit_service::log(
-                            db,
-                            audit_ctx,
-                            AuditAction::Update,
-                            "dict_item",
-                            &updated.id.to_string(),
-                            None::<&DictItemAuditSnapshot>,
-                            Some(&after),
-                        )
-                        .await
-                        .model_err()?;
-                        Ok(updated)
-                    }
+                    // Toggle existing override
+                    let before = DictItemAuditSnapshot::from(&override_row);
+                    let new_status = flip_status(&override_row.status);
+                    let am = dict_items_model::ActiveModel {
+                        status: ActiveValue::Set(new_status),
+                        version: ActiveValue::Set(version),
+                        ..Default::default()
+                    };
+                    let updated = dict_items_model::Model::update_with_version(
+                        db,
+                        override_row.id,
+                        am,
+                        user_id,
+                    )
+                    .await
+                    .model_err()?;
+                    let after = DictItemAuditSnapshot::from(&updated);
+                    audit_service::log(
+                        db,
+                        audit_ctx,
+                        AuditAction::Update,
+                        "dict_item",
+                        &updated.id.to_string(),
+                        Some(&before),
+                        Some(&after),
+                    )
+                    .await
+                    .model_err()?;
+                    Ok(updated)
+                } else {
+                    // No override yet → create one with disabled status
+                    let updated = create_item_override_with_status(
+                        db, &existing, tid, user_id, "disabled",
+                    )
+                    .await?;
+                    let after = DictItemAuditSnapshot::from(&updated);
+                    audit_service::log(
+                        db,
+                        audit_ctx,
+                        AuditAction::Update,
+                        "dict_item",
+                        &updated.id.to_string(),
+                        None::<&DictItemAuditSnapshot>,
+                        Some(&after),
+                    )
+                    .await
+                    .model_err()?;
+                    Ok(updated)
                 }
             } else if existing.tenant_id == Some(tid) {
                 // Own row → direct toggle

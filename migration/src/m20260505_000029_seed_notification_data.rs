@@ -102,8 +102,7 @@ async fn seed(manager: &SchemaManager<'_>, table: &str, yaml: &str) -> Result<()
 /// Map Rust field names in YAML fixtures to actual DB column names.
 fn remap_column<'a>(table: &str, key: &'a str) -> &'a str {
     match (table, key) {
-        ("permissions", "permission_type") => "type",
-        ("sys_menus", "menu_type") => "type",
+        ("permissions", "permission_type") | ("sys_menus", "menu_type") => "type",
         _ => key,
     }
 }

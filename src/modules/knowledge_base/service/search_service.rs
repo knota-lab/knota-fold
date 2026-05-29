@@ -7,25 +7,31 @@ use crate::modules::knowledge_base::providers::SharedEmbeddingClient;
 
 use super::qa_types::Citation;
 
+/// Parameters for [`hybrid_search`].
+#[derive(Debug)]
+pub struct HybridSearchParams {
+    pub model_name: String,
+    pub query: String,
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub limit: usize,
+    pub document_ids: Option<Vec<Uuid>>,
+}
+
 /// Perform hybrid search (dense + sparse) using the search provider.
-#[tracing::instrument(skip(embedding_client, search_provider), fields(tenant_id = %tenant_id, query_len = query.len(), limit))]
+#[tracing::instrument(skip(embedding_client, search_provider, params), fields(tenant_id = %params.tenant_id, query_len = params.query.len(), limit = params.limit))]
 pub async fn hybrid_search(
     embedding_client: &SharedEmbeddingClient,
     search_provider: &SharedSearchProvider,
-    model_name: &str,
-    query: &str,
-    tenant_id: Uuid,
-    user_id: Uuid,
-    limit: usize,
-    document_ids: Option<Vec<Uuid>>,
+    params: &HybridSearchParams,
 ) -> Result<Vec<SearchResult>, KnowledgeBaseError> {
     use rig::client::EmbeddingsClient;
     use rig::embeddings::EmbeddingModel;
 
     // Embed the query
-    let model = embedding_client.0.embedding_model(model_name);
+    let model = embedding_client.0.embedding_model(&params.model_name);
     let embedding: rig::embeddings::Embedding = model
-        .embed_text(query)
+        .embed_text(&params.query)
         .await
         .map_err(|e| KnowledgeBaseError::EmbeddingError(e.to_string()))?;
 
@@ -34,14 +40,20 @@ pub async fn hybrid_search(
 
     // Build filter
     let filter = Some(SearchFilter {
-        document_ids,
+        document_ids: params.document_ids.clone(),
         min_score: None,
-        user_id: Some(user_id),
+        user_id: Some(params.user_id),
     });
 
     // Hybrid search
     search_provider
-        .search(&query_vector, query, tenant_id, limit, filter)
+        .search(
+            &query_vector,
+            &params.query,
+            params.tenant_id,
+            params.limit,
+            filter,
+        )
         .await
 }
 

@@ -11,10 +11,8 @@ impl ActiveModelBehavior for crate::models::_entities::document_lines::ActiveMod
         C: ConnectionTrait,
     {
         let mut this = self;
-        if insert {
-            if this.created_at.is_not_set() {
-                this.created_at = ActiveValue::Set(Utc::now().naive_utc());
-            }
+        if insert && this.created_at.is_not_set() {
+            this.created_at = ActiveValue::Set(Utc::now().naive_utc());
         }
         Ok(this)
     }

@@ -12,18 +12,33 @@ use crate::models::_entities::{
 };
 use crate::utils::error::IntoAppError;
 
+/// Parameters for [`create_notification`].
+#[derive(Debug)]
+pub struct CreateNotificationParams<'a> {
+    pub tenant_id: Option<Uuid>,
+    pub created_by: Uuid,
+    pub title: &'a str,
+    pub content: &'a str,
+    pub notification_type: &'a str,
+    pub priority: &'a str,
+    pub target_role_codes: Option<&'a [String]>,
+}
+
 /// Unified entry point for creating notifications (called by controller).
 #[tracing::instrument(skip(db))]
 pub async fn create_notification(
     db: &DatabaseConnection,
-    tenant_id: Option<Uuid>,
-    created_by: Uuid,
-    title: &str,
-    content: &str,
-    notification_type: &str,
-    priority: &str,
-    target_role_codes: Option<&[String]>,
+    params: &CreateNotificationParams<'_>,
 ) -> loco_rs::Result<notifications::Model> {
+    let CreateNotificationParams {
+        tenant_id,
+        created_by,
+        title,
+        content,
+        notification_type,
+        priority,
+        target_role_codes,
+    } = *params;
     let txn = db.begin().await.db_err()?;
 
     // 1. Insert notification record

@@ -1,5 +1,7 @@
 #![allow(elided_lifetimes_in_paths)]
 #![allow(clippy::wildcard_imports)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::items_after_statements)]
 pub use sea_orm_migration::prelude::*;
 mod m20220101_000001_users;
 mod m20250411_000002_tenants;

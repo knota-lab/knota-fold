@@ -125,17 +125,19 @@ impl Tool for SearchKnowledgeBaseTool {
         fields(tool = "search_knowledge_base", tenant_id = %self.tenant_id)
     )]
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let top_k = args.top_k.unwrap_or(5).min(20).max(1);
+        let top_k = args.top_k.unwrap_or(5).clamp(1, 20);
 
         let results = search_service::hybrid_search(
             &self.embedding_client,
             &self.search_provider,
-            &self.embedding_model_name,
-            &args.query,
-            self.tenant_id,
-            self.user_id,
-            top_k as usize,
-            None,
+            &search_service::HybridSearchParams {
+                model_name: self.embedding_model_name.clone(),
+                query: args.query.clone(),
+                tenant_id: self.tenant_id,
+                user_id: self.user_id,
+                limit: top_k as usize,
+                document_ids: None,
+            },
         )
         .await
         .map_err(|e| SearchKBError(e.to_string()))?;
@@ -162,8 +164,7 @@ impl Tool for SearchKnowledgeBaseTool {
                     .char_indices()
                     .take_while(|(i, c)| i + c.len_utf8() <= 500)
                     .last()
-                    .map(|(i, c)| i + c.len_utf8())
-                    .unwrap_or(0);
+                    .map_or(0, |(i, c)| i + c.len_utf8());
                 format!("{}…", &r.content[..end])
             } else {
                 r.content.clone()

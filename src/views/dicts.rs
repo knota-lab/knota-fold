@@ -141,14 +141,11 @@ pub struct DictItemTreeResponse {
     pub is_override: bool,
     pub description: Option<String>,
     pub version: i32,
-    pub children: Vec<DictItemTreeResponse>,
+    pub children: Vec<Self>,
 }
 
 impl DictItemTreeResponse {
-    pub fn from_model(
-        m: &dict_items::Model,
-        children: Vec<DictItemTreeResponse>,
-    ) -> Self {
+    pub fn from_model(m: &dict_items::Model, children: Vec<Self>) -> Self {
         let scope = compute_item_scope(m.tenant_id, m.source_item_id);
         Self {
             id: m.id.to_string(),
@@ -168,10 +165,7 @@ impl DictItemTreeResponse {
         }
     }
 
-    pub fn from_effective(
-        e: &EffectiveDictItem,
-        children: Vec<DictItemTreeResponse>,
-    ) -> Self {
+    pub fn from_effective(e: &EffectiveDictItem, children: Vec<Self>) -> Self {
         Self {
             id: e.id.to_string(),
             dict_type_id: e.dict_type_id.to_string(),

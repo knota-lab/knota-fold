@@ -185,7 +185,7 @@ pub(crate) async fn export_session(
     let filename = format!("chat-{}.md", session.created_at.format("%Y%m%d-%H%M%S"));
     headers.insert(
         header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{}\"", filename)
+        format!("attachment; filename=\"{filename}\"")
             .parse::<axum::http::HeaderValue>()
             .loco_err()?,
     );
@@ -414,7 +414,7 @@ fn format_session_markdown(
         }
     }
 
-    md.push_str(&format!("> 对话结束 — 共 {} 轮\n", round));
+    md.push_str(&format!("> 对话结束 — 共 {round} 轮\n"));
     md
 }
 
@@ -454,7 +454,7 @@ pub(crate) async fn debug_export_session(
     );
     headers.insert(
         header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"debug-{}.html\"", session_id)
+        format!("attachment; filename=\"debug-{session_id}.html\"")
             .parse::<axum::http::HeaderValue>()
             .loco_err()?,
     );
@@ -578,7 +578,7 @@ fn format_debug_html(
                 } else {
                     ""
                 };
-                toc_entries.push((toc_round, format!("{}{}", preview, ellipsis)));
+                toc_entries.push((toc_round, format!("{preview}{ellipsis}")));
             }
         }
         if !toc_entries.is_empty() {
@@ -604,8 +604,7 @@ fn format_debug_html(
                 round += 1;
                 html.push_str("<div class=\"msg-card\">\n");
                 html.push_str(&format!(
-                    "<h2 id=\"round-{}\"><span class=\"badge badge-user\">User</span> 消息 #{}</h2>\n",
-                    round, msg_num
+                    "<h2 id=\"round-{round}\"><span class=\"badge badge-user\">User</span> 消息 #{msg_num}</h2>\n"
                 ));
                 html.push_str(&format!(
                     "<div class=\"answer-block\">{}</div>\n",
@@ -624,8 +623,7 @@ fn format_debug_html(
             "assistant" => {
                 html.push_str("<div class=\"msg-card\">\n");
                 html.push_str(&format!(
-                    "<h2><span class=\"badge badge-assistant\">Assistant</span> 消息 #{}</h2>\n",
-                    msg_num
+                    "<h2><span class=\"badge badge-assistant\">Assistant</span> 消息 #{msg_num}</h2>\n"
                 ));
 
                 // Token usage
@@ -707,25 +705,20 @@ fn format_debug_html(
                         let ctx_len = sr
                             .get("context_length")
                             .and_then(|v| v.as_u64())
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|| "—".to_string());
+                            .map_or_else(|| "—".to_string(), |v| v.to_string());
                         let has_recall = sr
                             .get("has_recall")
                             .and_then(|v| v.as_bool())
-                            .map(|b| b.to_string())
-                            .unwrap_or_else(|| "—".to_string());
+                            .map_or_else(|| "—".to_string(), |b| b.to_string());
                         html.push_str("<details><summary>语义检索</summary>\n<table class=\"kv-table\">");
                         html.push_str(&format!(
-                            "<tr><td>策略</td><td>{}</td></tr>",
-                            strategy
+                            "<tr><td>策略</td><td>{strategy}</td></tr>"
                         ));
                         html.push_str(&format!(
-                            "<tr><td>上下文长度</td><td>{}</td></tr>",
-                            ctx_len
+                            "<tr><td>上下文长度</td><td>{ctx_len}</td></tr>"
                         ));
                         html.push_str(&format!(
-                            "<tr><td>有召回</td><td>{}</td></tr>",
-                            has_recall
+                            "<tr><td>有召回</td><td>{has_recall}</td></tr>"
                         ));
                         html.push_str("</table></details>\n");
                     }
@@ -737,8 +730,7 @@ fn format_debug_html(
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
                         html.push_str(&format!(
-                            "<details><summary>Chat History ({} 条消息)</summary>\n<table class=\"kv-table\"><tr><td>#</td><td>角色</td><td>内容/文本数</td><td>工具调用</td></tr>",
-                            mc
+                            "<details><summary>Chat History ({mc} 条消息)</summary>\n<table class=\"kv-table\"><tr><td>#</td><td>角色</td><td>内容/文本数</td><td>工具调用</td></tr>"
                         ));
                         if let Some(msgs) = chs.get("messages").and_then(|v| v.as_array())
                         {
@@ -819,8 +811,7 @@ fn format_debug_html(
                                     "<div class=\"timeline-entry tool-entry\">\n",
                                 );
                                 html.push_str(&format!(
-                                    "<div class=\"timeline-label\">🔧 工具调用 #{} — {} ({}ms)</div>\n",
-                                    round_num, tool_name, duration_ms
+                                    "<div class=\"timeline-label\">🔧 工具调用 #{round_num} — {tool_name} ({duration_ms}ms)</div>\n"
                                 ));
 
                                 // Arguments
@@ -868,7 +859,7 @@ fn format_debug_html(
                 if has_tool_calls {
                     html.push_str("<div class=\"section-title\">工具调用记录</div>\n");
                     let parts_iter: Box<dyn Iterator<Item = &serde_json::Value>> =
-                        if let Some(ref parts) = has_content_parts {
+                        if let Some(parts) = has_content_parts {
                             Box::new(parts.iter().filter(|p| {
                                 p.get("type").and_then(|v| v.as_str())
                                     == Some("tool_call")
@@ -889,7 +880,7 @@ fn format_debug_html(
                         let duration =
                             part.get("durationMs").and_then(|v| v.as_u64()).unwrap_or(0);
                         let time_str = if duration < 1000 {
-                            format!("{}ms", duration)
+                            format!("{duration}ms")
                         } else {
                             format!("{:.1}s", duration as f64 / 1000.0)
                         };
@@ -942,8 +933,7 @@ fn format_debug_html(
     }
 
     html.push_str(&format!(
-        "<hr class=\"round-sep\"><div class=\"meta\">对话结束 — 共 {} 轮</div>\n",
-        round
+        "<hr class=\"round-sep\"><div class=\"meta\">对话结束 — 共 {round} 轮</div>\n"
     ));
     html.push_str("</body>\n</html>\n");
     html

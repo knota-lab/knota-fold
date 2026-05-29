@@ -3,11 +3,11 @@
 //! Three endpoints, all under tenant scope (`/api/...`):
 //!
 //! - `POST   /api/files/{id}/references`  →  attach this file to a
-//!    business resource. Idempotent. Body = [`AttachReferenceRequest`].
+//!   business resource. Idempotent. Body = [`AttachReferenceRequest`].
 //! - `GET    /api/files/{id}/references`  →  list active references
-//!    targeting this file ("X 处使用" detail drawer).
+//!   targeting this file ("X 处使用" detail drawer).
 //! - `DELETE /api/file-references/{id}`   →  soft-detach a single
-//!    reference by its own id.
+//!   reference by its own id.
 //!
 //! See [`crate::controllers::sys_file_references`] for the cross-tenant
 //! mirror used by super-admin tooling.

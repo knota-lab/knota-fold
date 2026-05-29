@@ -48,13 +48,15 @@ where
     scheduled_worker_executions::Model::update_status(
         db,
         execution_id,
-        "running",
-        Some(started_at),
-        None,
-        None,
-        None,
-        None,
-        None,
+        &scheduled_worker_executions::UpdateStatusParams {
+            status: "running".to_string(),
+            started_at: Some(started_at),
+            finished_at: None,
+            duration_ms: None,
+            output: None,
+            error_message: None,
+            traceparent: None,
+        },
     )
     .await?;
 
@@ -79,13 +81,15 @@ where
             scheduled_worker_executions::Model::update_status(
                 db,
                 execution_id,
-                "timeout",
-                None,
-                Some(finished_at),
-                Some(duration_ms),
-                None,
-                Some("execution timed out".to_string()),
-                None,
+                &scheduled_worker_executions::UpdateStatusParams {
+                    status: "timeout".to_string(),
+                    started_at: None,
+                    finished_at: Some(finished_at),
+                    duration_ms: Some(duration_ms),
+                    output: None,
+                    error_message: Some("execution timed out".to_string()),
+                    traceparent: None,
+                },
             ).await?;
             return Ok(());
         }
@@ -100,13 +104,15 @@ where
             scheduled_worker_executions::Model::update_status(
                 db,
                 execution_id,
-                "success",
-                None,
-                Some(finished_at),
-                Some(duration_ms),
-                Some(truncated),
-                None,
-                None,
+                &scheduled_worker_executions::UpdateStatusParams {
+                    status: "success".to_string(),
+                    started_at: None,
+                    finished_at: Some(finished_at),
+                    duration_ms: Some(duration_ms),
+                    output: Some(truncated),
+                    error_message: None,
+                    traceparent: None,
+                },
             )
             .await?;
         }
@@ -131,8 +137,7 @@ fn get_output_max_bytes(ctx: &AppContext) -> usize {
         .typed_settings()
         .ok()
         .flatten()
-        .map(|s| s.output_max_bytes())
-        .unwrap_or(65_536)
+        .map_or(65_536, |s| s.output_max_bytes())
 }
 
 fn truncate_output(output: &str, max_bytes: usize) -> String {
@@ -183,51 +188,52 @@ async fn handle_failure(
             "retrying execution"
         );
 
-        match worker_code {
-            "test_job" => {
-                TestJobWorker::perform_later(
-                    ctx,
-                    TestJobWorkerArgs {
-                        execution_id,
-                        worker_code: worker_code.to_string(),
-                        tenant_id: execution.tenant_id,
-                        params_json: execution.params_json.clone(),
-                        retry_count: new_retry_count,
-                        trace_id: execution.traceparent.clone(),
-                        parent_span_id: execution.parent_span_id.clone(),
-                    },
-                )
-                .await?;
-            }
-            _ => {
-                // TODO: match on worker_code when more workers are added
-                let finished_at = Utc::now().fixed_offset();
-                scheduled_worker_executions::Model::update_status(
-                    db,
+        if worker_code == "test_job" {
+            TestJobWorker::perform_later(
+                ctx,
+                TestJobWorkerArgs {
                     execution_id,
-                    "failed",
-                    None,
-                    Some(finished_at),
-                    None,
-                    None,
-                    Some(format!("unsupported retry worker: {worker_code}; original error: {error}")),
-                    None,
-                )
-                .await?;
-            }
+                    worker_code: worker_code.to_string(),
+                    tenant_id: execution.tenant_id,
+                    params_json: execution.params_json.clone(),
+                    retry_count: new_retry_count,
+                    trace_id: execution.traceparent.clone(),
+                    parent_span_id: execution.parent_span_id.clone(),
+                },
+            )
+            .await?;
+        } else {
+            // TODO: match on worker_code when more workers are added
+            let finished_at = Utc::now().fixed_offset();
+            scheduled_worker_executions::Model::update_status(
+                db,
+                execution_id,
+                &scheduled_worker_executions::UpdateStatusParams {
+                    status: "failed".to_string(),
+                    started_at: None,
+                    finished_at: Some(finished_at),
+                    duration_ms: None,
+                    output: None,
+                    error_message: Some(format!("unsupported retry worker: {worker_code}; original error: {error}")),
+                    traceparent: None,
+                },
+            )
+            .await?;
         }
     } else {
         let finished_at = Utc::now().fixed_offset();
         scheduled_worker_executions::Model::update_status(
             db,
             execution_id,
-            "failed",
-            None,
-            Some(finished_at),
-            None,
-            None,
-            Some(error.to_string()),
-            None,
+            &scheduled_worker_executions::UpdateStatusParams {
+                status: "failed".to_string(),
+                started_at: None,
+                finished_at: Some(finished_at),
+                duration_ms: None,
+                output: None,
+                error_message: Some(error.to_string()),
+                traceparent: None,
+            },
         )
         .await?;
     }

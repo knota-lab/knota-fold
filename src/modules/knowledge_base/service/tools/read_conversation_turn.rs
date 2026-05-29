@@ -57,7 +57,7 @@ fn truncate_to_chars(content: &str, max: usize) -> String {
         content.to_string()
     } else {
         let truncated: String = content.chars().take(max).collect();
-        format!("{}…", truncated)
+        format!("{truncated}…")
     }
 }
 
@@ -122,7 +122,7 @@ impl Tool for ReadConversationTurnTool {
             self.user_id,
         )
         .await
-        .map_err(|e| ReadConversationTurnError(format!("加载会话消息失败: {}", e)))?;
+        .map_err(|e| ReadConversationTurnError(format!("加载会话消息失败: {e}")))?;
 
         // --- Pair messages into turns ---
         // Each user message starts a turn; the following assistant message (if any) completes it.
@@ -205,7 +205,7 @@ impl Tool for ReadConversationTurnTool {
             let turn = &turns[(turn_idx - 1) as usize];
             let mut parts: Vec<String> = Vec::new();
 
-            parts.push(format!("=== 第 {} 轮对话 ===", turn_idx));
+            parts.push(format!("=== 第 {turn_idx} 轮对话 ==="));
             parts.push(String::new()); // blank line
 
             // User message
@@ -233,11 +233,10 @@ impl Tool for ReadConversationTurnTool {
 
                     let header = if tool_call_count > 0 {
                         format!(
-                            "[助手] ({} 字符, 含 {} 次工具调用):",
-                            asst_char_count, tool_call_count
+                            "[助手] ({asst_char_count} 字符, 含 {tool_call_count} 次工具调用):"
                         )
                     } else {
-                        format!("[助手] ({} 字符):", asst_char_count)
+                        format!("[助手] ({asst_char_count} 字符):")
                     };
                     parts.push(header);
 

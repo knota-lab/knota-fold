@@ -33,7 +33,7 @@ pub fn init_logger(ctx: &AppContext) -> Result<bool> {
 
     let typed = ctx.config.typed_settings().ok().flatten();
     let app_logs_cfg = typed.as_ref().and_then(|s| s.app_logs.as_ref());
-    let enabled = app_logs_cfg.map(|c| c.enabled).unwrap_or(false);
+    let enabled = app_logs_cfg.is_some_and(|c| c.enabled);
 
     // Build the same stdout layer + env filter that loco's logger::init would.
     // Note: intentionally NOT using FmtSpan::CLOSE because loco-rs's built-in
@@ -62,14 +62,14 @@ pub fn init_logger(ctx: &AppContext) -> Result<bool> {
                 tokio::runtime::Handle::current()
                     .block_on(async { writer::init_db(&config.db_path).await })
             });
-        db_result.map_err(|e| loco_rs::Error::Any(e))?;
+        db_result.map_err(loco_rs::Error::Any)?;
 
         // 2. Create channel + store sender globally.
         let (tx, rx) = flume::bounded(8192);
         layer::set_sender(tx);
 
         // 3. Start background writer + cleanup.
-        writer::spawn_writer(rx, &config);
+        writer::spawn_writer(rx, config);
         writer::spawn_cleanup(config.retention_days);
 
         // 4. Build subscriber with fmt + SQLite layer.

@@ -102,17 +102,19 @@ async fn run_indexing_pipeline(
     // 4-11. Run pipeline; mark as error on failure
     if let Err(e) = execute_pipeline(
         db,
-        &parser_chain,
-        &embedding_client,
-        &search_provider,
-        document_id,
-        tenant_id,
-        &full_text,
-        &doc.source_type,
-        &doc.scope,
-        doc.created_by,
-        config,
-        &kb_config.embedding.model,
+        &PipelineParams {
+            parser_chain: &parser_chain,
+            embedding_client: &embedding_client,
+            search_provider: &search_provider,
+            document_id,
+            tenant_id,
+            full_text: &full_text,
+            source_type: &doc.source_type,
+            scope: &doc.scope,
+            created_by: doc.created_by,
+            config,
+            embedding_model_name: &kb_config.embedding.model,
+        },
     )
     .await
     {
@@ -136,29 +138,35 @@ async fn run_indexing_pipeline(
     Ok(())
 }
 
-async fn execute_pipeline(
-    db: &DatabaseConnection,
-    parser_chain: &SharedParserChain,
-    embedding_client: &SharedEmbeddingClient,
-    search_provider: &SharedSearchProvider,
+/// Parameters for [`execute_pipeline`].
+struct PipelineParams<'a> {
+    parser_chain: &'a SharedParserChain,
+    embedding_client: &'a SharedEmbeddingClient,
+    search_provider: &'a SharedSearchProvider,
     document_id: Uuid,
     tenant_id: Uuid,
-    full_text: &str,
-    source_type: &str,
-    scope: &str,
+    full_text: &'a str,
+    source_type: &'a str,
+    scope: &'a str,
     created_by: Uuid,
-    config: &crate::config::ChunkingConfig,
-    embedding_model_name: &str,
-) -> Result<()> {
+    config: &'a crate::config::ChunkingConfig,
+    embedding_model_name: &'a str,
+}
+
+async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Result<()> {
     // 4. Parse document — select parser by MIME type from source_type
-    let parser = parser_chain
+    let parser = p
+        .parser_chain
         .iter()
-        .find(|p| p.supported_mime_types().contains(&source_type))
+        .find(|pr| pr.supported_mime_types().contains(&p.source_type))
         .ok_or_else(|| {
-            Error::Message(format!("no parser found for content type '{source_type}'"))
+            Error::Message(format!(
+                "no parser found for content type '{}'",
+                p.source_type
+            ))
         })?;
     let parsed = parser
-        .parse(full_text.as_bytes(), source_type, "document")
+        .parse(p.full_text.as_bytes(), p.source_type, "document")
         .await
         .map_err(|e| Error::Message(format!("parsing failed: {e}")))?;
     let markdown = &parsed.markdown;
@@ -166,11 +174,11 @@ async fn execute_pipeline(
     // 5. Chunk the markdown
     let chunks = chunking_service::chunk_markdown(
         markdown,
-        config.max_chunk_tokens,
-        config.min_chunk_tokens,
-        config.split_by_heading,
-        config.min_heading_level,
-        config.max_heading_level,
+        p.config.max_chunk_tokens,
+        p.config.min_chunk_tokens,
+        p.config.split_by_heading,
+        p.config.min_heading_level,
+        p.config.max_heading_level,
     );
     if chunks.is_empty() {
         return Err(Error::string("chunking produced no chunks"));
@@ -181,8 +189,8 @@ async fn execute_pipeline(
     let line_models: Vec<dl_models::ActiveModel> = raw_lines
         .into_iter()
         .map(|line| dl_models::ActiveModel {
-            tenant_id: ActiveValue::Set(tenant_id),
-            document_id: ActiveValue::Set(document_id),
+            tenant_id: ActiveValue::Set(p.tenant_id),
+            document_id: ActiveValue::Set(p.document_id),
             line_number: ActiveValue::Set(line.line_number),
             line_text: ActiveValue::Set(line.line_text),
             line_chars: ActiveValue::Set(line.line_chars),
@@ -193,7 +201,7 @@ async fn execute_pipeline(
     document_service::insert_lines(db, line_models).await?;
 
     // 7. Generate embeddings
-    let model = embedding_client.0.embedding_model(embedding_model_name);
+    let model = p.embedding_client.0.embedding_model(p.embedding_model_name);
     let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
     let embeddings: Vec<rig::embeddings::Embedding> = model
         .embed_texts(texts)
@@ -220,7 +228,7 @@ async fn execute_pipeline(
 
         chunk_points.push(ChunkPoint {
             chunk_id,
-            document_id,
+            document_id: p.document_id,
             chunk_index: i as i32,
             content: chunk.content.clone(),
             heading_path: chunk.heading_path.clone(),
@@ -229,14 +237,14 @@ async fn execute_pipeline(
             char_end: Some(chunk.char_end),
             token_count: chunk.token_count,
             embedding: embedding_f32,
-            scope: scope.to_string(),
-            created_by,
+            scope: p.scope.to_string(),
+            created_by: p.created_by,
         });
 
         chunk_models.push(kc_models::ActiveModel {
             id: ActiveValue::Set(chunk_id),
-            document_id: ActiveValue::Set(document_id),
-            tenant_id: ActiveValue::Set(tenant_id),
+            document_id: ActiveValue::Set(p.document_id),
+            tenant_id: ActiveValue::Set(p.tenant_id),
             chunk_index: ActiveValue::Set(i as i32),
             content: ActiveValue::Set(chunk.content.clone()),
             heading_path: ActiveValue::Set(chunk.heading_path.clone()),
@@ -252,17 +260,17 @@ async fn execute_pipeline(
     document_service::insert_chunks(db, chunk_models).await?;
 
     // 10. Write vectors to Qdrant
-    search_provider
-        .upsert_chunks(&chunk_points, tenant_id)
+    p.search_provider
+        .upsert_chunks(&chunk_points, p.tenant_id)
         .await
         .map_err(|e| Error::Message(format!("Qdrant upsert failed: {e}")))?;
 
     // 11. Mark document as ready
-    document_service::mark_ready(db, document_id, chunks.len() as i32, total_tokens)
+    document_service::mark_ready(db, p.document_id, chunks.len() as i32, total_tokens)
         .await?;
 
     tracing::info!(
-        document_id = %document_id,
+        document_id = %p.document_id,
         chunk_count = chunks.len(),
         total_tokens = total_tokens,
         "indexing pipeline completed"

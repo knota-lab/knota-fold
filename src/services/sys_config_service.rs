@@ -28,9 +28,7 @@ fn cache_key_all(tenant_str: &str) -> String {
 }
 
 fn tenant_str(tenant_id: Option<Uuid>) -> String {
-    tenant_id
-        .map(|id| id.to_string())
-        .unwrap_or_else(|| "global".to_string())
+    tenant_id.map_or_else(|| "global".to_string(), |id| id.to_string())
 }
 
 // ── Value validation ───────────────────────────────────────────────────────────
@@ -381,31 +379,28 @@ pub async fn upsert_tenant_config(
         .as_ref()
         .map(|m| serde_json::json!({ "key": m.key, "value": m.value }));
 
-    match existing_override {
-        Some(existing) => {
-            let am = sys_configs::ActiveModel {
-                id: ActiveValue::Unchanged(existing.id),
-                value: ActiveValue::Set(params.value.clone()),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.update(&ctx.db).await.db_err()?;
-        }
-        None => {
-            let am = sys_configs::ActiveModel {
-                key: ActiveValue::Set(key.to_string()),
-                value: ActiveValue::Set(params.value.clone()),
-                value_type: ActiveValue::Set(global.value_type.clone()),
-                category: ActiveValue::Set(global.category.clone()),
-                scope: ActiveValue::Set("tenant".to_string()),
-                tenant_id: ActiveValue::Set(Some(tenant_id)),
-                label: ActiveValue::Set(global.label.clone()),
-                description: ActiveValue::Set(global.description.clone()),
-                updated_by: ActiveValue::Set(Some(user_id)),
-                ..Default::default()
-            };
-            am.insert(&ctx.db).await.db_err()?;
-        }
+    if let Some(existing) = existing_override {
+        let am = sys_configs::ActiveModel {
+            id: ActiveValue::Unchanged(existing.id),
+            value: ActiveValue::Set(params.value.clone()),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.update(&ctx.db).await.db_err()?;
+    } else {
+        let am = sys_configs::ActiveModel {
+            key: ActiveValue::Set(key.to_string()),
+            value: ActiveValue::Set(params.value.clone()),
+            value_type: ActiveValue::Set(global.value_type.clone()),
+            category: ActiveValue::Set(global.category.clone()),
+            scope: ActiveValue::Set("tenant".to_string()),
+            tenant_id: ActiveValue::Set(Some(tenant_id)),
+            label: ActiveValue::Set(global.label.clone()),
+            description: ActiveValue::Set(global.description.clone()),
+            updated_by: ActiveValue::Set(Some(user_id)),
+            ..Default::default()
+        };
+        am.insert(&ctx.db).await.db_err()?;
     }
 
     // Invalidate tenant resolved caches

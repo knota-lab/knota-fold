@@ -90,7 +90,6 @@ impl Model {
         }
 
         self.expires_at
-            .map(|expires_at| expires_at > Utc::now().fixed_offset())
-            .unwrap_or(true)
+            .is_none_or(|expires_at| expires_at > Utc::now().fixed_offset())
     }
 }

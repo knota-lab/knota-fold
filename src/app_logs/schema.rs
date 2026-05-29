@@ -1,6 +1,5 @@
 /// SQL for creating the app-logs tables and indexes.
 /// Executed with `CREATE TABLE IF NOT EXISTS` at startup — no migration needed.
-
 pub const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS request_logs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -71,7 +71,7 @@ impl Model {
         read_filter: Option<bool>,
         page: u64,
         page_size: u64,
-    ) -> ModelResult<Vec<Model>> {
+    ) -> ModelResult<Vec<Self>> {
         let mut query = Entity::find();
 
         query = query.filter(notification_recipients::Column::UserId.eq(user_id));
@@ -87,7 +87,7 @@ impl Model {
 
         query = query.order_by_desc(notification_recipients::Column::CreatedAt);
 
-        let items: Vec<Model> = query
+        let items: Vec<Self> = query
             .offset((page.saturating_sub(1)) * page_size)
             .limit(page_size)
             .all(db)
@@ -142,7 +142,7 @@ impl Model {
     pub async fn forced_recipient_ids(
         db: &DatabaseConnection,
         user_id: Uuid,
-    ) -> ModelResult<Vec<Model>> {
+    ) -> ModelResult<Vec<Self>> {
         use crate::models::_entities::notifications as n;
 
         Ok(Entity::find()

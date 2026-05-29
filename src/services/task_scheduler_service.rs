@@ -92,14 +92,16 @@ pub async fn tick(ctx: &AppContext) -> Result<()> {
 
         let execution = scheduled_worker_executions::Model::create_pending(
             db,
-            schedule.id,
-            worker_def.id,
-            tenant_id,
-            "scheduled",
-            schedule.params_json.clone(),
-            None,
-            None, // no HTTP context in scheduler tick
-            None,
+            &scheduled_worker_executions::CreateExecutionParams {
+                schedule_id: schedule.id,
+                worker_def_id: worker_def.id,
+                tenant_id,
+                trigger_type: "scheduled".to_string(),
+                params_json: schedule.params_json.clone(),
+                triggered_by: None,
+                traceparent: None,
+                parent_span_id: None,
+            },
         )
         .await?;
 
@@ -111,40 +113,42 @@ pub async fn tick(ctx: &AppContext) -> Result<()> {
         )
         .await?;
 
-        let result = match worker_def.code.as_str() {
-            "test_job" => {
-                use crate::workers::test_job_worker::{TestJobWorker, TestJobWorkerArgs};
+        let result = if worker_def.code.as_str() == "test_job" {
+            use crate::workers::test_job_worker::{TestJobWorker, TestJobWorkerArgs};
 
-                TestJobWorker::perform_later(
-                    ctx,
-                    TestJobWorkerArgs {
-                        execution_id: execution.id,
-                        worker_code: worker_def.code.clone(),
-                        tenant_id,
-                        params_json: schedule.params_json.clone(),
-                        retry_count: 0,
-                        trace_id: None,
-                        parent_span_id: None,
-                    },
-                )
-                .await
-            }
-            _ => {
-                tracing::error!(worker_code = %worker_def.code, "unknown worker code");
-                scheduled_worker_executions::Model::update_status(
-                    db,
-                    execution.id,
-                    "skipped",
-                    None,
-                    None,
-                    None,
-                    None,
-                    Some(format!("unknown worker code: {}", worker_def.code)),
-                    None,
-                )
-                .await?;
-                continue;
-            }
+            TestJobWorker::perform_later(
+                ctx,
+                TestJobWorkerArgs {
+                    execution_id: execution.id,
+                    worker_code: worker_def.code.clone(),
+                    tenant_id,
+                    params_json: schedule.params_json.clone(),
+                    retry_count: 0,
+                    trace_id: None,
+                    parent_span_id: None,
+                },
+            )
+            .await
+        } else {
+            tracing::error!(worker_code = %worker_def.code, "unknown worker code");
+            scheduled_worker_executions::Model::update_status(
+                db,
+                execution.id,
+                &scheduled_worker_executions::UpdateStatusParams {
+                    status: "skipped".to_string(),
+                    started_at: None,
+                    finished_at: None,
+                    duration_ms: None,
+                    output: None,
+                    error_message: Some(format!(
+                        "unknown worker code: {}",
+                        worker_def.code
+                    )),
+                    traceparent: None,
+                },
+            )
+            .await?;
+            continue;
         };
 
         if let Err(e) = result {
@@ -152,13 +156,15 @@ pub async fn tick(ctx: &AppContext) -> Result<()> {
             scheduled_worker_executions::Model::update_status(
                 db,
                 execution.id,
-                "skipped",
-                None,
-                None,
-                None,
-                None,
-                Some(format!("enqueue failed: {e}")),
-                None,
+                &scheduled_worker_executions::UpdateStatusParams {
+                    status: "skipped".to_string(),
+                    started_at: None,
+                    finished_at: None,
+                    duration_ms: None,
+                    output: None,
+                    error_message: Some(format!("enqueue failed: {e}")),
+                    traceparent: None,
+                },
             )
             .await?;
         }
@@ -177,13 +183,15 @@ async fn recover_zombies(db: &DatabaseConnection) -> Result<()> {
         scheduled_worker_executions::Model::update_status(
             db,
             zombie.id,
-            "failed",
-            None,
-            Some(Utc::now().fixed_offset()),
-            None,
-            None,
-            Some("worker crash suspected".to_string()),
-            None,
+            &scheduled_worker_executions::UpdateStatusParams {
+                status: "failed".to_string(),
+                started_at: None,
+                finished_at: Some(Utc::now().fixed_offset()),
+                duration_ms: None,
+                output: None,
+                error_message: Some("worker crash suspected".to_string()),
+                traceparent: None,
+            },
         )
         .await?;
     }
@@ -196,8 +204,7 @@ fn is_scheduler_enabled(ctx: &AppContext) -> bool {
         .typed_settings()
         .ok()
         .flatten()
-        .map(|s| s.scheduler_enabled())
-        .unwrap_or(true)
+        .is_none_or(|s| s.scheduler_enabled())
 }
 
 fn get_max_concurrent(ctx: &AppContext) -> i32 {
@@ -205,8 +212,7 @@ fn get_max_concurrent(ctx: &AppContext) -> i32 {
         .typed_settings()
         .ok()
         .flatten()
-        .map(|s| s.max_concurrent_per_tenant())
-        .unwrap_or(3)
+        .map_or(3, |s| s.max_concurrent_per_tenant())
 }
 
 pub fn compute_next_run(

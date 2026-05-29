@@ -503,10 +503,7 @@ impl AppSettings {
 
     /// Helper: whether the scheduler tick should run.
     pub fn scheduler_enabled(&self) -> bool {
-        self.worker_scheduler
-            .as_ref()
-            .map(|s| s.enabled)
-            .unwrap_or(true)
+        self.worker_scheduler.as_ref().is_none_or(|s| s.enabled)
     }
 }
 

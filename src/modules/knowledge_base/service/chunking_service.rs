@@ -152,7 +152,7 @@ fn flush_chunk(
 ) {
     let char_start = byte_to_char(markdown, byte_start) as i32;
     let char_end = char_start + content.chars().count() as i32;
-    let token_count = count_tokens(content) as i32;
+    let token_count = count_tokens(content);
     let heading_path = resolve_heading_path(byte_start, heading_map);
 
     chunks.push(RawChunk {

@@ -159,7 +159,7 @@ pub async fn sync_permissions(
             continue;
         }
 
-        let code = format!("{}:{}", method_upper, path);
+        let code = format!("{method_upper}:{path}");
 
         if let Some(&id) = deleted_map.get(&key) {
             // Restore the soft-deleted record

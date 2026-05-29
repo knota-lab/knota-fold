@@ -114,46 +114,52 @@ async fn embed_text(
     Ok(embedding.vec.iter().map(|&v| v as f32).collect())
 }
 
+/// Parameters for [`index_message`].
+#[derive(Debug)]
+pub struct IndexMessageParams {
+    pub collection_name: String,
+    pub model_name: String,
+    pub session_id: Uuid,
+    pub tenant_id: Uuid,
+    pub message_id: Uuid,
+    pub role: String,
+    pub content: String,
+    pub has_material: bool,
+    pub turn_index: i32,
+}
+
 /// Index (vectorize + upsert) a chat message into the `chat_memory` Qdrant collection.
 ///
 /// This should be called asynchronously (fire-and-forget via `tokio::spawn`)
 /// after persisting the message to SQLite.
-#[tracing::instrument(skip(embedding_client, memory_provider, collection_name))]
+#[tracing::instrument(skip(embedding_client, memory_provider, params))]
 pub async fn index_message(
     embedding_client: &rig::providers::openai::Client,
     memory_provider: &qdrant_client::Qdrant,
-    collection_name: &str,
-    model_name: &str,
-    session_id: Uuid,
-    tenant_id: Uuid,
-    message_id: Uuid,
-    role: &str,
-    content: &str,
-    has_material: bool,
-    turn_index: i32,
+    params: &IndexMessageParams,
 ) -> Result<(), KnowledgeBaseError> {
     // Truncate content for embedding quality
-    let truncated: String = content.chars().take(2000).collect();
+    let truncated: String = params.content.chars().take(2000).collect();
 
-    let dense = embed_text(embedding_client, model_name, &truncated).await?;
+    let dense = embed_text(embedding_client, &params.model_name, &truncated).await?;
 
     let (sparse_indices, sparse_values) = tokenize_to_sparse(&truncated);
     let sparse_vec =
         qdrant_client::qdrant::Vector::new_sparse(sparse_indices, sparse_values);
 
     let payload: Payload = Payload::try_from(json!({
-        "tenant_id": tenant_id.to_string(),
-        "session_id": session_id.to_string(),
-        "message_id": message_id.to_string(),
-        "role": role,
+        "tenant_id": params.tenant_id.to_string(),
+        "session_id": params.session_id.to_string(),
+        "message_id": params.message_id.to_string(),
+        "role": params.role,
         "content": truncated,
-        "has_material": has_material,
-        "turn_index": turn_index,
+        "has_material": params.has_material,
+        "turn_index": params.turn_index,
     }))
     .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()))?;
 
     let point = PointStruct::new(
-        message_id.to_string(),
+        params.message_id.to_string(),
         NamedVectors::default()
             .add_vector("", dense)
             .add_vector("chat_text", sparse_vec),
@@ -161,15 +167,17 @@ pub async fn index_message(
     );
 
     memory_provider
-        .upsert_points(UpsertPointsBuilder::new(collection_name, [point]).wait(true))
+        .upsert_points(
+            UpsertPointsBuilder::new(&params.collection_name, [point]).wait(true),
+        )
         .await
         .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()))?;
 
     tracing::debug!(
-        session_id = %session_id,
-        message_id = %message_id,
-        role = role,
-        turn_index = turn_index,
+        session_id = %params.session_id,
+        message_id = %params.message_id,
+        role = %params.role,
+        turn_index = params.turn_index,
         "Indexed message to chat_memory"
     );
 
@@ -178,19 +186,26 @@ pub async fn index_message(
 
 // ── Private helpers ──────────────────────────────────────────────────
 
+/// Parameters for [`vector_recall`].
+#[derive(Debug)]
+struct VectorRecallParams<'a> {
+    collection_name: &'a str,
+    query_text: &'a str,
+    top_k: usize,
+}
+
 /// Core vector recall: hybrid search (dense + sparse + RRF) on chat_memory collection.
 async fn vector_recall(
     embedding_client: &rig::providers::openai::Client,
     memory_provider: &qdrant_client::Qdrant,
-    collection_name: &str,
     model_name: &str,
     session_id: Uuid,
     tenant_id: Uuid,
-    current_query: &str,
-    top_k: usize,
+    params: &VectorRecallParams<'_>,
 ) -> Result<Vec<MemoryHit>, KnowledgeBaseError> {
-    let query_vector = embed_text(embedding_client, model_name, current_query).await?;
-    let (sparse_indices, sparse_values) = tokenize_to_sparse(current_query);
+    let query_vector =
+        embed_text(embedding_client, model_name, params.query_text).await?;
+    let (sparse_indices, sparse_values) = tokenize_to_sparse(params.query_text);
     let sparse_query: Vec<(u32, f32)> =
         sparse_indices.into_iter().zip(sparse_values).collect();
 
@@ -201,7 +216,7 @@ async fn vector_recall(
 
     let response = memory_provider
         .query(
-            QueryPointsBuilder::new(collection_name)
+            QueryPointsBuilder::new(params.collection_name)
                 .add_prefetch(
                     PrefetchQueryBuilder::default()
                         .query(query_vector)
@@ -215,7 +230,7 @@ async fn vector_recall(
                 )
                 .query(Fusion::Rrf)
                 .filter(filter)
-                .limit(top_k as u64)
+                .limit(params.top_k as u64)
                 .with_payload(true),
         )
         .await
@@ -297,6 +312,15 @@ fn extract_recent_turns(
         .collect()
 }
 
+/// Parameters for [`recall_history`].
+#[derive(Debug)]
+pub struct RecallHistoryParams<'a> {
+    pub session_id: Uuid,
+    pub tenant_id: Uuid,
+    pub query: &'a str,
+    pub history_db: &'a [crate::models::_entities::chat_messages::Model],
+}
+
 /// Recall relevant history messages based on intent-driven strategy (§19.7.5).
 ///
 /// Dispatches to the appropriate retrieval method based on `HistoryStrategy`.
@@ -306,22 +330,21 @@ fn extract_recent_turns(
     embedding_client,
     memory_provider,
     collection_name,
-    history_db
+    model_name,
+    strategy,
+    params
 ))]
 pub async fn recall_history(
     embedding_client: &rig::providers::openai::Client,
     memory_provider: &qdrant_client::Qdrant,
     collection_name: &str,
     model_name: &str,
-    session_id: Uuid,
-    tenant_id: Uuid,
-    current_query: &str,
     strategy: &HistoryStrategy,
-    history_db: &[crate::models::_entities::chat_messages::Model],
+    params: &RecallHistoryParams<'_>,
 ) -> Result<RecalledContext, KnowledgeBaseError> {
     match strategy {
         HistoryStrategy::None => {
-            tracing::debug!(session_id = %session_id, "Strategy: None — skipping memory recall");
+            tracing::debug!(session_id = %params.session_id, "Strategy: None — skipping memory recall");
             Ok(RecalledContext::default())
         }
 
@@ -329,16 +352,18 @@ pub async fn recall_history(
             let relevant = vector_recall(
                 embedding_client,
                 memory_provider,
-                collection_name,
                 model_name,
-                session_id,
-                tenant_id,
-                current_query,
-                *top_k,
+                params.session_id,
+                params.tenant_id,
+                &VectorRecallParams {
+                    collection_name,
+                    query_text: params.query,
+                    top_k: *top_k,
+                },
             )
             .await?;
             tracing::debug!(
-                session_id = %session_id,
+                session_id = %params.session_id,
                 hits = relevant.len(),
                 "Strategy: RetrieveRelevant"
             );
@@ -350,7 +375,8 @@ pub async fn recall_history(
 
         HistoryStrategy::ReadOriginalMaterial => {
             // 从 DB 直接读取含材料的用户消息（content 已含格式化后的完整材料内容）
-            let original: Vec<String> = history_db
+            let original: Vec<String> = params
+                .history_db
                 .iter()
                 .filter(|m| m.material_refs.is_some())
                 .filter(|m| m.role == "user")
@@ -361,11 +387,11 @@ pub async fn recall_history(
                     } else {
                         ""
                     };
-                    format!("{}{}", content, ellipsis)
+                    format!("{content}{ellipsis}")
                 })
                 .collect();
             tracing::debug!(
-                session_id = %session_id,
+                session_id = %params.session_id,
                 material_messages = original.len(),
                 "Strategy: ReadOriginalMaterial"
             );
@@ -380,10 +406,11 @@ pub async fn recall_history(
             top_k,
         } => {
             // 1. 从 DB 取最近 N 轮完整对话
-            let recent = extract_recent_turns(history_db, *recent_turns);
+            let recent = extract_recent_turns(params.history_db, *recent_turns);
 
             // 2. 同时做向量检索 top_k 条相关旧消息（去重已取的最近轮次）
-            let recent_msg_ids: std::collections::HashSet<Uuid> = history_db
+            let recent_msg_ids: std::collections::HashSet<Uuid> = params
+                .history_db
                 .iter()
                 .rev()
                 .take(*recent_turns * 2) // each turn = user + assistant
@@ -393,12 +420,14 @@ pub async fn recall_history(
             let relevant = vector_recall(
                 embedding_client,
                 memory_provider,
-                collection_name,
                 model_name,
-                session_id,
-                tenant_id,
-                current_query,
-                *top_k,
+                params.session_id,
+                params.tenant_id,
+                &VectorRecallParams {
+                    collection_name,
+                    query_text: params.query,
+                    top_k: *top_k,
+                },
             )
             .await?;
 
@@ -408,7 +437,7 @@ pub async fn recall_history(
                 .collect();
 
             tracing::debug!(
-                session_id = %session_id,
+                session_id = %params.session_id,
                 recent_count = recent.len(),
                 vector_hits = filtered.len(),
                 "Strategy: Hybrid"
@@ -529,7 +558,7 @@ pub fn format_recalled_context(ctx: &RecalledContext) -> String {
             } else {
                 ""
             };
-            parts.push(format!("[{}]: {}{}", label, content, ellipsis));
+            parts.push(format!("[{label}]: {content}{ellipsis}"));
         }
         parts.push("--- 相关历史对话结束 ---".to_string());
     }
@@ -549,7 +578,7 @@ pub fn format_recalled_context(ctx: &RecalledContext) -> String {
             } else {
                 ""
             };
-            parts.push(format!("[{}]: {}{}", label, truncated, ellipsis));
+            parts.push(format!("[{label}]: {truncated}{ellipsis}"));
         }
         parts.push("--- 最近对话结束 ---".to_string());
     }

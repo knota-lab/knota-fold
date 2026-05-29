@@ -28,25 +28,39 @@ impl ActiveModelBehavior for super::_entities::scheduled_worker_executions::Acti
     }
 }
 
+pub struct CreateExecutionParams {
+    pub schedule_id: Uuid,
+    pub worker_def_id: Uuid,
+    pub tenant_id: Uuid,
+    pub trigger_type: String,
+    pub params_json: Option<String>,
+    pub triggered_by: Option<Uuid>,
+    pub traceparent: Option<String>,
+    pub parent_span_id: Option<String>,
+}
+
+pub struct UpdateStatusParams {
+    pub status: String,
+    pub started_at: Option<DateTimeWithTimeZone>,
+    pub finished_at: Option<DateTimeWithTimeZone>,
+    pub duration_ms: Option<i32>,
+    pub output: Option<String>,
+    pub error_message: Option<String>,
+    pub traceparent: Option<String>,
+}
+
 impl Model {
     pub async fn create_pending(
         db: &DatabaseConnection,
-        schedule_id: Uuid,
-        worker_def_id: Uuid,
-        tenant_id: Uuid,
-        trigger_type: &str,
-        params_json: Option<String>,
-        triggered_by: Option<Uuid>,
-        traceparent: Option<String>,
-        parent_span_id: Option<String>,
+        params: &CreateExecutionParams,
     ) -> Result<Self, DbErr> {
         let active_model = ActiveModel {
-            schedule_id: ActiveValue::Set(schedule_id),
-            worker_def_id: ActiveValue::Set(worker_def_id),
-            tenant_id: ActiveValue::Set(tenant_id),
-            trigger_type: ActiveValue::Set(trigger_type.to_string()),
-            triggered_by: ActiveValue::Set(triggered_by),
-            params_json: ActiveValue::Set(params_json),
+            schedule_id: ActiveValue::Set(params.schedule_id),
+            worker_def_id: ActiveValue::Set(params.worker_def_id),
+            tenant_id: ActiveValue::Set(params.tenant_id),
+            trigger_type: ActiveValue::Set(params.trigger_type.clone()),
+            triggered_by: ActiveValue::Set(params.triggered_by),
+            params_json: ActiveValue::Set(params.params_json.clone()),
             status: ActiveValue::Set("pending".to_string()),
             retry_count: ActiveValue::Set(0),
             started_at: ActiveValue::Set(None),
@@ -54,8 +68,8 @@ impl Model {
             duration_ms: ActiveValue::Set(None),
             output: ActiveValue::Set(None),
             error_message: ActiveValue::Set(None),
-            traceparent: ActiveValue::Set(traceparent),
-            parent_span_id: ActiveValue::Set(parent_span_id),
+            traceparent: ActiveValue::Set(params.traceparent.clone()),
+            parent_span_id: ActiveValue::Set(params.parent_span_id.clone()),
             ..Default::default()
         };
 
@@ -101,32 +115,24 @@ impl Model {
     pub async fn update_status(
         db: &DatabaseConnection,
         id: Uuid,
-        status: &str,
-        started_at: Option<DateTimeWithTimeZone>,
-        finished_at: Option<DateTimeWithTimeZone>,
-        duration_ms: Option<i32>,
-        output: Option<String>,
-        error_message: Option<String>,
-        traceparent: Option<String>,
+        params: &UpdateStatusParams,
     ) -> Result<Option<Self>, DbErr> {
         let existing = Self::find_by_id(db, id).await?;
 
         match existing {
             Some(execution) => {
                 let mut active_model: ActiveModel = execution.into();
-                active_model.status = ActiveValue::Set(status.to_string());
-                // Only overwrite started_at when the caller provides an explicit value.
-                // Passing None (e.g. from zombie recovery / enqueue failure) means
-                // "don't touch the existing timestamp" — use NotSet to preserve it.
-                if let Some(ts) = started_at {
+                active_model.status = ActiveValue::Set(params.status.clone());
+                if let Some(ts) = params.started_at {
                     active_model.started_at = ActiveValue::Set(Some(ts));
                 }
-                active_model.finished_at = ActiveValue::Set(finished_at);
-                active_model.duration_ms = ActiveValue::Set(duration_ms);
-                active_model.output = ActiveValue::Set(output);
-                active_model.error_message = ActiveValue::Set(error_message);
-                if let Some(tp) = traceparent {
-                    active_model.traceparent = ActiveValue::Set(Some(tp));
+                active_model.finished_at = ActiveValue::Set(params.finished_at);
+                active_model.duration_ms = ActiveValue::Set(params.duration_ms);
+                active_model.output = ActiveValue::Set(params.output.clone());
+                active_model.error_message =
+                    ActiveValue::Set(params.error_message.clone());
+                if let Some(ref tp) = params.traceparent {
+                    active_model.traceparent = ActiveValue::Set(Some(tp.clone()));
                 }
                 active_model.update(db).await.map(Some)
             }

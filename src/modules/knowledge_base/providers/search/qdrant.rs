@@ -149,7 +149,7 @@ fn build_filter(tenant_id: Uuid, filter: Option<&SearchFilter>) -> Filter {
     // Visibility: (scope=tenant) OR (scope=private AND created_by=user)
     let visibility = if let Some(uid) = filter.as_ref().and_then(|f| f.user_id) {
         Filter::should([
-            Condition::matches("scope", "tenant".to_string()).into(),
+            Condition::matches("scope", "tenant".to_string()),
             Filter::must([
                 Condition::matches("scope", "private".to_string()),
                 Condition::matches("created_by", uid.to_string()),
@@ -158,7 +158,7 @@ fn build_filter(tenant_id: Uuid, filter: Option<&SearchFilter>) -> Filter {
         ])
     } else {
         // No user_id provided — only show tenant-scope docs
-        Filter::should([Condition::matches("scope", "tenant".to_string()).into()])
+        Filter::should([Condition::matches("scope", "tenant".to_string())])
     };
 
     let mut must: Vec<qdrant_client::qdrant::Condition> =

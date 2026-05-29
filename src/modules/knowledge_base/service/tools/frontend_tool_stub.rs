@@ -27,11 +27,11 @@ pub enum FrontendToolError {
 impl fmt::Display for FrontendToolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FrontendToolError::Timeout(msg) => write!(f, "frontend tool timeout: {msg}"),
-            FrontendToolError::Broker(msg) => {
+            Self::Timeout(msg) => write!(f, "frontend tool timeout: {msg}"),
+            Self::Broker(msg) => {
                 write!(f, "frontend tool broker error: {msg}")
             }
-            FrontendToolError::Internal(msg) => write!(f, "frontend tool error: {msg}"),
+            Self::Internal(msg) => write!(f, "frontend tool error: {msg}"),
         }
     }
 }
@@ -41,9 +41,9 @@ impl std::error::Error for FrontendToolError {}
 impl From<ReceiverError> for FrontendToolError {
     fn from(e: ReceiverError) -> Self {
         match e {
-            ReceiverError::Timeout => FrontendToolError::Timeout("timed out".into()),
-            ReceiverError::Closed => FrontendToolError::Broker("channel closed".into()),
-            ReceiverError::Internal(msg) => FrontendToolError::Internal(msg),
+            ReceiverError::Timeout => Self::Timeout("timed out".into()),
+            ReceiverError::Closed => Self::Broker("channel closed".into()),
+            ReceiverError::Internal(msg) => Self::Internal(msg),
         }
     }
 }

@@ -57,10 +57,7 @@ pub fn compute(
         .iter()
         .find(|tier| {
             file_size >= tier.min_size
-                && tier
-                    .max_size
-                    .map(|max_size| file_size < max_size)
-                    .unwrap_or(true)
+                && tier.max_size.is_none_or(|max_size| file_size < max_size)
         })
         .ok_or_else(|| {
             Error::CustomError(

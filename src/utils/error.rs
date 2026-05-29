@@ -295,7 +295,7 @@ impl<T> IntoModelResult<T> for Result<T, DbErr> {
 // call already returns `loco_rs::Result<T>` (e.g. audit_service::log).
 impl<T> IntoModelResult<T> for Result<T, Error> {
     #[track_caller]
-    fn model_err(self) -> Result<T> {
+    fn model_err(self) -> Self {
         self
     }
 }

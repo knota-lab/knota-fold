@@ -32,6 +32,12 @@ pub struct InProcessBroker {
     map: DashMap<String, BrokerEntry>,
 }
 
+impl Default for InProcessBroker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InProcessBroker {
     pub fn new() -> Self {
         Self {

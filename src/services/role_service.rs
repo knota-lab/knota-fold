@@ -61,8 +61,7 @@ pub async fn list_roles(
         |m| {
             let (code, name) = tenant_info
                 .get(&m.tenant_id)
-                .map(|(c, n)| (c.as_str(), n.as_str()))
-                .unwrap_or(("", ""));
+                .map_or(("", ""), |(c, n)| (c.as_str(), n.as_str()));
             RoleResponse::from_model(m, code, name)
         },
     ))

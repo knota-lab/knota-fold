@@ -16,9 +16,9 @@
 //! 2. **Revive on collision.** If a soft-deleted row exists for the
 //!    same key, attach clears `deleted_at` and refreshes `created_by`
 //!    + `display_name` instead of inserting. This preserves the audit
-//!    chain (one row per logical attachment, with detach/reattach
-//!    history readable via `audit_logs`) and keeps the partial unique
-//!    index honest.
+//!      chain (one row per logical attachment, with detach/reattach
+//!      history readable via `audit_logs`) and keeps the partial unique
+//!      index honest.
 //!
 //! 3. **Soft detach only.** `detach` writes `deleted_at = now()`. Rows
 //!    are never hard-deleted, so the audit trail remains queryable.
@@ -244,7 +244,7 @@ enum AttachError {
 
 impl From<Error> for AttachError {
     fn from(e: Error) -> Self {
-        AttachError::Loco(e)
+        Self::Loco(e)
     }
 }
 

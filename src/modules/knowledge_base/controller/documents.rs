@@ -35,15 +35,17 @@ pub(crate) async fn create(
 
     let scope = params.scope.unwrap_or_else(|| "tenant".to_string());
 
-    let doc = service::create_document(
+    let doc = service::document_service::create_document(
         &ctx.db,
-        tc.tenant_id,
-        params.title,
-        params.description,
-        source_type,
-        scope,
-        params.file_id,
-        tc.user_id,
+        &service::document_service::CreateDocumentParams {
+            tenant_id: tc.tenant_id,
+            title: params.title,
+            description: params.description,
+            source_type,
+            scope,
+            file_id: params.file_id,
+            created_by: tc.user_id,
+        },
     )
     .await
     .model_err()?;
@@ -98,7 +100,7 @@ pub(crate) async fn list(
 
     let paginator = query
         .order_by_desc(kb_documents::Column::CreatedAt)
-        .paginate(&ctx.db, page_size as u64);
+        .paginate(&ctx.db, page_size);
 
     let total_items = paginator.num_items().await.model_err()?;
     let total_pages = paginator.num_pages().await.model_err()?;

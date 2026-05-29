@@ -120,15 +120,7 @@ impl MigrationTrait for Migration {
 /// Uses `INSERT INTO ... ON CONFLICT DO NOTHING` so the migration is
 /// idempotent — safe to re-run after `cargo loco db seed --reset`.
 async fn seed(manager: &SchemaManager<'_>, table: &str, yaml: &str) -> Result<(), DbErr> {
-    let backend = match manager.get_database_backend() {
-        // SchemaManager doesn't expose backend directly; infer from the
-        // connection.  `get_connection` returns a `DatabaseConnection`.
-        _ => {
-            // Use the trait method on the underlying connection.
-            let conn = manager.get_connection();
-            conn.get_database_backend()
-        }
-    };
+    let backend = manager.get_connection().get_database_backend();
 
     let rows: Vec<serde_yaml::Mapping> = serde_yaml::from_str(yaml)
         .map_err(|e| DbErr::Custom(format!("parse {table}: {e}")))?;
@@ -162,13 +154,12 @@ async fn seed(manager: &SchemaManager<'_>, table: &str, yaml: &str) -> Result<()
 
 /// Map Rust field names in YAML fixtures to actual DB column names.
 ///
-/// YAML fixtures are shared with `cargo loco db seed` which uses SeaORM
+/// YAML fixtures are shared with `cargo loco db seed` which uses `SeaORM`
 /// entity deserialization (Rust field names).  This migration generates
 /// raw SQL so we must translate back to DB column names here.
 fn remap_column<'a>(table: &str, key: &'a str) -> &'a str {
     match (table, key) {
-        ("permissions", "permission_type") => "type",
-        ("sys_menus", "menu_type") => "type",
+        ("permissions", "permission_type") | ("sys_menus", "menu_type") => "type",
         _ => key,
     }
 }
@@ -199,7 +190,7 @@ fn looks_like_uuid(s: &str) -> bool {
     s.len() == 36 && s.chars().filter(|&c| c == '-').count() == 4
 }
 
-/// Convert UUID string to SQLite hex-blob literal: X'0123...EF'
+/// Convert UUID string to `SQLite` hex-blob literal: X'0123...EF'
 ///
 /// `"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaa001"` → `X'AAAAAAAAAAAAAAA AAAAAAAAAA AAAAAAAA AAAAAAAA AAAAAAA001'`
 fn uuid_str_to_hex_blob(s: &str) -> String {

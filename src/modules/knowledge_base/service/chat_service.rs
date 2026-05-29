@@ -113,36 +113,42 @@ pub async fn delete_session(
     Ok(())
 }
 
+/// Parameters for [`create_message`].
+#[derive(Debug)]
+pub struct CreateMessageParams {
+    pub session_id: Uuid,
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub content: String,
+    pub material_refs: Option<serde_json::Value>,
+    pub intent: Option<String>,
+    pub strategy: Option<String>,
+    pub token_usage: Option<serde_json::Value>,
+    pub prompt_tokens: i32,
+    pub completion_tokens: i32,
+    pub total_tokens: i32,
+}
+
 /// Create a message in a session.
-#[tracing::instrument(skip(db, content))]
+#[tracing::instrument(skip(db, params))]
 pub async fn create_message(
     db: &DatabaseConnection,
-    session_id: Uuid,
-    tenant_id: Uuid,
-    user_id: Uuid,
-    role: String,
-    content: String,
-    material_refs: Option<serde_json::Value>,
-    intent: Option<String>,
-    strategy: Option<String>,
-    token_usage: Option<serde_json::Value>,
-    prompt_tokens: i32,
-    completion_tokens: i32,
-    total_tokens: i32,
+    params: &CreateMessageParams,
 ) -> loco_rs::Result<chat_messages::Model> {
     let model = cm_models::ActiveModel {
-        session_id: ActiveValue::Set(session_id),
-        tenant_id: ActiveValue::Set(tenant_id),
-        user_id: ActiveValue::Set(user_id),
-        role: ActiveValue::Set(role),
-        content: ActiveValue::Set(content),
-        material_refs: ActiveValue::Set(material_refs),
-        intent: ActiveValue::Set(intent),
-        strategy: ActiveValue::Set(strategy),
-        token_usage: ActiveValue::Set(token_usage),
-        prompt_tokens: ActiveValue::Set(prompt_tokens),
-        completion_tokens: ActiveValue::Set(completion_tokens),
-        total_tokens: ActiveValue::Set(total_tokens),
+        session_id: ActiveValue::Set(params.session_id),
+        tenant_id: ActiveValue::Set(params.tenant_id),
+        user_id: ActiveValue::Set(params.user_id),
+        role: ActiveValue::Set(params.role.clone()),
+        content: ActiveValue::Set(params.content.clone()),
+        material_refs: ActiveValue::Set(params.material_refs.clone()),
+        intent: ActiveValue::Set(params.intent.clone()),
+        strategy: ActiveValue::Set(params.strategy.clone()),
+        token_usage: ActiveValue::Set(params.token_usage.clone()),
+        prompt_tokens: ActiveValue::Set(params.prompt_tokens),
+        completion_tokens: ActiveValue::Set(params.completion_tokens),
+        total_tokens: ActiveValue::Set(params.total_tokens),
         ..Default::default()
     };
     model.insert(db).await.db_err()

@@ -15,9 +15,9 @@
 //!    (we never delete entries — translation history must survive).
 //! 4. If an entry carries `source_text`, force-sync the global zh-CN row:
 //!    - missing → INSERT; mismatched → UPDATE; identical → no-op.
-//!    Tenant overrides and other locales are untouched. Frontend hardcoded
-//!    Chinese is authoritative — admin edits to zh-CN will be overwritten on
-//!    the next manifest upload.
+//!      Tenant overrides and other locales are untouched. Frontend hardcoded
+//!      Chinese is authoritative — admin edits to zh-CN will be overwritten on
+//!      the next manifest upload.
 //! 5. The whole operation runs in a single transaction so partial failures
 //!    don't leave the manifest half-applied. Bundle revisions are bumped
 //!    (and caches invalidated) once per affected `(locale, namespace)` pair
@@ -104,36 +104,33 @@ pub async fn apply_manifest(
                 .db_err()?;
 
         let now = chrono::Utc::now().fixed_offset();
-        let entry_id = match existing {
-            Some(row) => {
-                let am = i18n_entries::ActiveModel {
-                    id: ActiveValue::Unchanged(row.id),
-                    description: ActiveValue::Set(
-                        entry.description.clone().or(row.description.clone()),
-                    ),
-                    status: ActiveValue::Set(entry_model::STATUS_ACTIVE.to_string()),
-                    last_seen_at: ActiveValue::Set(now),
-                    ..Default::default()
-                };
-                am.update(&txn).await.db_err()?;
-                updated += 1;
-                row.id
-            }
-            None => {
-                let new_id = generate_id();
-                let am = i18n_entries::ActiveModel {
-                    id: ActiveValue::Set(new_id),
-                    namespace: ActiveValue::Set(entry.namespace.clone()),
-                    key: ActiveValue::Set(entry.key.clone()),
-                    description: ActiveValue::Set(entry.description.clone()),
-                    status: ActiveValue::Set(entry_model::STATUS_ACTIVE.to_string()),
-                    last_seen_at: ActiveValue::Set(now),
-                    ..Default::default()
-                };
-                am.insert(&txn).await.db_err()?;
-                created += 1;
-                new_id
-            }
+        let entry_id = if let Some(row) = existing {
+            let am = i18n_entries::ActiveModel {
+                id: ActiveValue::Unchanged(row.id),
+                description: ActiveValue::Set(
+                    entry.description.clone().or(row.description.clone()),
+                ),
+                status: ActiveValue::Set(entry_model::STATUS_ACTIVE.to_string()),
+                last_seen_at: ActiveValue::Set(now),
+                ..Default::default()
+            };
+            am.update(&txn).await.db_err()?;
+            updated += 1;
+            row.id
+        } else {
+            let new_id = generate_id();
+            let am = i18n_entries::ActiveModel {
+                id: ActiveValue::Set(new_id),
+                namespace: ActiveValue::Set(entry.namespace.clone()),
+                key: ActiveValue::Set(entry.key.clone()),
+                description: ActiveValue::Set(entry.description.clone()),
+                status: ActiveValue::Set(entry_model::STATUS_ACTIVE.to_string()),
+                last_seen_at: ActiveValue::Set(now),
+                ..Default::default()
+            };
+            am.insert(&txn).await.db_err()?;
+            created += 1;
+            new_id
         };
         touched_ids.insert(entry_id);
 

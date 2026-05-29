@@ -70,7 +70,7 @@ const PREVIEW_MAX_CHARS: usize = 100;
 fn truncate_preview(content: &str) -> String {
     let truncated: String = content.chars().take(PREVIEW_MAX_CHARS).collect();
     if content.chars().count() > PREVIEW_MAX_CHARS {
-        format!("{}…", truncated)
+        format!("{truncated}…")
     } else {
         truncated
     }

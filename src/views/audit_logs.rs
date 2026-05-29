@@ -58,17 +58,17 @@ pub enum AuditAction {
 impl AuditAction {
     pub fn as_str(&self) -> &'static str {
         match self {
-            AuditAction::Create => "create",
-            AuditAction::Update => "update",
-            AuditAction::Delete => "delete",
-            AuditAction::ResetPassword => "reset_password",
-            AuditAction::UploadComplete => "upload_complete",
-            AuditAction::UploadAbort => "upload_abort",
-            AuditAction::SoftDelete => "soft_delete",
-            AuditAction::Restore => "restore",
-            AuditAction::Reference => "reference",
-            AuditAction::Dereference => "dereference",
-            AuditAction::Purge => "purge",
+            Self::Create => "create",
+            Self::Update => "update",
+            Self::Delete => "delete",
+            Self::ResetPassword => "reset_password",
+            Self::UploadComplete => "upload_complete",
+            Self::UploadAbort => "upload_abort",
+            Self::SoftDelete => "soft_delete",
+            Self::Restore => "restore",
+            Self::Reference => "reference",
+            Self::Dereference => "dereference",
+            Self::Purge => "purge",
         }
     }
 }

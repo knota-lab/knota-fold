@@ -32,8 +32,7 @@ impl FromRequestParts<AppContext> for RequestMeta {
         let trace_id = parts
             .extensions
             .get::<TraceId>()
-            .map(|t| t.0.clone())
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            .map_or_else(|| uuid::Uuid::new_v4().to_string(), |t| t.0.clone());
 
         let request_id = parts.extensions.get::<RequestId>().map(|r| r.0.clone());
 
@@ -58,7 +57,7 @@ impl FromRequestParts<AppContext> for RequestMeta {
             .and_then(|v| v.to_str().ok())
             .map(String::from);
 
-        Ok(RequestMeta {
+        Ok(Self {
             trace_id,
             request_id,
             ip_address,

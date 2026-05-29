@@ -53,8 +53,8 @@ pub enum BrokerError {
 impl fmt::Display for BrokerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BrokerError::Conflict(id) => write!(f, "tool call already pending: {id}"),
-            BrokerError::Internal(msg) => write!(f, "broker internal error: {msg}"),
+            Self::Conflict(id) => write!(f, "tool call already pending: {id}"),
+            Self::Internal(msg) => write!(f, "broker internal error: {msg}"),
         }
     }
 }
@@ -75,9 +75,9 @@ pub enum ReceiverError {
 impl fmt::Display for ReceiverError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ReceiverError::Timeout => write!(f, "tool result timed out"),
-            ReceiverError::Closed => write!(f, "tool result channel closed"),
-            ReceiverError::Internal(msg) => write!(f, "receiver internal error: {msg}"),
+            Self::Timeout => write!(f, "tool result timed out"),
+            Self::Closed => write!(f, "tool result channel closed"),
+            Self::Internal(msg) => write!(f, "receiver internal error: {msg}"),
         }
     }
 }

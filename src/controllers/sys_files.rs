@@ -186,12 +186,14 @@ pub(crate) async fn sys_small_upload(
     let response = file_service::sys_small_upload(
         &ctx.db,
         &ctx,
-        &tc,
-        &tenant_code,
-        &params,
-        file_bytes,
-        &audit_ctx,
-        attach,
+        &file_service::SysSmallUploadParams {
+            tc: &tc,
+            tenant_code: &tenant_code,
+            params: &params,
+            bytes: file_bytes,
+            audit_ctx: &audit_ctx,
+            attach,
+        },
     )
     .await?;
 

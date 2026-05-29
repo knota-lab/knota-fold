@@ -100,8 +100,7 @@ where
             let raw_path = req
                 .extensions()
                 .get::<MatchedPath>()
-                .map(MatchedPath::as_str)
-                .unwrap_or_else(|| req.uri().path())
+                .map_or_else(|| req.uri().path(), MatchedPath::as_str)
                 .to_string();
             let matched_path = if raw_path.len() > 1 && raw_path.ends_with('/') {
                 raw_path[..raw_path.len() - 1].to_string()
