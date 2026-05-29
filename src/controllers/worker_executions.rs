@@ -82,16 +82,14 @@ pub(crate) async fn get_detail(
     let db = &ctx.db;
     let execution_id = parse_uuid(id)?;
 
-    let execution =
-        match scheduled_worker_executions::Model::find_by_id(db, execution_id).await? {
-            Some(e) => e,
-            None => {
-                return crate::views::errors::not_found(
-                    "worker_execution.not_found",
-                    "执行记录未找到",
-                )
-            }
-        };
+    let Some(execution) =
+        scheduled_worker_executions::Model::find_by_id(db, execution_id).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_execution.not_found",
+            "执行记录未找到",
+        );
+    };
 
     if execution.tenant_id != tc.tenant_id && !tc.is_super_admin {
         return crate::views::errors::worker::execution_not_yours();

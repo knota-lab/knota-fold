@@ -40,10 +40,10 @@ fn extract_jwt_claims(token: &str) -> Option<(String, String)> {
     }
     // JWT payload is URL-safe base64. Pad if needed.
     let input = parts[1];
-    let padded = if !input.len().is_multiple_of(4) {
-        format!("{input}{}", "=".repeat(4 - input.len() % 4))
-    } else {
+    let padded = if input.len().is_multiple_of(4) {
         input.to_string()
+    } else {
+        format!("{input}{}", "=".repeat(4 - input.len() % 4))
     };
     use base64::Engine;
     let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD

@@ -102,7 +102,7 @@ pub fn chunk_markdown(
             }
 
             Event::End(tag_end) => {
-                let rendered = render_end_tag(tag_end);
+                let rendered = render_end_tag(*tag_end);
                 current_content.push_str(&rendered);
             }
 
@@ -271,7 +271,7 @@ fn render_start_tag(tag: &Tag<'_>) -> String {
         Tag::CodeBlock(kind) => {
             let lang = match kind {
                 pulldown_cmark::CodeBlockKind::Fenced(info) => info.to_string(),
-                _ => String::new(),
+                pulldown_cmark::CodeBlockKind::Indented => String::new(),
             };
             format!("```{lang}\n")
         }
@@ -309,7 +309,7 @@ fn render_start_tag(tag: &Tag<'_>) -> String {
 }
 
 /// Render an end tag back to Markdown-ish source text.
-fn render_end_tag(tag_end: &TagEnd) -> String {
+fn render_end_tag(tag_end: TagEnd) -> String {
     match tag_end {
         TagEnd::Paragraph => "\n\n".to_string(),
         TagEnd::Heading(_) => "\n".to_string(),

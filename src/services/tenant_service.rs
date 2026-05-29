@@ -3,8 +3,8 @@ use loco_rs::controller::ErrorDetail;
 use loco_rs::prelude::model::query;
 use loco_rs::prelude::*;
 use sea_orm::{
-    ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    TransactionTrait,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
+    QueryFilter, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -186,10 +186,10 @@ pub async fn create_tenant_with_init(
     }
 
     // Step 7: Activate tenant now that all initialization is complete
-    let mut activate_am = tenants_model::ActiveModel {
+    let activate_am = tenants_model::ActiveModel {
+        status: ActiveValue::Set("active".to_string()),
         ..Default::default()
     };
-    activate_am.status = ActiveValue::Set("active".to_string());
     let tenant = tenants_model::Model::update(db, tenant.id, activate_am)
         .await
         .model_err()?;
@@ -238,9 +238,7 @@ pub async fn update_tenant(
     let existing = tenants_model::Model::find_by_id(db, id).await.model_err()?;
     let before = TenantAuditSnapshot::from(&existing);
 
-    let mut am = tenants_model::ActiveModel {
-        ..Default::default()
-    };
+    let mut am = <tenants_model::ActiveModel as sea_orm::ActiveModelTrait>::default();
 
     if let Some(name) = &params.name {
         am.name = ActiveValue::Set(name.clone());

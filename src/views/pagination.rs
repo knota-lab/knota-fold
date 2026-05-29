@@ -3,7 +3,7 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PaginatedResponse<T: Serialize> {
+pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
     pub total_pages: u64,
     pub total_items: u64,

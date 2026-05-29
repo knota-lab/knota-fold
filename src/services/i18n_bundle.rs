@@ -259,10 +259,10 @@ async fn build_bundle_from_db(
     // back to the source-text fallback baked into the call site.
     let global_fut = trans_model::Model::list_global_bundle(db, namespace, locale);
     let base_fut = async {
-        if locale != BASE_LOCALE {
-            trans_model::Model::list_global_bundle(db, namespace, BASE_LOCALE).await
-        } else {
+        if locale == BASE_LOCALE {
             Ok(Vec::new())
+        } else {
+            trans_model::Model::list_global_bundle(db, namespace, BASE_LOCALE).await
         }
     };
 

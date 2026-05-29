@@ -114,25 +114,17 @@ where
 
             let method = req.method().as_str().to_uppercase();
 
-            let token = match extract_bearer_token(&req) {
-                Some(token) => token,
-                None => {
-                    return Ok(err_unauthorized("authz.no_token", "未提供认证令牌")
-                        .into_response())
-                }
+            let Some(token) = extract_bearer_token(&req) else {
+                return Ok(
+                    err_unauthorized("authz.no_token", "未提供认证令牌").into_response()
+                );
             };
 
             if let Ok(claims) = loco_rs::auth::jwt::JWT::new(&jwt_secret).validate(&token)
             {
-                let user_id = match Uuid::parse_str(&claims.claims.pid) {
-                    Ok(user_id) => user_id,
-                    Err(_) => {
-                        return Ok(err_unauthorized(
-                            "authz.invalid_token",
-                            "认证令牌无效",
-                        )
-                        .into_response())
-                    }
+                let Ok(user_id) = Uuid::parse_str(&claims.claims.pid) else {
+                    return Ok(err_unauthorized("authz.invalid_token", "认证令牌无效")
+                        .into_response());
                 };
 
                 let token_pwd_iat = claims
@@ -142,17 +134,15 @@ where
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0);
 
-                let db_pwd_iat =
-                    match auth_cache::get_password_iat(&cache, &db, user_id).await {
-                        Ok(ts) => ts,
-                        Err(_) => {
-                            return Ok(err_unauthorized(
-                                "authz.token_validation_failed",
-                                "令牌验证失败",
-                            )
-                            .into_response())
-                        }
-                    };
+                let Ok(db_pwd_iat) =
+                    auth_cache::get_password_iat(&cache, &db, user_id).await
+                else {
+                    return Ok(err_unauthorized(
+                        "authz.token_validation_failed",
+                        "令牌验证失败",
+                    )
+                    .into_response());
+                };
 
                 if token_pwd_iat < db_pwd_iat {
                     return Ok(err_unauthorized(
@@ -162,17 +152,15 @@ where
                     .into_response());
                 }
 
-                let user_profile =
-                    match auth_cache::get_user_profile(&cache, &db, user_id).await {
-                        Ok(p) => p,
-                        Err(_) => {
-                            return Ok(err_unauthorized(
-                                "authz.user_load_failed",
-                                "用户信息加载失败",
-                            )
-                            .into_response())
-                        }
-                    };
+                let Ok(user_profile) =
+                    auth_cache::get_user_profile(&cache, &db, user_id).await
+                else {
+                    return Ok(err_unauthorized(
+                        "authz.user_load_failed",
+                        "用户信息加载失败",
+                    )
+                    .into_response());
+                };
                 if user_profile.status == "disabled" {
                     return Ok(err_forbidden("authz.account_disabled", "账号已被禁用")
                         .into_response());
@@ -194,15 +182,13 @@ where
                     }
                 };
 
-                let tenant = match tenants::Model::find_by_code(&db, &tenant_code).await {
-                    Ok(tenant) => tenant,
-                    Err(_) => {
-                        return Ok(err_unauthorized(
-                            "authz.tenant_not_found",
-                            "令牌中租户不存在",
-                        )
-                        .into_response())
-                    }
+                let Ok(tenant) = tenants::Model::find_by_code(&db, &tenant_code).await
+                else {
+                    return Ok(err_unauthorized(
+                        "authz.tenant_not_found",
+                        "令牌中租户不存在",
+                    )
+                    .into_response());
                 };
 
                 let tenant_id = tenant.id;
@@ -291,15 +277,12 @@ where
                 return inner.call(req).await;
             }
 
-            let api_key_identity = match ApiKeyIdentity::authenticate(&db, &token).await {
-                Ok(identity) => identity,
-                Err(_) => {
-                    return Ok(err_unauthorized(
-                        "authz.api_key_invalid",
-                        "API Key 认证失败",
-                    )
-                    .into_response())
-                }
+            let Ok(api_key_identity) = ApiKeyIdentity::authenticate(&db, &token).await
+            else {
+                return Ok(
+                    err_unauthorized("authz.api_key_invalid", "API Key 认证失败")
+                        .into_response(),
+                );
             };
 
             let subject = format!("apikey:{}", api_key_identity.api_key_id);

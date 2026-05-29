@@ -84,7 +84,7 @@ fn tokenize_to_sparse(text: &str) -> (Vec<u32>, Vec<f32>) {
         *token_freq.entry(hash).or_insert(0.0) += 1.0;
     }
     let mut indices: Vec<u32> = token_freq.keys().copied().collect();
-    indices.sort();
+    indices.sort_unstable();
     let values: Vec<f32> = indices.iter().map(|i| token_freq[i]).collect();
     (indices, values)
 }

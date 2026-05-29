@@ -24,7 +24,11 @@ impl GeneratedKey {
 
     pub fn hash_key(plain: &str) -> String {
         let digest = Sha256::digest(plain.as_bytes());
-        digest.iter().map(|b| format!("{b:02x}")).collect()
+        digest.iter().fold(String::new(), |mut acc, b| {
+            use std::fmt::Write;
+            let _ = write!(acc, "{b:02x}");
+            acc
+        })
     }
 
     pub fn generate_with_bytes(env_prefix: &str, secret_bytes: usize) -> Self {

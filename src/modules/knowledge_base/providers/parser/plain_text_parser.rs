@@ -57,7 +57,7 @@ impl DocumentParser for PlainTextParser {
         })
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "plain_text"
     }
 }

@@ -451,9 +451,8 @@ fn extract_citations_from_result(result: &str, citations: &Arc<Mutex<Vec<Citatio
                 continue;
             };
 
-            let doc_id = match uuid::Uuid::parse_str(doc_id_str) {
-                Ok(id) => id,
-                Err(_) => continue,
+            let Ok(doc_id) = uuid::Uuid::parse_str(doc_id_str) else {
+                continue;
             };
             let chunk_id = uuid::Uuid::parse_str(chunk_id_str).ok();
 
@@ -498,7 +497,7 @@ fn extract_content_after_header(line: &str) -> String {
     // Format: "1. [heading] (分数: ...)\n相关内容:\n..."
     // We only have one line at a time, so extract the heading as content preview
     if let Some(start) = line.find("] (") {
-        if let Some(heading_start) = line.find("[") {
+        if let Some(heading_start) = line.find('[') {
             let heading = &line[heading_start + 1..start];
             return heading.to_string();
         }

@@ -106,17 +106,14 @@ pub async fn list(Query(params): Query<ListParams>) -> Result<Json<ListResponse>
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let db = match writer::log_db() {
-        Some(pool) => pool,
-        None => {
-            return Ok(Json(ListResponse {
-                items: vec![],
-                total_items: 0,
-                total_pages: 0,
-                page,
-                page_size,
-            }));
-        }
+    let Some(db) = writer::log_db() else {
+        return Ok(Json(ListResponse {
+            items: vec![],
+            total_items: 0,
+            total_pages: 0,
+            page,
+            page_size,
+        }));
     };
 
     // Build WHERE clauses.

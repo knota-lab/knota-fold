@@ -108,7 +108,10 @@ pub async fn apply_manifest(
             let am = i18n_entries::ActiveModel {
                 id: ActiveValue::Unchanged(row.id),
                 description: ActiveValue::Set(
-                    entry.description.clone().or(row.description.clone()),
+                    entry
+                        .description
+                        .clone()
+                        .or_else(|| row.description.clone()),
                 ),
                 status: ActiveValue::Set(entry_model::STATUS_ACTIVE.to_string()),
                 last_seen_at: ActiveValue::Set(now),

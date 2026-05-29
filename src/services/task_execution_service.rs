@@ -75,7 +75,7 @@ where
 
     let result = tokio::select! {
         r = work_fn() => r,
-        _ = tokio::time::sleep(Duration::from_secs(timeout_secs)) => {
+        () = tokio::time::sleep(Duration::from_secs(timeout_secs)) => {
             let finished_at = Utc::now().fixed_offset();
             let duration_ms = (finished_at - started_at).num_milliseconds() as i32;
             scheduled_worker_executions::Model::update_status(

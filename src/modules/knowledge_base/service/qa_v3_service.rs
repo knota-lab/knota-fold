@@ -302,7 +302,7 @@ fn build_chat_history(
                                         tool_name,
                                         tc.get("arguments")
                                             .cloned()
-                                            .unwrap_or(serde_json::json!({})),
+                                            .unwrap_or_else(|| serde_json::json!({})),
                                     ),
                                 );
 
@@ -468,7 +468,7 @@ pub async fn process_qa_v3_stream(
     let broker = &params.broker;
     // ── Step 0: Session management ──────────────────────────────────
     let session_span = tracing::info_span!("qa.session");
-    let _session_guard = session_span.enter();
+    let session_guard = session_span.enter();
     let session = match request.session_id {
         Some(sid) => chat_service::get_session(db, sid, tenant_id, user_id)
             .await
@@ -484,9 +484,7 @@ pub async fn process_qa_v3_stream(
             .ok(),
     };
 
-    let session = if let Some(s) = session {
-        s
-    } else {
+    let Some(session) = session else {
         let _ = send_event(
             tx,
             QaEvent::Error {
@@ -502,7 +500,7 @@ pub async fn process_qa_v3_stream(
     let session_id_str = session.id.to_string();
 
     // Acquire per-session lock to serialise concurrent requests for the same session.
-    let _session_guard_lock = {
+    let session_guard_lock = {
         let mut locks = session_locks.lock().await;
 
         // Periodic cleanup: remove entries when the map grows beyond threshold.
@@ -516,7 +514,7 @@ pub async fn process_qa_v3_stream(
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())));
         lock.clone()
     };
-    let _session_guard_lock = _session_guard_lock.lock().await;
+    let session_guard_lock = session_guard_lock.lock().await;
 
     // Load session history
     let history = chat_service::get_session_messages(db, session.id, tenant_id, user_id)
@@ -533,12 +531,12 @@ pub async fn process_qa_v3_stream(
         history.len(),
     );
 
-    drop(_session_guard);
-    drop(_session_guard_lock);
+    drop(session_guard);
+    drop(session_guard_lock);
 
     // ── Step 1: Material registration ───────────────────────────────
     let material_span = tracing::info_span!("qa.material");
-    let _material_guard = material_span.enter();
+    let material_guard = material_span.enter();
     send_event(
         tx,
         QaEvent::PhaseChanged {
@@ -728,7 +726,7 @@ pub async fn process_qa_v3_stream(
         "Materials registered: count={}",
         material_count,
     );
-    drop(_material_guard);
+    drop(material_guard);
 
     // Build material_refs JSON for the user message
     let material_refs_json: Option<serde_json::Value> =
@@ -854,7 +852,7 @@ pub async fn process_qa_v3_stream(
 
     // ── Step 3: Compaction ──────────────────────────────────────────
     let compaction_span = tracing::info_span!("qa.compaction");
-    let _compaction_guard = compaction_span.enter();
+    let compaction_span_guard = compaction_span.enter();
 
     // Token-based trigger check
     let history_tokens: usize = history.iter().map(estimate_message_tokens).sum();
@@ -891,7 +889,7 @@ pub async fn process_qa_v3_stream(
 
     compaction_span.record("triggered", needs_compaction);
     compaction_span.record("history_tokens", history_tokens);
-    drop(_compaction_guard);
+    drop(compaction_span_guard);
 
     // Read cached summary (non-blocking)
     let summary = if needs_compaction && recent_start > 0 {
@@ -1033,8 +1031,10 @@ pub async fn process_qa_v3_stream(
     // ── Step 3c: Semantic recall with dedup ────────────────────────
     let recall_span =
         tracing::info_span!("qa.recall", strategy = %config.history_strategy);
-    let _recall_guard = recall_span.enter();
-    let relevant_context = if config.history_strategy != "none" {
+    let recall_guard = recall_span.enter();
+    let relevant_context = if config.history_strategy == "none" {
+        None
+    } else {
         let strategy = match config.history_strategy.as_str() {
             "retrieve" => Some(memory_service::HistoryStrategy::RetrieveRelevant {
                 top_k: config.semantic_top_k,
@@ -1088,12 +1088,10 @@ pub async fn process_qa_v3_stream(
         } else {
             None
         }
-    } else {
-        None
     };
 
     recall_span.record("has_recall", relevant_context.is_some());
-    drop(_recall_guard);
+    drop(recall_guard);
 
     // Inject semantic recall context into system_prompt
     if let Some(ref ctx) = relevant_context {
@@ -1110,7 +1108,7 @@ pub async fn process_qa_v3_stream(
         provider = %config.provider,
         system_prompt_tokens = system_prompt_tokens,
     );
-    let _agent_guard = agent_span.enter();
+    let agent_guard = agent_span.enter();
 
     send_event(
         tx,
@@ -1179,7 +1177,7 @@ pub async fn process_qa_v3_stream(
                                 "text_items": text_count
                             })
                         }
-                        _ => serde_json::json!({ "role": "other" })
+                        Message::System { .. } => serde_json::json!({ "role": "other" })
                     }
                 }).collect::<Vec<_>>()
             },
@@ -1243,7 +1241,7 @@ pub async fn process_qa_v3_stream(
         .await;
 
     let mut final_answer = String::new();
-    let mut _tool_call_count: u32 = 0;
+    let mut tool_call_count: u32 = 0;
     let mut captured_usage: Option<rig::completion::Usage> = None;
     let mut client_connected = true;
 
@@ -1264,17 +1262,17 @@ pub async fn process_qa_v3_stream(
             Ok(MultiTurnStreamItem::StreamAssistantItem(
                 StreamedAssistantContent::ToolCall { .. },
             )) => {
-                _tool_call_count += 1;
+                tool_call_count += 1;
                 // ToolCallStarted / ToolCallCompleted events are emitted by QaV3Hook
             }
             Ok(MultiTurnStreamItem::FinalResponse(fin)) => {
                 captured_usage = Some(fin.usage());
                 tracing::info!(
                     answer_len = final_answer.len(),
-                    tool_calls = _tool_call_count,
+                    tool_calls = tool_call_count,
                     "Agent done: answer_len={} tool_calls={}",
                     final_answer.len(),
-                    _tool_call_count,
+                    tool_call_count,
                 );
             }
             Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
@@ -1364,12 +1362,12 @@ pub async fn process_qa_v3_stream(
     }
 
     agent_span.record("answer_len", final_answer.len());
-    agent_span.record("tool_call_count", _tool_call_count);
-    drop(_agent_guard);
+    agent_span.record("tool_call_count", tool_call_count);
+    drop(agent_guard);
 
     // ── Step 5: Persistence ─────────────────────────────────────────
     let persist_span = tracing::info_span!("qa.persist");
-    let _persist_guard = persist_span.enter();
+    let persist_guard = persist_span.enter();
 
     if client_connected {
         send_event(
@@ -1475,7 +1473,7 @@ pub async fn process_qa_v3_stream(
     // ── Step 6: Complete ────────────────────────────────────────────
     persist_span.record("answer_len", final_answer.len());
     persist_span.record("tool_call_count", tool_records.len());
-    drop(_persist_guard);
+    drop(persist_guard);
 
     let usage = TokenUsage {
         prompt_tokens,

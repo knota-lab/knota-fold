@@ -39,7 +39,7 @@ enum ImportStrategy {
 
 fn parse_strategy(s: Option<&str>) -> loco_rs::Result<ImportStrategy> {
     match s.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
-        None | Some("") | Some("replace") => Ok(ImportStrategy::Replace),
+        None | Some("" | "replace") => Ok(ImportStrategy::Replace),
         Some("skip") => Ok(ImportStrategy::Skip),
         Some(other) => Err(err_bad_request(
             "i18n.import_format_invalid",

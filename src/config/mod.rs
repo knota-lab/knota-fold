@@ -380,7 +380,7 @@ fn default_qa_temperature() -> f64 {
     0.2
 }
 fn default_max_context_tokens() -> i32 {
-    100000
+    100_000
 }
 fn default_response_reserve_tokens() -> i32 {
     4096
@@ -401,7 +401,7 @@ fn default_semantic_top_k() -> usize {
     10
 }
 fn default_max_inline_chars() -> usize {
-    100000
+    100_000
 }
 
 // ── Intent Recognition ─────────────────────────────────────────────

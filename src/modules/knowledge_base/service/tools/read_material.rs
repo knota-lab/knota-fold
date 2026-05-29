@@ -47,7 +47,7 @@ enum MaterialRef<'a> {
     Inline(&'a InlineText),
 }
 
-impl<'a> MaterialRef<'a> {
+impl MaterialRef<'_> {
     fn id(&self) -> String {
         match self {
             MaterialRef::Doc(d) => d.id.to_string(),

@@ -9,6 +9,7 @@ pub fn openapi_initializer(ctx: &AppContext) -> Option<Box<dyn Initializer>> {
         return None;
     }
 
+    #[allow(clippy::needless_for_each)]
     Some(Box::new(loco_openapi::OpenapiInitializerWithSetup::new(
         |_ctx| {
             #[derive(OpenApi)]

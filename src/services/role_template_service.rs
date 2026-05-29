@@ -1,5 +1,7 @@
-use loco_rs::prelude::*;
-use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
+    QueryFilter,
+};
 use uuid::Uuid;
 
 use crate::models::_entities::sys_role_template_menus;
@@ -71,9 +73,7 @@ pub async fn update_template(
         .model_err()?;
     let before = RoleTemplateAuditSnapshot::from(&existing);
 
-    let mut am = templates_model::ActiveModel {
-        ..Default::default()
-    };
+    let mut am = <templates_model::ActiveModel as sea_orm::ActiveModelTrait>::default();
 
     if let Some(name) = &params.name {
         am.name = ActiveValue::Set(name.clone());

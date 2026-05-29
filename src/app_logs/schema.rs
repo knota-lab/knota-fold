@@ -1,6 +1,6 @@
 /// SQL for creating the app-logs tables and indexes.
 /// Executed with `CREATE TABLE IF NOT EXISTS` at startup — no migration needed.
-pub const CREATE_TABLES: &str = r#"
+pub const CREATE_TABLES: &str = r"
 CREATE TABLE IF NOT EXISTS request_logs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     trace_id    TEXT    NOT NULL,
@@ -49,4 +49,4 @@ CREATE INDEX IF NOT EXISTS idx_req_logs_tenant_code  ON request_logs(tenant_code
 CREATE INDEX IF NOT EXISTS idx_spans_trace_id        ON trace_spans(trace_id);
 CREATE INDEX IF NOT EXISTS idx_spans_parent_span_id  ON trace_spans(parent_span_id);
 CREATE INDEX IF NOT EXISTS idx_log_entries_trace_id  ON log_entries(trace_id);
-"#;
+";

@@ -71,17 +71,15 @@ pub(crate) async fn create(
         return crate::views::errors::worker::not_authorized();
     }
 
-    let worker_def = match scheduled_worker_definitions::Entity::find_by_id(worker_def_id)
-        .one(db)
-        .await?
-    {
-        Some(d) => d,
-        None => {
-            return crate::views::errors::not_found(
-                "worker_def.not_found",
-                "Worker 定义未找到",
-            )
-        }
+    let Some(worker_def) =
+        scheduled_worker_definitions::Entity::find_by_id(worker_def_id)
+            .one(db)
+            .await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_def.not_found",
+            "Worker 定义未找到",
+        );
     };
     if worker_def.status != "active" {
         return crate::views::errors::bad_request("worker.not_active", "Worker 未激活");
@@ -126,16 +124,14 @@ pub(crate) async fn update(
     let db = &ctx.db;
     let schedule_id = parse_uuid(id)?;
 
-    let schedule =
-        match scheduled_worker_schedules::Model::find_by_id(db, schedule_id).await? {
-            Some(s) => s,
-            None => {
-                return crate::views::errors::not_found(
-                    "worker_schedule.not_found",
-                    "定时任务未找到",
-                )
-            }
-        };
+    let Some(schedule) =
+        scheduled_worker_schedules::Model::find_by_id(db, schedule_id).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_schedule.not_found",
+            "定时任务未找到",
+        );
+    };
 
     if schedule.tenant_id != tc.tenant_id {
         return crate::views::errors::worker::schedule_not_yours();
@@ -187,16 +183,14 @@ pub(crate) async fn patch_status(
     let db = &ctx.db;
     let schedule_id = parse_uuid(id)?;
 
-    let schedule =
-        match scheduled_worker_schedules::Model::find_by_id(db, schedule_id).await? {
-            Some(s) => s,
-            None => {
-                return crate::views::errors::not_found(
-                    "worker_schedule.not_found",
-                    "定时任务未找到",
-                )
-            }
-        };
+    let Some(schedule) =
+        scheduled_worker_schedules::Model::find_by_id(db, schedule_id).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_schedule.not_found",
+            "定时任务未找到",
+        );
+    };
 
     if schedule.tenant_id != tc.tenant_id {
         return crate::views::errors::worker::schedule_not_yours();
@@ -243,16 +237,14 @@ pub(crate) async fn delete_schedule(
     let db = &ctx.db;
     let schedule_id = parse_uuid(id)?;
 
-    let schedule =
-        match scheduled_worker_schedules::Model::find_by_id(db, schedule_id).await? {
-            Some(s) => s,
-            None => {
-                return crate::views::errors::not_found(
-                    "worker_schedule.not_found",
-                    "定时任务未找到",
-                )
-            }
-        };
+    let Some(schedule) =
+        scheduled_worker_schedules::Model::find_by_id(db, schedule_id).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_schedule.not_found",
+            "定时任务未找到",
+        );
+    };
 
     if schedule.tenant_id != tc.tenant_id {
         return crate::views::errors::worker::schedule_not_yours();
@@ -281,34 +273,29 @@ pub(crate) async fn trigger(
     let db = &ctx.db;
     let schedule_id = parse_uuid(id)?;
 
-    let schedule =
-        match scheduled_worker_schedules::Model::find_by_id(db, schedule_id).await? {
-            Some(s) => s,
-            None => {
-                return crate::views::errors::not_found(
-                    "worker_schedule.not_found",
-                    "定时任务未找到",
-                )
-            }
-        };
+    let Some(schedule) =
+        scheduled_worker_schedules::Model::find_by_id(db, schedule_id).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_schedule.not_found",
+            "定时任务未找到",
+        );
+    };
 
     if schedule.tenant_id != tc.tenant_id {
         return crate::views::errors::worker::schedule_not_yours();
     }
 
     let worker_code = get_worker_code(db, schedule.worker_def_id).await?;
-    let worker_def =
-        match scheduled_worker_definitions::Model::find_active_by_code(db, &worker_code)
+    let Some(worker_def) =
+        scheduled_worker_definitions::Model::find_active_by_code(db, &worker_code)
             .await?
-        {
-            Some(d) => d,
-            None => {
-                return crate::views::errors::not_found(
-                    "worker.not_found_or_inactive",
-                    "Worker 未找到或未激活",
-                )
-            }
-        };
+    else {
+        return crate::views::errors::not_found(
+            "worker.not_found_or_inactive",
+            "Worker 未找到或未激活",
+        );
+    };
 
     let grant = scheduled_worker_tenant_grants::Model::find_granted(
         db,
@@ -320,14 +307,8 @@ pub(crate) async fn trigger(
         return crate::views::errors::worker::not_authorized();
     }
 
-    let tenant = match tenants::Model::find_by_id(db, tc.tenant_id).await {
-        Ok(t) => t,
-        Err(_) => {
-            return crate::views::errors::not_found(
-                "common.tenant_not_found",
-                "租户未找到",
-            )
-        }
+    let Ok(tenant) = tenants::Model::find_by_id(db, tc.tenant_id).await else {
+        return crate::views::errors::not_found("common.tenant_not_found", "租户未找到");
     };
     if tenant.status != "active" {
         return crate::views::errors::forbidden("common.tenant_inactive", "租户已停用");
@@ -423,20 +404,18 @@ async fn get_worker_code(
     db: &sea_orm::DatabaseConnection,
     worker_def_id: Uuid,
 ) -> Result<String> {
-    let worker_def = match scheduled_worker_definitions::Entity::find_by_id(worker_def_id)
-        .one(db)
-        .await?
-    {
-        Some(d) => d,
-        None => {
-            return Err(loco_rs::Error::CustomError(
-                axum::http::StatusCode::NOT_FOUND,
-                loco_rs::controller::ErrorDetail::new(
-                    "worker_def.not_found",
-                    "Worker 定义未找到",
-                ),
-            ))
-        }
+    let Some(worker_def) =
+        scheduled_worker_definitions::Entity::find_by_id(worker_def_id)
+            .one(db)
+            .await?
+    else {
+        return Err(loco_rs::Error::CustomError(
+            axum::http::StatusCode::NOT_FOUND,
+            loco_rs::controller::ErrorDetail::new(
+                "worker_def.not_found",
+                "Worker 定义未找到",
+            ),
+        ));
     };
     Ok(worker_def.code)
 }

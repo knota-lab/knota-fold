@@ -1899,7 +1899,7 @@ pub async fn complete_upload(
 
             response
         }
-        Ok(TryInsertResult::Conflicted) | Ok(TryInsertResult::Empty) => {
+        Ok(TryInsertResult::Conflicted | TryInsertResult::Empty) => {
             let _ = txn.rollback().await;
             cleanup_complete_failure(
                 &s3_client,

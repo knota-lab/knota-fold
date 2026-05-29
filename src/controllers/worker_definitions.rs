@@ -63,14 +63,12 @@ pub(crate) async fn get_detail(
     Path(code): Path<String>,
 ) -> Result<Response> {
     let db = &ctx.db;
-    let def = match scheduled_worker_definitions::Model::find_by_code(db, &code).await? {
-        Some(d) => d,
-        None => {
-            return crate::views::errors::not_found(
-                "worker_def.not_found",
-                "Worker 定义未找到",
-            )
-        }
+    let Some(def) = scheduled_worker_definitions::Model::find_by_code(db, &code).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_def.not_found",
+            "Worker 定义未找到",
+        );
     };
 
     if !tc.is_super_admin {
@@ -151,14 +149,12 @@ pub(crate) async fn update(
     }
 
     let db = &ctx.db;
-    let def = match scheduled_worker_definitions::Model::find_by_code(db, &code).await? {
-        Some(d) => d,
-        None => {
-            return crate::views::errors::not_found(
-                "worker_def.not_found",
-                "Worker 定义未找到",
-            )
-        }
+    let Some(def) = scheduled_worker_definitions::Model::find_by_code(db, &code).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_def.not_found",
+            "Worker 定义未找到",
+        );
     };
 
     let mut active_model: scheduled_worker_definitions::ActiveModel = def.into();
@@ -210,14 +206,12 @@ pub(crate) async fn patch_status(
     }
 
     let db = &ctx.db;
-    let def = match scheduled_worker_definitions::Model::find_by_code(db, &code).await? {
-        Some(d) => d,
-        None => {
-            return crate::views::errors::not_found(
-                "worker_def.not_found",
-                "Worker 定义未找到",
-            )
-        }
+    let Some(def) = scheduled_worker_definitions::Model::find_by_code(db, &code).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_def.not_found",
+            "Worker 定义未找到",
+        );
     };
 
     if params.status != "active" && params.status != "disabled" {
@@ -253,14 +247,12 @@ pub(crate) async fn list_grants(
     }
 
     let db = &ctx.db;
-    let def = match scheduled_worker_definitions::Model::find_by_code(db, &code).await? {
-        Some(d) => d,
-        None => {
-            return crate::views::errors::not_found(
-                "worker_def.not_found",
-                "Worker 定义未找到",
-            )
-        }
+    let Some(def) = scheduled_worker_definitions::Model::find_by_code(db, &code).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_def.not_found",
+            "Worker 定义未找到",
+        );
     };
 
     let grants =
@@ -289,14 +281,12 @@ pub(crate) async fn batch_set_grants(
     }
 
     let db = &ctx.db;
-    let def = match scheduled_worker_definitions::Model::find_by_code(db, &code).await? {
-        Some(d) => d,
-        None => {
-            return crate::views::errors::not_found(
-                "worker_def.not_found",
-                "Worker 定义未找到",
-            )
-        }
+    let Some(def) = scheduled_worker_definitions::Model::find_by_code(db, &code).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_def.not_found",
+            "Worker 定义未找到",
+        );
     };
 
     let tenant_ids: Vec<Uuid> = params
@@ -368,14 +358,12 @@ pub(crate) async fn list_granted_tenants(
     }
 
     let db = &ctx.db;
-    let def = match scheduled_worker_definitions::Model::find_by_code(db, &code).await? {
-        Some(d) => d,
-        None => {
-            return crate::views::errors::not_found(
-                "worker_def.not_found",
-                "Worker 定义未找到",
-            )
-        }
+    let Some(def) = scheduled_worker_definitions::Model::find_by_code(db, &code).await?
+    else {
+        return crate::views::errors::not_found(
+            "worker_def.not_found",
+            "Worker 定义未找到",
+        );
     };
 
     let grants =

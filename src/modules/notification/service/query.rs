@@ -45,10 +45,7 @@ pub async fn get_inbox(
     let mut items = Vec::with_capacity(recipients.len());
     for r in &recipients {
         let notif = notif_model::Model::find_by_id(db, r.notification_id).await;
-        let notif = match notif {
-            Ok(n) => n,
-            Err(_) => continue, // Skip revoked/deleted
-        };
+        let Ok(notif) = notif else { continue };
 
         let sender: Option<users::Model> = users::Entity::find()
             .filter(users::Column::Id.eq(notif.created_by))
@@ -121,9 +118,9 @@ pub async fn get_forced_notifications(
 
     let mut items = Vec::with_capacity(recipients.len());
     for r in &recipients {
-        let notif = match notif_model::Model::find_by_id(db, r.notification_id).await {
-            Ok(n) => n,
-            Err(_) => continue,
+        let Ok(notif) = notif_model::Model::find_by_id(db, r.notification_id).await
+        else {
+            continue;
         };
 
         let sender: Option<users::Model> = users::Entity::find()

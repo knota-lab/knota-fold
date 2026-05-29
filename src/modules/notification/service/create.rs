@@ -268,10 +268,7 @@ async fn resolve_role_recipients(
 ) -> loco_rs::Result<Vec<Uuid>> {
     let matched_roles: Vec<Uuid> = roles::Entity::find()
         .filter(roles::Column::TenantId.eq(tenant_id))
-        .filter(
-            roles::Column::Code
-                .is_in(role_codes.iter().map(String::as_str).collect::<Vec<&str>>()),
-        )
+        .filter(roles::Column::Code.is_in(role_codes.iter().map(String::as_str)))
         .all(db)
         .await
         .db_err()?

@@ -14,7 +14,7 @@ use crate::utils::error::IntoAppError;
 pub async fn revoke_notification(
     db: &DatabaseConnection,
     notification_id: Uuid,
-    _operator_id: Uuid,
+    operator_id: Uuid,
     is_super_admin: bool,
     tenant_filter: Option<Uuid>,
 ) -> loco_rs::Result<()> {

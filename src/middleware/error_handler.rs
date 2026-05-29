@@ -85,9 +85,7 @@ async fn patch_response(response: Response) -> Response {
 
     // Read body bytes — need to take ownership since `to_bytes` consumes Body.
     let (parts, body) = response.into_parts();
-    let body_bytes = if let Ok(bytes) = axum::body::to_bytes(body, 4096).await {
-        bytes
-    } else {
+    let Ok(body_bytes) = axum::body::to_bytes(body, 4096).await else {
         let fallback = Response::from_parts(parts, Body::from(Bytes::new()));
         return fallback;
     };
@@ -99,9 +97,8 @@ async fn patch_response(response: Response) -> Response {
         Err(_) => return response,
     };
 
-    let obj = match value.as_object_mut() {
-        Some(o) => o,
-        None => return response,
+    let Some(obj) = value.as_object_mut() else {
+        return response;
     };
 
     // Already has a `code` field — format A, nothing to do.

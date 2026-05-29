@@ -455,11 +455,7 @@ pub async fn sync_role_permissions<C: ConnectionTrait>(
                 tenant_id,
             )
             .await?;
-        let out_of_scope: Vec<&Uuid> = permission_ids
-            .iter()
-            .filter(|id| !actor_scope.contains(id))
-            .collect();
-        if !out_of_scope.is_empty() {
+        if permission_ids.iter().any(|id| !actor_scope.contains(id)) {
             return Err(crate::views::errors::role::err_out_of_scope_permissions());
         }
     }
@@ -582,11 +578,7 @@ pub async fn sync_role_menus(
             }
         }
 
-        let out_of_scope: Vec<&Uuid> = sys_menu_ids
-            .iter()
-            .filter(|id| !actor_scope.contains(id))
-            .collect();
-        if !out_of_scope.is_empty() {
+        if sys_menu_ids.iter().any(|id| !actor_scope.contains(id)) {
             return Err(crate::views::errors::role::err_out_of_scope_menus());
         }
     }

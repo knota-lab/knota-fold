@@ -273,9 +273,9 @@ fn format_session_markdown(
 
                 if let Some(parts) = has_content_parts {
                     for part in parts {
-                        let part_type = match part.get("type").and_then(|v| v.as_str()) {
-                            Some(t) => t,
-                            None => continue,
+                        let Some(part_type) = part.get("type").and_then(|v| v.as_str())
+                        else {
+                            continue;
                         };
                         match part_type {
                             "text" => {
@@ -569,7 +569,7 @@ fn format_debug_html(
     {
         let mut toc_entries: Vec<(u32, String)> = Vec::new(); // (round, preview)
         let mut toc_round = 0u32;
-        for msg in messages.iter() {
+        for msg in messages {
             if msg.role == "user" {
                 toc_round += 1;
                 let preview: String = msg.content.chars().take(80).collect();

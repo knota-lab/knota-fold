@@ -184,8 +184,7 @@ fn rfc8187_encode(value: &str) -> String {
 fn map_s3_error(err: aws_sdk_s3::error::SdkError<GetObjectError>) -> Error {
     if err
         .as_service_error()
-        .map(|service_err| service_err.is_no_such_key())
-        == Some(true)
+        .is_some_and(|service_err| service_err.is_no_such_key())
     {
         tracing::error!(error = ?err, "S3 GetObject reported NoSuchKey for existing file row");
         crate::views::errors::err_custom(

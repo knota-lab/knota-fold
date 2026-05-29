@@ -67,7 +67,7 @@ fn json_endpoint_response(response: JsonEndpointResponse) -> Response {
         .into_response()
 }
 
-async fn ensure_super_admin(tc: &TenantContext) -> Result<()> {
+fn ensure_super_admin(tc: &TenantContext) -> Result<()> {
     if !tc.is_super_admin {
         return Err(crate::views::errors::authz::err_super_admin_required());
     }
@@ -107,7 +107,7 @@ pub(crate) async fn sys_initiate(
     Path(tenant_id): Path<Uuid>,
     Json(params): Json<InitiateUploadRequest>,
 ) -> Result<Response> {
-    ensure_super_admin(&tc).await?;
+    ensure_super_admin(&tc)?;
     let _tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
     let response = file_upload_service::initiate_upload(
         &ctx,
@@ -136,7 +136,7 @@ pub(crate) async fn sys_probe(
     Path(tenant_id): Path<Uuid>,
     Json(params): Json<ProbeRequest>,
 ) -> Result<Response> {
-    ensure_super_admin(&tc).await?;
+    ensure_super_admin(&tc)?;
     let tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
     let response = file_service::probe(&ctx, &tenant, &params).await?;
     format::json(response)
@@ -159,7 +159,7 @@ pub(crate) async fn sys_instant_upload(
     Path(tenant_id): Path<Uuid>,
     Json(params): Json<InstantUploadRequest>,
 ) -> Result<Response> {
-    ensure_super_admin(&tc).await?;
+    ensure_super_admin(&tc)?;
     let tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
     let audit_ctx = AuditContext::from_request(&tc, &meta);
     let attach = match params.attach_to.clone() {
@@ -192,7 +192,7 @@ pub(crate) async fn sys_sign_part(
     Path((tenant_id, id, part_number)): Path<(Uuid, Uuid, u32)>,
     Json(_params): Json<serde_json::Value>,
 ) -> Result<Response> {
-    ensure_super_admin(&tc).await?;
+    ensure_super_admin(&tc)?;
     let response: SignPartResponse =
         file_upload_service::sign_part(&ctx, tenant_id, id, part_number).await?;
     format::json(response)
@@ -213,7 +213,7 @@ pub(crate) async fn sys_register_part(
     Path((tenant_id, id, part_number)): Path<(Uuid, Uuid, u32)>,
     Json(params): Json<RegisterPartRequest>,
 ) -> Result<Response> {
-    ensure_super_admin(&tc).await?;
+    ensure_super_admin(&tc)?;
     let _tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
     let response = file_upload_service::register_part(
         &ctx,
@@ -243,7 +243,7 @@ pub(crate) async fn sys_complete(
     Path((tenant_id, id)): Path<(Uuid, Uuid)>,
     Json(params): Json<CompleteUploadRequest>,
 ) -> Result<Response> {
-    ensure_super_admin(&tc).await?;
+    ensure_super_admin(&tc)?;
     let _tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
     let audit_ctx = AuditContext::from_request(&tc, &meta);
     let attach = match params.attach_to {
@@ -277,7 +277,7 @@ pub(crate) async fn sys_abort(
     State(ctx): State<AppContext>,
     Path((tenant_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response> {
-    ensure_super_admin(&tc).await?;
+    ensure_super_admin(&tc)?;
     let _tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
     let audit_ctx = AuditContext::from_request(&tc, &meta);
     let response = file_upload_service::abort_upload(
@@ -304,7 +304,7 @@ pub(crate) async fn sys_resume(
     State(ctx): State<AppContext>,
     Path((tenant_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response> {
-    ensure_super_admin(&tc).await?;
+    ensure_super_admin(&tc)?;
     match file_upload_service::resume_upload(&ctx.db, tenant_id, id).await? {
         Ok(response) => {
             let response: ResumeUploadResponse = response;

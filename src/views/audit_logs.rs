@@ -450,7 +450,7 @@ pub struct DiffEntry {
 
 impl AuditLogResponse {
     pub fn from_model(m: &audit_logs::Model) -> Self {
-        let diff = compute_diff(&m.before_state, &m.after_state);
+        let diff = compute_diff(m.before_state.as_ref(), m.after_state.as_ref());
 
         Self {
             id: m.id.to_string(),
@@ -475,8 +475,8 @@ impl AuditLogResponse {
 
 /// Compute field-level diff between before_state and after_state JSON objects.
 fn compute_diff(
-    before: &Option<serde_json::Value>,
-    after: &Option<serde_json::Value>,
+    before: Option<&serde_json::Value>,
+    after: Option<&serde_json::Value>,
 ) -> Option<Vec<DiffEntry>> {
     let before_obj = before.as_ref()?.as_object()?;
     let after_obj = after.as_ref()?.as_object()?;

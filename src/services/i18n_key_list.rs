@@ -180,7 +180,7 @@ async fn list_keys_inner(
         {
             entry.entry_id = Some(meta.id.to_string());
             entry.entry_status = Some(meta.status.clone());
-            entry.entry_description = meta.description.clone();
+            entry.entry_description.clone_from(&meta.description);
             entry.entry_last_seen_at = Some(meta.last_seen_at.to_rfc3339());
         }
     }
@@ -354,7 +354,7 @@ pub async fn list_tenant_keys(
         {
             entry.entry_id = Some(meta.id.to_string());
             entry.entry_status = Some(meta.status.clone());
-            entry.entry_description = meta.description.clone();
+            entry.entry_description.clone_from(&meta.description);
             entry.entry_last_seen_at = Some(meta.last_seen_at.to_rfc3339());
         }
     }

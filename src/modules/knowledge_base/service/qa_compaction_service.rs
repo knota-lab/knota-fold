@@ -160,7 +160,7 @@ pub async fn get_cached_summary(
 async fn cache_summary(
     db: &sea_orm::DatabaseConnection,
     session_id: Uuid,
-    _tenant_id: Uuid,
+    tenant_id: Uuid,
     summary: &str,
     last_compacted_msg_id: Uuid,
 ) -> Result<(), KnowledgeBaseError> {

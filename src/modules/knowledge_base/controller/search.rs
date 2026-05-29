@@ -268,7 +268,7 @@ pub(crate) async fn qa_v3_stream(
             )
             .await;
 
-        if let Err(()) = result {
+        if result == Err(()) {
             tracing::error!("process_qa_v3_stream failed");
         }
         // tx is dropped here, closing the channel

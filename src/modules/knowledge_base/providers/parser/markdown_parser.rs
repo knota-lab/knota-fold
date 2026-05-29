@@ -43,7 +43,7 @@ impl DocumentParser for MarkdownDirectParser {
         })
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "markdown_direct"
     }
 }

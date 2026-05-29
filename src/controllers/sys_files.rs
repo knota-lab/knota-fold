@@ -164,7 +164,7 @@ pub(crate) async fn sys_small_upload(
                     })?;
                 attach_payload = Some(parsed);
             }
-            _ => continue,
+            _ => {}
         }
     }
 

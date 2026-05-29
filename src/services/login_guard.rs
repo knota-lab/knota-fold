@@ -204,8 +204,7 @@ pub async fn record_failure(
         )
         .await;
 
-    let mut lock_until: Option<i64> = None;
-    if new_count >= thresholds.max_failures_before_lock {
+    let lock_until: Option<i64> = if new_count >= thresholds.max_failures_before_lock {
         let until = now_epoch() + thresholds.lock_duration_seconds.max(1);
         let _ = ctx
             .cache
@@ -215,8 +214,10 @@ pub async fn record_failure(
                 Duration::from_secs(thresholds.lock_duration_seconds.max(1) as u64),
             )
             .await;
-        lock_until = Some(until);
-    }
+        Some(until)
+    } else {
+        None
+    };
 
     let captcha_required_next = new_count >= thresholds.max_failures_before_captcha;
     (new_count, captcha_required_next, lock_until)
