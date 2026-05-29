@@ -1,0 +1,12 @@
+target/
+.git/
+.gitattributes
+*.sqlite*
+*.sqlite-*
+.idea/
+.sisyphus/
+.cargo/
+data/
+docker/.env*
+docker/*.yml
+*.md

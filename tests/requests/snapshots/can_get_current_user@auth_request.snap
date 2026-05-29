@@ -1,0 +1,8 @@
+---
+source: tests/requests/auth.rs
+expression: "(response.status_code(), response.text())"
+---
+(
+    200,
+    "{\"id\":\"PID\",\"name\":\"loco\",\"email\":\"test@loco.com\",\"tenantId\":\"PID\",\"tenantCode\":\"DEFAULT\",\"tenantName\":\"默认\",\"roles\":[],\"isSuperAdmin\":false,\"isTenantAdmin\":false,\"avatarFileId\":null}",
+)

@@ -1,0 +1,105 @@
+name: knota-dev
+
+services:
+  minio:
+    image: quay.io/minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+      MINIO_REGION_NAME: ${S3_REGION:-us-east-1}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ${DATA_DIR:-../data/docker}/minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - knota-fold-dev
+
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "${S3_ACCESS_KEY:-minioadmin}" "${S3_SECRET_KEY:-minioadmin}"
+        mc mb --ignore-existing "local/${S3_BUCKET:-knota-fold-dev}"
+        mc mb --ignore-existing "local/${S3_TEST_BUCKET:-knota-fold-test}"
+    networks:
+      - knota-fold-dev
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - knota-fold-dev
+
+  db_postgres:
+    image: postgres:15.8-alpine
+    profiles: ["postgresql"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-knota_fold}
+      POSTGRES_USER: ${POSTGRES_USER:-knota}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-knota_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ${DATA_DIR:-../data/docker}/pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-knota} -d ${POSTGRES_DB:-knota_fold}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - knota-fold-dev
+
+  redis:
+    image: redis:7.4.2-alpine
+    profiles: ["redis"]
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ${DATA_DIR:-../data/docker}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - knota-fold-dev
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ${DATA_DIR:-../data/docker}/qdrant:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    networks:
+      - knota-fold-dev
+
+networks:
+  knota-fold-dev:
+    name: knota-fold-dev

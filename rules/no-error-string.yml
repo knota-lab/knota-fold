@@ -1,0 +1,12 @@
+id: no-error-string
+language: Rust
+rule:
+  pattern: Error::string($MSG)
+paths:
+  include:
+    - src/controllers/**
+    - src/services/**
+    - src/extractors/**
+    - src/middleware/**
+message: "禁止使用 Error::string()（会变成 500），请使用 views::errors 辅助函数或 AppError"
+severity: error

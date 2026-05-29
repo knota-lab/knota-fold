@@ -1,0 +1,27 @@
+# EasyTier 客户端配置（开发者/测试者本地）
+# 使用方式：
+#   1. 复制此文件为 easytier-client.toml
+#   2. 修改 network_secret 为团队共享的密钥
+#   3. 修改 peer.uri 为云上服务器地址
+#   4. 运行：easytier-core --config-file easytier-client.toml
+
+[network_identity]
+# ⚠️ 此文件仅作为本地开发参考模板
+# 复制后请替换 network_secret 为团队共享的密钥
+network_name = "knota-fold-staging"
+# ⚠️ 必须替换为团队实际密钥，不可使用占位值
+network_secret = "replace-me"
+
+[settings]
+ipv4 = "10.144.144.0/24"
+encrypted = true
+log_level = "warn"
+
+# 连接到云上服务器节点
+# 替换为你的云服务器公网 IP 和端口
+[[peer]]
+uri = "tcp://YOUR_SERVER_PUBLIC_IP:11010"
+
+# 如果云上服务器开了 WebSocket 端口（穿透防火墙更友好）
+# [[peer]]
+# uri = "ws://YOUR_SERVER_PUBLIC_IP:11011"

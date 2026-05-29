@@ -1,0 +1,42 @@
+# EasyTier 服务端配置（云上节点）
+# 文档：https://easytier.cn/guide/network/config-file.html
+
+[network_identity]
+# 网络名称和密钥，所有节点必须一致才能互通
+# 注意：Docker compose 通过 --network-name / --network-secret CLI 参数覆盖此处的值
+# 以下占位值不会生效（compose entrypoint 会校验并拒绝空/占位密钥）
+network_name = "knota-fold-staging"
+# ⚠️ 此值被 compose CLI 参数覆盖，请勿直接使用此 toml 启动
+network_secret = "replace-me"
+
+[settings]
+# 虚拟网络 IP 段，默认 10.144.144.0/24
+# 每个节点会自动分配该网段的 IP
+ipv4 = "10.144.144.0/24"
+
+# 使用加密隧道
+encrypted = true
+
+# 日志级别：off, error, warn, info, debug, trace
+log_level = "warn"
+
+# =============================
+# 以下为可选的公共服务器配置
+# 如果云服务器有公网 IP，可以作为公共节点供其他节点连接
+# =============================
+
+# [[listener]]
+# protocol = "tcp"
+# addr = "0.0.0.0:11010"
+
+# [[listener]]
+# protocol = "udp"
+# addr = "0.0.0.0:11010"
+
+# [[listener]]
+# protocol = "ws"
+# addr = "0.0.0.0:11011"
+
+# 如果无法直连（如 NAT 后），可使用公共中继
+# [[peer]]
+# uri = "tcp://easytier.public.com:11010"

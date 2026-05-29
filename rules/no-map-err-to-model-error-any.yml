@@ -1,0 +1,15 @@
+id: no-map-err-to-model-error-any
+language: Rust
+rule:
+  pattern: $EXPR.map_err(|$E| ModelError::Any($E.into()))
+paths:
+  include:
+    - src/models/**
+    - src/modules/**
+    - src/services/**
+message: |
+  禁止在 models/modules/services 中使用 map_err(|e| ModelError::Any(e.into()))。
+  - 如果 $EXPR 是 SeaORM 操作(返回 Result<T, DbErr>)，直接用 ? 即可——DbErr 通过 #[from] 自动转为 ModelError::DbErr
+  - 如果 $EXPR 是 audit_service::log() 等返回 loco_rs::Error 的调用，直接用 ? 或 .loco_err() 即可
+  - 如果 $EXPR 是其他非 DbErr 的第三方错误(如 uuid::Error)，此模式是合法的，请添加注释说明原因
+severity: error

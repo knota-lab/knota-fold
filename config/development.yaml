@@ -1,0 +1,205 @@
+# Loco configuration file documentation
+
+# Application logging configuration
+logger:
+  # Enable or disable logging.
+  enable: true
+  # Enable pretty backtrace (sets RUST_BACKTRACE=1)
+  pretty_backtrace: true
+  # Log level, options: trace, debug, info, warn or error.
+  level: debug
+  # Define the logging format. options: compact, pretty or json
+  # Use `json` in production to include structured trace_id / request_id fields
+  # in every log line for log aggregation (see config/production.yaml).
+  format: compact
+  # By default the logger has filtering only logs that came from your code or logs that came from `loco` framework. to see all third party libraries
+  # Uncomment the line below to override to see all third party libraries you can enable this config and override the logger filters.
+  # override_filter: trace
+
+# Web server configuration
+server:
+  # Port on which the server will listen. the server binding is 0.0.0.0:{PORT}
+  port: 5150
+  # Binding for the server (which interface to bind to).
+  # dev 绑 localhost，端口被 Docker staging 占用时直接报 "address in use"，
+  # 避免无声打到容器里的旧版本。
+  binding: 0.0.0.0
+  # The UI hostname or IP address that mailers will point to.
+  host: http://0.0.0.0
+  # Out of the box middleware configuration. to disable middleware you can changed the `enable` field to `false` of comment the middleware block
+  middlewares:
+    # Loco's built-in logger middleware creates a duplicate http-request span
+    # that conflicts with our custom TracingLayer. Disable it — our TracingLayer
+    # provides the same functionality (trace_id, request_id, span creation).
+    logger:
+      enable: false
+
+# Queue Configuration
+queue:
+  kind: Sqlite
+  uri: "sqlite://data/loco_development.sqlite?mode=rwc"
+  dangerously_flush: false
+  num_workers: 2
+
+# Worker Configuration
+workers:
+  # specifies the worker mode. Options:
+  #   - BackgroundQueue - Workers operate asynchronously in the background, processing queued.
+  #   - ForegroundBlocking - Workers operate in the foreground and block until tasks are completed.
+  #   - BackgroundAsync - Workers operate asynchronously in the background, processing tasks with async capabilities.
+  mode: BackgroundQueue
+
+# Scheduler Configuration
+scheduler:
+  jobs:
+    scheduler_dispatch:
+      run: scheduler_dispatch
+      schedule: "every 1 minute"
+
+# Mailer Configuration.
+mailer:
+  # SMTP mailer configuration.
+  smtp:
+    # Enable/Disable smtp mailer.
+    enable: true
+    # SMTP server host. e.x localhost, smtp.gmail.com
+    host: localhost
+    # SMTP server port
+    port: 1025
+    # Use secure connection (SSL/TLS).
+    secure: false
+    # auth:
+    #   user:
+    #   password:
+    # Override the SMTP hello name (default is the machine's hostname)
+    # hello_name:
+
+# Initializers Configuration
+initializers:
+  openapi:
+    redoc:
+      url: /redoc
+    scalar:
+      url: /scalar
+    swagger:
+      url: /swagger
+      spec_json_url: /api-docs/openapi.json
+
+# Application-specific settings (consumed by custom initializers).
+settings:
+  # S3 / MinIO object storage (Wave 1 - file management).
+  # Local dev defaults assume a MinIO instance on http://localhost:9000.
+  s3:
+    endpoint: http://localhost:9000
+    region: us-east-1
+    bucket: knota-fold-dev
+    accessKey: {{ get_env(name="S3_ACCESS_KEY", default="minioadmin") }}
+    secretKey: {{ get_env(name="S3_SECRET_KEY", default="minioadmin") }}
+    forcePathStyle: {{ get_env(name="S3_FORCE_PATH_STYLE", default="true") }}
+
+  # Stateless image CAPTCHA for /api/auth/login (captcha-rs).
+  # The secret signs the JWT-encoded answer carried by the client; rotating
+  # this value invalidates all outstanding captcha tokens.
+  captcha:
+    secretKey: {{ get_env(name="CAPTCHA_SECRET_KEY", default="change-me-dev-captcha-secret") }}
+    ttlSeconds: 300 # token validity (5 min)
+    length: 5 # number of characters in the image
+    width: 130
+    height: 40
+    complexity: 3 # 1..=10, higher = noisier
+    darkMode: false
+
+  # App logs — SQLite-backed request tracing.
+  # Set enabled=true to activate. Logs are written to data/logs/app.db.
+  appLogs:
+    enabled: true
+    captureLevel: info # minimum level: debug / info / warn / error
+
+  task_scheduler:
+    enabled: true
+    max_concurrent_per_tenant: 3
+    execution_log_retention_days: 90
+    output_max_bytes: 65536
+
+  # Knowledge base module — disabled by default in dev.
+  # Enable when Qdrant + Ollama are running (docker compose up qdrant).
+  knowledgeBase:
+    enabled: true
+    embedding:
+      provider: openai
+      model: bge-m3
+      apiKey: {{ get_env(name="EMBEDDING_API_KEY", default="ollama") }}
+      baseUrl: {{ get_env(name="EMBEDDING_BASE_URL", default="http://localhost:11434/v1") }}
+      dimension: 1024
+      cacheSize: 10000
+    qdrant:
+      url: {{ get_env(name="QDRANT_URL", default="http://localhost:6334") }}
+      apiKey: ""
+      collectionName: kb_chunks
+      chatCollectionName: chat_memory
+    chunking:
+      maxChunkTokens: 800
+      minChunkTokens: 100
+      overlapSentences: 2
+      splitByHeading: true
+      minHeadingLevel: 1
+      maxHeadingLevel: 4
+    search:
+      defaultLimit: 10
+      rrfK: 60
+      preFusionLimit: 50
+      minScore: 0.0
+    qa:
+      mode: auto
+      provider: {{ get_env(name="QA_LLM_PROVIDER", default="ollama") }}
+      model: {{ get_env(name="QA_LLM_MODEL", default="qwen3.5:9b") }}
+      temperature: 0.2
+      maxContextTokens: 100000
+      responseReserveTokens: 4096
+      summaryModel: {{ get_env(name="QA_LLM_MODEL", default="qwen3.5:9b") }}
+      baseUrl: {{ get_env(name="QA_LLM_BASE_URL", default="http://localhost:11434/v1") }}
+      apiKey: {{ get_env(name="QA_LLM_API_KEY", default="ollama") }}
+      intent:
+        enabled: true
+        model: {{ get_env(name="QA_LLM_MODEL", default="qwen3.5:9b") }}
+        confidenceThreshold: 0.6
+
+# Cache Configuration (in-memory for dev, switch to Redis for prod)
+cache:
+  kind: InMem
+
+# Database Configuration
+database:
+  # Database connection URI
+  uri: {{ get_env(name="DATABASE_URL", default="sqlite://data/knota-fold_development.sqlite?mode=rwc") }}
+  # When enabled, the sql query will be logged.
+  enable_logging: false
+  # Set the timeout duration when acquiring a connection.
+  # 500ms 太紧：i18n manifest 之类的批量写接口里随便一个串行查询就会让下一个
+  # acquire 在 500ms 内拿不到连接，直接 ConnectionAcquire(Timeout) 抛 500。
+  # 5s 给 dev 留充足缓冲，prod 仍可通过 DB_CONNECT_TIMEOUT 覆盖。
+  connect_timeout: {{ get_env(name="DB_CONNECT_TIMEOUT", default="5000") }}
+  # Set the idle duration before closing a connection.
+  idle_timeout: {{ get_env(name="DB_IDLE_TIMEOUT", default="5000") }}
+  # Minimum number of connections for a pool.
+  min_connections: {{ get_env(name="DB_MIN_CONNECTIONS", default="1") }}
+  # Maximum number of connections for a pool.
+  # max=1 是 Loco 默认值，但任何同请求里"读 + 写"或多个独立查询都会自我死锁
+  # 式地把这唯一的连接占满。dev 设 10，SQLite WAL 下并发读安全、写仍串行化。
+  max_connections: {{ get_env(name="DB_MAX_CONNECTIONS", default="10") }}
+  # Run migration up when application loaded
+  auto_migrate: true
+  # Truncate database when application loaded. This is a dangerous operation, make sure that you using this flag only on dev environments or test mode
+  dangerously_truncate: false
+  # Recreating schema when application loaded.  This is a dangerous operation, make sure that you using this flag only on dev environments or test mode
+  dangerously_recreate: false
+
+# Authentication Configuration
+auth:
+  # JWT authentication
+  jwt:
+    # Secret key for token generation and verification.
+    # MUST be valid Base64 (loco-rs uses EncodingKey::from_base64_secret).
+    secret: {{ get_env(name="JWT_SECRET", default="change-me-dev-jwt-secret-base64") }}
+    # Token expiration time in seconds
+    expiration: 604800 # 7 days

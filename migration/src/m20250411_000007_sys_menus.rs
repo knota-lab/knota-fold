@@ -1,0 +1,148 @@
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, m: &SchemaManager) -> Result<(), DbErr> {
+        m.create_table(
+            Table::create()
+                .table(SysMenus::Table)
+                .if_not_exists()
+                .col(ColumnDef::new(SysMenus::Id).uuid().not_null().primary_key())
+                .col(ColumnDef::new(SysMenus::ParentId).uuid().null())
+                .col(ColumnDef::new(SysMenus::Code).string_len(64).not_null())
+                .col(ColumnDef::new(SysMenus::Name).string_len(64).not_null())
+                .col(ColumnDef::new(SysMenus::Path).string_len(128).null())
+                .col(ColumnDef::new(SysMenus::Alias).string_len(64).null())
+                .col(ColumnDef::new(SysMenus::Icon).string_len(128).null())
+                .col(ColumnDef::new(SysMenus::MenuType).string_len(16).not_null())
+                .col(
+                    ColumnDef::new(SysMenus::IsCache)
+                        .boolean()
+                        .not_null()
+                        .default(false),
+                )
+                .col(
+                    ColumnDef::new(SysMenus::SortOrder)
+                        .integer()
+                        .not_null()
+                        .default(0),
+                )
+                .col(ColumnDef::new(SysMenus::Remark).text().null())
+                .col(
+                    ColumnDef::new(SysMenus::Status)
+                        .string_len(16)
+                        .not_null()
+                        .default("active"),
+                )
+                .col(
+                    ColumnDef::new(SysMenus::Version)
+                        .integer()
+                        .not_null()
+                        .default(1),
+                )
+                .col(ColumnDef::new(SysMenus::UpdatedBy).uuid().null())
+                .col(
+                    ColumnDef::new(SysMenus::CreatedAt)
+                        .timestamp_with_time_zone()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .col(
+                    ColumnDef::new(SysMenus::UpdatedAt)
+                        .timestamp_with_time_zone()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .col(
+                    ColumnDef::new(SysMenus::DeletedAt)
+                        .timestamp_with_time_zone()
+                        .null(),
+                )
+                .to_owned(),
+        )
+        .await?;
+
+        m.create_index(
+            Index::create()
+                .name("uk_sys_menus_code")
+                .table(SysMenus::Table)
+                .col(SysMenus::Code)
+                .unique()
+                .to_owned(),
+        )
+        .await?;
+        m.create_index(
+            Index::create()
+                .name("idx_sys_menus_parent_id")
+                .table(SysMenus::Table)
+                .col(SysMenus::ParentId)
+                .to_owned(),
+        )
+        .await?;
+        m.create_index(
+            Index::create()
+                .name("idx_sys_menus_status")
+                .table(SysMenus::Table)
+                .col(SysMenus::Status)
+                .to_owned(),
+        )
+        .await?;
+        m.create_index(
+            Index::create()
+                .name("idx_sys_menus_type")
+                .table(SysMenus::Table)
+                .col(SysMenus::MenuType)
+                .to_owned(),
+        )
+        .await?;
+        m.create_index(
+            Index::create()
+                .name("idx_sys_menus_sort_order")
+                .table(SysMenus::Table)
+                .col(SysMenus::SortOrder)
+                .to_owned(),
+        )
+        .await?;
+        m.create_index(
+            Index::create()
+                .name("idx_sys_menus_deleted_at")
+                .table(SysMenus::Table)
+                .col(SysMenus::DeletedAt)
+                .to_owned(),
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    async fn down(&self, m: &SchemaManager) -> Result<(), DbErr> {
+        m.drop_table(Table::drop().table(SysMenus::Table).to_owned())
+            .await
+    }
+}
+
+#[derive(Iden)]
+enum SysMenus {
+    Table,
+    Id,
+    ParentId,
+    Code,
+    Name,
+    Path,
+    Alias,
+    Icon,
+    #[iden = "type"]
+    MenuType,
+    IsCache,
+    SortOrder,
+    Remark,
+    Status,
+    Version,
+    UpdatedBy,
+    CreatedAt,
+    UpdatedAt,
+    DeletedAt,
+}

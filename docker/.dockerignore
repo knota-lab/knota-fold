@@ -1,0 +1,9 @@
+# NOTE: Docker only auto-loads .dockerignore from the build context root.
+# Keep this file in sync with a root-level .dockerignore when using standard docker builds.
+target/
+.git/
+*.sqlite*
+.idea/
+.sisyphus/
+data/logs/
+node_modules/

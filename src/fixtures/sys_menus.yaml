@@ -1,0 +1,428 @@
+---
+# 权限管理 (directory)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc001"
+  name: "权限管理"
+  code: "auth"
+  icon: "ShieldCheck"
+  menu_type: "directory"
+  is_cache: false
+  sort_order: 1
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 权限管理 > 角色管理
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc002"
+  name: "角色管理"
+  code: "role_mgmt"
+  icon: "Users"
+  path: "/system/roles"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc001"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 1
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 权限管理 > 数据权限
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc003"
+  name: "数据权限"
+  code: "data_scope"
+  icon: "Lock"
+  path: "/auth/data-scope"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc001"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 2
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 权限管理 > 接口权限
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc004"
+  name: "接口权限"
+  code: "api_scope"
+  icon: "Plug"
+  path: "/system/permissions"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc001"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 3
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统管理 (directory)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc005"
+  name: "系统管理"
+  code: "system"
+  icon: "Settings"
+  menu_type: "directory"
+  is_cache: false
+  sort_order: 2
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统管理 > 用户管理
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc006"
+  name: "用户管理"
+  code: "user_mgmt"
+  icon: "User"
+  path: "/system/users"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc005"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 1
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统管理 > 租户管理
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc007"
+  name: "租户管理"
+  code: "tenant_mgmt"
+  icon: "Building2"
+  path: "/system/tenants"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc005"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 2
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统管理 > 字典管理
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc008"
+  name: "字典管理"
+  code: "dict_mgmt"
+  icon: "BookOpen"
+  path: "/system/dicts"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc005"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 3
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统管理 > 菜单管理
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc009"
+  name: "菜单管理"
+  code: "menu_mgmt"
+  icon: "Menu"
+  path: "/system/menus"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc005"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 4
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统管理 > 系统菜单管理
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc010"
+  name: "系统菜单管理"
+  code: "sys_menu_mgmt"
+  icon: "Menu"
+  path: "/system/sys-menus"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc005"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 5
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统管理 > 角色模板
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc011"
+  name: "角色模板"
+  code: "role_template_mgmt"
+  icon: "List"
+  path: "/system/role-templates"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc005"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 6
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统管理 > 配置中心
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc012"
+  name: "配置中心"
+  code: "sys_config_mgmt"
+  icon: "SlidersHorizontal"
+  path: "/system/sys-configs"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc005"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 7
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 权限管理 > API Key 管理
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc013"
+  name: "API Key 管理"
+  code: "api_key_mgmt"
+  icon: "KeyRound"
+  path: "/system/api-keys"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc001"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 4
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 国际化 (directory)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc020"
+  name: "国际化"
+  code: "i18n"
+  icon: "Globe"
+  menu_type: "directory"
+  is_cache: false
+  sort_order: 3
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 国际化 > 国际化管理（knota-studio 单页面含 Locales + Translations 双 Tab）
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc021"
+  name: "国际化管理"
+  code: "i18n_management"
+  icon: "Languages"
+  path: "/system/i18n"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc020"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 1
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 国际化 > 国际化管理 > 语言管理 (button)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc022"
+  name: "语言管理"
+  code: "i18n:locales"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc021"
+  menu_type: "button"
+  is_cache: false
+  sort_order: 1
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 国际化 > 国际化管理 > 翻译管理 (button)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc023"
+  name: "翻译管理"
+  code: "i18n:translations"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc021"
+  menu_type: "button"
+  is_cache: false
+  sort_order: 2
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 国际化 > 国际化管理 > 我的覆盖 (button)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc024"
+  name: "租户覆盖"
+  code: "i18n:myOverrides"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc021"
+  menu_type: "button"
+  is_cache: false
+  sort_order: 3
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 资源管理 (directory)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc030"
+  name: "资源管理"
+  code: "files"
+  icon: "Folder"
+  menu_type: "directory"
+  is_cache: false
+  sort_order: 4
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 资源管理 > 我的文件
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc031"
+  name: "附件管理"
+  code: "my_files"
+  icon: "File"
+  path: "/system/files"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc030"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 1
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统监控 (directory)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc100"
+  name: "系统监控"
+  code: "monitor"
+  icon: "LayoutDashboard"
+  menu_type: "directory"
+  is_cache: false
+  sort_order: 6
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统监控 > 审计日志
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc101"
+  name: "审计日志"
+  code: "monitor:audit-logs"
+  icon: "ClipboardList"
+  path: "/system/audit-logs"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc100"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 1
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统监控 > 应用日志
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc102"
+  name: "应用日志"
+  code: "monitor:app-logs"
+  icon: "FileText"
+  path: "/system/app-logs"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc100"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 2
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 系统监控 > 安全日志
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc103"
+  name: "安全日志"
+  code: "monitor:security-logs"
+  icon: "ShieldAlert"
+  path: "/monitor/security-logs"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc100"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 3
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 任务管理 (directory)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc110"
+  name: "任务管理"
+  code: "worker-scheduler"
+  icon: "CalendarClock"
+  menu_type: "directory"
+  is_cache: false
+  sort_order: 8
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 任务管理 > 任务调度（knota-studio 单页面含定义/调度/执行三 Tab）
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc111"
+  name: "任务调度"
+  code: "scheduler"
+  icon: "LayoutGrid"
+  path: "/system/scheduler"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc110"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 1
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 通知管理 (directory)
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc120"
+  name: "通知管理"
+  code: "notification"
+  icon: "Bell"
+  menu_type: "directory"
+  is_cache: false
+  sort_order: 5
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
+# 通知管理 > 通知公告管理
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc121"
+  name: "通知公告管理"
+  code: "notification_mgmt"
+  icon: "Megaphone"
+  path: "/system/notifications"
+  parent_id: "cccccccc-cccc-cccc-cccc-ccccccccc120"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 1
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"

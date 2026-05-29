@@ -1,0 +1,19 @@
+---
+- id: "019728a0-0000-7000-8000-000000000001"
+  code: "TENANT_ADMIN"
+  name: "租户管理员"
+  description: "租户默认管理员角色模板"
+  is_default: true
+  sort_order: 1
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+- id: "019728a0-0000-7000-8000-000000000002"
+  code: "MEMBER"
+  name: "普通成员"
+  # NOTE: MEMBER template intentionally has NO menus or permissions.
+  # It serves as a blank-slate role; tenant admins assign permissions as needed.
+  description: "租户默认普通成员角色模板"
+  is_default: false
+  sort_order: 2
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"

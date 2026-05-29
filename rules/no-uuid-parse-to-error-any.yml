@@ -1,0 +1,9 @@
+id: no-uuid-parse-to-error-any
+language: Rust
+rule:
+  pattern: $ID.parse::<Uuid>().map_err(|$E| Error::Any($E.into()))
+paths:
+  include:
+    - src/controllers/**
+message: "UUID 解析失败不应使用 Error::Any（会变成 500），请使用 Error::BadRequest 或 AppError::BadRequest"
+severity: warning

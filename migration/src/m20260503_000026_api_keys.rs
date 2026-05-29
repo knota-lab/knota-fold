@@ -1,0 +1,198 @@
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, m: &SchemaManager) -> Result<(), DbErr> {
+        m.create_table(
+            Table::create()
+                .table(ApiKeys::Table)
+                .if_not_exists()
+                .col(ColumnDef::new(ApiKeys::Id).uuid().not_null().primary_key())
+                .col(ColumnDef::new(ApiKeys::TenantId).uuid().not_null())
+                .col(ColumnDef::new(ApiKeys::Name).string_len(128).not_null())
+                .col(ColumnDef::new(ApiKeys::KeyPrefix).string_len(20).not_null())
+                .col(ColumnDef::new(ApiKeys::KeyHash).string_len(64).not_null())
+                .col(ColumnDef::new(ApiKeys::RoleId).uuid().not_null())
+                .col(ColumnDef::new(ApiKeys::Description).text().null())
+                .col(ColumnDef::new(ApiKeys::ExchangedFromId).uuid().null())
+                .col(ColumnDef::new(ApiKeys::ExpiresAt).date_time().null())
+                .col(ColumnDef::new(ApiKeys::RevokedAt).date_time().null())
+                .col(ColumnDef::new(ApiKeys::LastUsedAt).date_time().null())
+                .col(ColumnDef::new(ApiKeys::CreatedBy).uuid().not_null())
+                .col(
+                    ColumnDef::new(ApiKeys::CreatedAt)
+                        .date_time()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .col(
+                    ColumnDef::new(ApiKeys::UpdatedAt)
+                        .date_time()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .to_owned(),
+        )
+        .await?;
+
+        m.create_table(
+            Table::create()
+                .table(ApiKeyExchangeTokens::Table)
+                .if_not_exists()
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::Id)
+                        .uuid()
+                        .not_null()
+                        .primary_key(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::TenantId)
+                        .uuid()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::Name)
+                        .string_len(128)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::TokenHash)
+                        .string_len(64)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::TokenPrefix)
+                        .string_len(20)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::RoleId)
+                        .uuid()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::Description)
+                        .text()
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::ExpiresAt)
+                        .date_time()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::ApiKeyExpiresAt)
+                        .date_time()
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::MaxUsage)
+                        .integer()
+                        .not_null()
+                        .default(1i32),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::UsedCount)
+                        .integer()
+                        .not_null()
+                        .default(0i32),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::CreatedBy)
+                        .uuid()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::CreatedAt)
+                        .date_time()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .col(
+                    ColumnDef::new(ApiKeyExchangeTokens::UpdatedAt)
+                        .date_time()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .to_owned(),
+        )
+        .await?;
+
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys (key_hash)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_id ON api_keys (tenant_id)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE INDEX IF NOT EXISTS idx_api_keys_exchanged_from ON api_keys (exchanged_from_id) WHERE exchanged_from_id IS NOT NULL",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_exchange_tokens_hash ON api_key_exchange_tokens (token_hash)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE INDEX IF NOT EXISTS idx_exchange_tokens_tenant ON api_key_exchange_tokens (tenant_id)",
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn down(&self, m: &SchemaManager) -> Result<(), DbErr> {
+        m.drop_table(Table::drop().table(ApiKeyExchangeTokens::Table).to_owned())
+            .await?;
+        m.drop_table(Table::drop().table(ApiKeys::Table).to_owned())
+            .await?;
+        Ok(())
+    }
+}
+
+#[derive(Iden)]
+enum ApiKeys {
+    Table,
+    Id,
+    TenantId,
+    Name,
+    KeyPrefix,
+    KeyHash,
+    RoleId,
+    Description,
+    ExchangedFromId,
+    ExpiresAt,
+    RevokedAt,
+    LastUsedAt,
+    CreatedBy,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(Iden)]
+enum ApiKeyExchangeTokens {
+    Table,
+    Id,
+    TenantId,
+    Name,
+    TokenHash,
+    TokenPrefix,
+    RoleId,
+    Description,
+    ExpiresAt,
+    ApiKeyExpiresAt,
+    MaxUsage,
+    UsedCount,
+    CreatedBy,
+    CreatedAt,
+    UpdatedAt,
+}

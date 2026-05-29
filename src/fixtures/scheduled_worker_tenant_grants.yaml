@@ -1,0 +1,6 @@
+# Grant test_job to the default tenant
+- id: "eeee0001-0000-0000-0000-000000000001"
+  worker_def_id: "dddd0001-0000-0000-0000-000000000010"
+  tenant_id: "00000000-0000-0000-0000-000000000001"
+  granted_by: null
+  created_at: "2024-01-01T00:00:00Z"

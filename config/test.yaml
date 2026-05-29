@@ -1,0 +1,156 @@
+# Loco configuration file documentation
+
+# Application logging configuration
+logger:
+  # Enable or disable logging.
+  enable: false
+  # Enable pretty backtrace (sets RUST_BACKTRACE=1)
+  pretty_backtrace: true
+  # Log level, options: trace, debug, info, warn or error.
+  level: debug
+  # Define the logging format. options: compact, pretty or json
+  format: compact
+  # By default the logger has filtering only logs that came from your code or logs that came from `loco` framework. to see all third party libraries
+  # Uncomment the line below to override to see all third party libraries you can enable this config and override the logger filters.
+  # override_filter: trace
+
+# Web server configuration
+server:
+  # Port on which the server will listen. the server binding is 0.0.0.0:{PORT}
+  port: 5150
+  # The UI hostname or IP address that mailers will point to.
+  host: http://localhost
+  # Out of the box middleware configuration. to disable middleware you can changed the `enable` field to `false` of comment the middleware block
+  middlewares:
+
+# Worker Configuration
+workers:
+  # specifies the worker mode. Options:
+  #   - BackgroundQueue - Workers operate asynchronously in the background, processing queued.
+  #   - ForegroundBlocking - Workers operate in the foreground and block until tasks are completed.
+  #   - BackgroundAsync - Workers operate asynchronously in the background, processing tasks with async capabilities.
+  mode: ForegroundBlocking
+
+  
+
+# Mailer Configuration.
+mailer:
+  stub: true
+  # SMTP mailer configuration.
+  smtp:
+    # Enable/Disable smtp mailer.
+    enable: true
+    # SMTP server host. e.x localhost, smtp.gmail.com
+    host: localhost
+    # SMTP server port
+    port: 1025
+    # Use secure connection (SSL/TLS).
+    secure: false
+    # auth:
+    #   user:
+    #   password:
+
+# Initializers Configuration
+# initializers:
+#  oauth2:
+#    authorization_code: # Authorization code grant type
+#      - client_identifier: google # Identifier for the OAuth2 provider. Replace 'google' with your provider's name if different, must be unique within the oauth2 config.
+#        ... other fields
+
+# Application-specific settings (consumed by custom initializers).
+settings:
+  # S3 / MinIO object storage (Wave 1 - file management).
+  # Test env points at the same local MinIO with an isolated bucket.
+  s3:
+    endpoint: http://localhost:9000
+    region: us-east-1
+    bucket: knota-fold-test
+    accessKey: {{ get_env(name="S3_ACCESS_KEY", default="minioadmin") }}
+    secretKey: {{ get_env(name="S3_SECRET_KEY", default="minioadmin") }}
+    forcePathStyle: {{ get_env(name="S3_FORCE_PATH_STYLE", default="true") }}
+
+  # Stateless image CAPTCHA - deterministic-ish small config for tests.
+  captcha:
+    secretKey: {{ get_env(name="CAPTCHA_SECRET_KEY", default="change-me-test-captcha-secret") }}
+    ttlSeconds: 300
+    length: 5
+    width: 130
+    height: 40
+    complexity: 1
+    darkMode: false
+
+  # Knowledge base module — points at same Qdrant + Ollama as dev.
+  # Only needed for KB integration tests (marked #[ignore]).
+  knowledgeBase:
+    enabled: true
+    embedding:
+      provider: openai
+      model: bge-m3
+      apiKey: {{ get_env(name="EMBEDDING_API_KEY", default="ollama") }}
+      baseUrl: {{ get_env(name="EMBEDDING_BASE_URL", default="http://localhost:11434/v1") }}
+      dimension: 1024
+      cacheSize: 10000
+    qdrant:
+      url: {{ get_env(name="QDRANT_URL", default="http://localhost:6334") }}
+      apiKey: ""
+      collectionName: kb_chunks_test
+    chunking:
+      maxChunkTokens: 800
+      minChunkTokens: 100
+      overlapSentences: 2
+      splitByHeading: true
+      minHeadingLevel: 1
+      maxHeadingLevel: 4
+    search:
+      defaultLimit: 10
+      rrfK: 60
+      preFusionLimit: 50
+      minScore: 0.0
+    qa:
+      mode: auto
+      provider: {{ get_env(name="QA_LLM_PROVIDER", default="ollama") }}
+      model: {{ get_env(name="QA_LLM_MODEL", default="qwen3.5:9b") }}
+      temperature: 0.2
+      maxContextTokens: 100000
+      responseReserveTokens: 4096
+      summaryModel: {{ get_env(name="QA_LLM_MODEL", default="qwen3.5:9b") }}
+      baseUrl: {{ get_env(name="QA_LLM_BASE_URL", default="http://localhost:11434/v1") }}
+      apiKey: {{ get_env(name="QA_LLM_API_KEY", default="ollama") }}
+      intent:
+        enabled: true
+        model: {{ get_env(name="QA_LLM_MODEL", default="qwen3.5:9b") }}
+        confidenceThreshold: 0.6
+
+# Cache Configuration
+cache:
+  kind: InMem
+
+# Database Configuration
+database:
+  # Database connection URI
+  uri: {{ get_env(name="DATABASE_URL", default="sqlite://data/knota-fold_test.sqlite?mode=rwc") }}
+  # When enabled, the sql query will be logged.
+  enable_logging: false
+  # Set the timeout duration when acquiring a connection.
+  connect_timeout: {{ get_env(name="DB_CONNECT_TIMEOUT", default="5000") }}
+  # Set the idle duration before closing a connection.
+  idle_timeout: {{ get_env(name="DB_IDLE_TIMEOUT", default="5000") }}
+  # Minimum number of connections for a pool.
+  min_connections: {{ get_env(name="DB_MIN_CONNECTIONS", default="1") }}
+  # Maximum number of connections for a pool.
+  max_connections: {{ get_env(name="DB_MAX_CONNECTIONS", default="10") }}
+  # Run migration up when application loaded
+  auto_migrate: true
+  # Truncate database when application loaded. This is a dangerous operation, make sure that you using this flag only on dev environments or test mode
+  dangerously_truncate: true
+  # Recreating schema when application loaded.  This is a dangerous operation, make sure that you using this flag only on dev environments or test mode
+  dangerously_recreate: true
+
+# Authentication Configuration
+auth:
+  # JWT authentication
+  jwt:
+    # Secret key for token generation and verification
+    secret: {{ get_env(name="JWT_SECRET", default="test-jwt-secret-base64-change-me") }}
+    # Token expiration time in seconds
+    expiration: 604800 # 7 days

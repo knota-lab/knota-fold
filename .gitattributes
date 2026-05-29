@@ -1,0 +1,47 @@
+# Normalize line endings to LF in the repo and in the working tree.
+#
+# Why: this repo is developed on Windows, Linux, and macOS. Without an
+# explicit policy Git's `core.autocrlf=true` (the Windows default) flips
+# CRLF on checkout and LF on commit, which fights every formatter we run
+# (rustfmt, biome, etc.). The fight shows up as `git status` noise —
+# files marked "modified" with no real diff — and as the persistent
+#   warning: in the working copy of 'X', LF will be replaced by CRLF
+# during every git operation.
+#
+# Policy:
+#   * text=auto   → Git auto-detects text vs binary
+#   * eol=lf      → text files are LF in the index AND in the working tree,
+#                   regardless of `core.autocrlf` on the user's machine
+
+* text=auto eol=lf
+
+# Windows-specific scripts must keep CRLF or cmd/PowerShell will reject them.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary assets — never touch.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.svg       text eol=lf
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.tar       binary
+*.7z        binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.eot       binary
+*.mp3       binary
+*.mp4       binary
+*.webm      binary
+*.wasm      binary
+
+# Rust-specific: Cargo.lock is text but should not have merge driver tweaks.
+Cargo.lock  text eol=lf

@@ -1,0 +1,189 @@
+name: knota-staging
+
+services:
+  caddy:
+    build:
+      context: ../../knota-studio/
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      BACKEND_HOST: backend
+      BACKEND_PORT: "5150"
+    ports:
+      - "${CADDY_PORT:-80}:80"
+    networks:
+      - knota-fold-staging
+
+  backend:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env.staging
+        required: false
+    environment:
+      LOCO_ENV: production
+      PORT: ${PORT:-5150}
+      DATABASE_URL: ${DATABASE_URL:-postgres://knota:${POSTGRES_PASSWORD:-knota_staging_password}@db_postgres:5432/knota_fold}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      APP_HOST: ${APP_HOST:-http://localhost:5150}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CAPTCHA_SECRET_KEY: ${CAPTCHA_SECRET_KEY:?CAPTCHA_SECRET_KEY is required}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-knota-fold-staging}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      APP_LOGS_CAPTURE_LEVEL: ${APP_LOGS_CAPTURE_LEVEL:-warn}
+      SCHEDULER_MAX_CONCURRENT: ${SCHEDULER_MAX_CONCURRENT:-3}
+      SCHEDULER_LOG_RETENTION_DAYS: ${SCHEDULER_LOG_RETENTION_DAYS:-90}
+      SCHEDULER_OUTPUT_MAX_BYTES: ${SCHEDULER_OUTPUT_MAX_BYTES:-65536}
+      QUEUE_NUM_WORKERS: ${QUEUE_NUM_WORKERS:-2}
+    expose:
+      - "5150"
+    depends_on:
+      db_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ${DATA_DIR:-../data/docker}/logs:/app/data/logs
+    networks:
+      - knota-fold-staging
+
+  db_postgres:
+    image: postgres:15.8-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-knota_fold}
+      POSTGRES_USER: ${POSTGRES_USER:-knota}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-knota_staging_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ${DATA_DIR:-../data/docker}/pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-knota} -d ${POSTGRES_DB:-knota_fold}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - knota-fold-staging
+
+  redis:
+    image: redis:7.4.2-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ${DATA_DIR:-../data/docker}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - knota-fold-staging
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      MINIO_REGION_NAME: ${S3_REGION:-us-east-1}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ${DATA_DIR:-../data/docker}/minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - knota-fold-staging
+
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}" "${S3_SECRET_KEY:?S3_SECRET_KEY is required}"
+        mc mb --ignore-existing "local/${S3_BUCKET:-knota-fold-staging}"
+    networks:
+      - knota-fold-staging
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ${DATA_DIR:-../data/docker}/qdrant:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - knota-fold-staging
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - knota-fold-staging
+
+  easytier:
+    image: easytier/easytier
+    profiles: ["easytier"]
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./easytier/easytier-server.toml:/etc/easytier/easytier.toml:ro
+      - ${DATA_DIR:-../data/docker}/easytier:/var/lib/easytier
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -z "$$EASYTIER_SECRET" ]; then
+          echo "ERROR: EASYTIER_SECRET must be set. Generate one: openssl rand -hex 32" >&2
+          exit 1
+        fi
+        if [ "$$EASYTIER_SECRET" = "replace-me" ]; then
+          echo "ERROR: EASYTIER_SECRET is still the placeholder value. Set a strong secret." >&2
+          exit 1
+        fi
+        exec easytier-daemon --config-file /etc/easytier/easytier.toml \
+          --network-name "$${EASYTIER_NETWORK_NAME:-knota-fold-staging}" \
+          --network-secret "$$EASYTIER_SECRET"
+
+networks:
+  knota-fold-staging:
+    name: knota-fold-staging

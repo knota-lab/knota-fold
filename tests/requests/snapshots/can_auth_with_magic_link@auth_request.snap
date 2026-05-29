@@ -1,0 +1,6 @@
+---
+source: tests/requests/auth.rs
+assertion_line: 365
+expression: magic_link_response.text()
+---
+"{\"token\":\"TOKEN\",\"id\":\"PID\",\"name\":\"user1\",\"isVerified\":false}"

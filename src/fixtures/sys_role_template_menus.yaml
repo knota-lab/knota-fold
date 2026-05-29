@@ -1,0 +1,35 @@
+---
+# TENANT_ADMIN template — visible menus for tenant administrators
+# Includes all menus except super-admin-only ones (租户管理, 系统菜单管理)
+
+# 权限管理 (directory)
+- template_id: "019728a0-0000-7000-8000-000000000001"
+  sys_menu_id: "cccccccc-cccc-cccc-cccc-ccccccccc001"
+
+# 权限管理 > 角色管理
+- template_id: "019728a0-0000-7000-8000-000000000001"
+  sys_menu_id: "cccccccc-cccc-cccc-cccc-ccccccccc002"
+
+# 权限管理 > 数据权限
+- template_id: "019728a0-0000-7000-8000-000000000001"
+  sys_menu_id: "cccccccc-cccc-cccc-cccc-ccccccccc003"
+
+# 权限管理 > 接口权限
+- template_id: "019728a0-0000-7000-8000-000000000001"
+  sys_menu_id: "cccccccc-cccc-cccc-cccc-ccccccccc004"
+
+# 系统管理 (directory)
+- template_id: "019728a0-0000-7000-8000-000000000001"
+  sys_menu_id: "cccccccc-cccc-cccc-cccc-ccccccccc005"
+
+# 系统管理 > 用户管理
+- template_id: "019728a0-0000-7000-8000-000000000001"
+  sys_menu_id: "cccccccc-cccc-cccc-cccc-ccccccccc006"
+
+# 系统管理 > 字典管理
+- template_id: "019728a0-0000-7000-8000-000000000001"
+  sys_menu_id: "cccccccc-cccc-cccc-cccc-ccccccccc008"
+
+# 系统管理 > 菜单管理
+- template_id: "019728a0-0000-7000-8000-000000000001"
+  sys_menu_id: "cccccccc-cccc-cccc-cccc-ccccccccc009"

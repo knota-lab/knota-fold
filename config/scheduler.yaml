@@ -1,0 +1,12 @@
+output: stdout
+jobs:
+  purge_files:
+    run: purge_files
+    shell: false
+    schedule: "0 */15 * * * *"
+    tags: ["files"]
+  purge_uploads:
+    run: purge_uploads
+    shell: false
+    schedule: "0 */15 * * * *"
+    tags: ["files"]

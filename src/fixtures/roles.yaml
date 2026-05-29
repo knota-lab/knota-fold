@@ -1,0 +1,21 @@
+---
+- id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaa001"
+  tenant_id: "00000000-0000-0000-0000-000000000001"
+  name: "Super Admin"
+  code: "SUPER_ADMIN"
+  is_system: true
+  status: active
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+- id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaa004"
+  tenant_id: "00000000-0000-0000-0000-000000000001"
+  name: "Tenant Admin"
+  code: "TENANT_ADMIN"
+  is_system: true
+  status: active
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
