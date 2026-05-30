@@ -216,203 +216,10 @@ fn format_session_markdown(
         match msg.role.as_str() {
             "user" => {
                 round += 1;
-                let _ = writeln!(md, "## 用户\n\n{}", msg.content);
-
-                if let Some(ref refs) = msg.material_refs {
-                    let mut material_lines = Vec::new();
-
-                    // Inline text with full content
-                    if let Some(inline_obj) =
-                        refs.get("inline").and_then(|v| v.as_object())
-                    {
-                        let name = inline_obj
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("粘贴文本");
-                        if let Some(content) =
-                            inline_obj.get("content").and_then(|v| v.as_str())
-                        {
-                            material_lines.push(format!(
-                                "- {}（{}字）:\n{}\n",
-                                name,
-                                content.chars().count(),
-                                content
-                                    .lines()
-                                    .map(|l| format!("  {l}"))
-                                    .collect::<Vec<_>>()
-                                    .join("\n")
-                            ));
-                        } else {
-                            material_lines.push(format!("- {name}"));
-                        }
-                    }
-                    if refs.get("documentIds").is_some() {
-                        material_lines.push("- 文档（详见上方消息内容）".to_string());
-                    }
-                    if refs.get("fileIds").is_some() {
-                        material_lines.push("- 文件".to_string());
-                    }
-                    if !material_lines.is_empty() {
-                        let _ = writeln!(
-                            md,
-                            "\n**附加材料:**\n{}",
-                            material_lines.join("\n")
-                        );
-                    }
-                }
-
-                md.push_str("\n---\n\n");
+                write_markdown_user_message(&mut md, msg);
             }
             "assistant" => {
-                let is_error = msg.content.starts_with("\u{26a0}\u{fe0f}")
-                    || msg.content.starts_with('\u{26a0}');
-                md.push_str("## 助手\n\n");
-
-                // Try content_parts first (ordered interleaving of text/tool_call)
-                let has_content_parts = msg.token_usage.as_ref().and_then(|tu| {
-                    tu.get("contentParts")?.as_array().filter(|a| !a.is_empty())
-                });
-
-                if let Some(parts) = has_content_parts {
-                    for part in parts {
-                        let Some(part_type) = part.get("type").and_then(|v| v.as_str())
-                        else {
-                            continue;
-                        };
-                        match part_type {
-                            "text" => {
-                                if let Some(content) =
-                                    part.get("content").and_then(|v| v.as_str())
-                                {
-                                    if !content.is_empty() {
-                                        if is_error {
-                                            for line in content.lines() {
-                                                let _ = writeln!(
-                                                    md,
-                                                    "> \u{26a0}\u{fe0f} {line}"
-                                                );
-                                            }
-                                        } else {
-                                            md.push_str(content);
-                                            md.push('\n');
-                                        }
-                                    }
-                                }
-                            }
-                            "tool_call" => {
-                                let name = part
-                                    .get("toolName")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown");
-                                let duration = part
-                                    .get("durationMs")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .unwrap_or(0);
-                                let preview = part
-                                    .get("resultPreview")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-                                let time_str = if duration < 1000 {
-                                    format!("{duration}ms")
-                                } else {
-                                    format!("{:.1}s", duration as f64 / 1000.0)
-                                };
-                                let truncated_preview: String =
-                                    preview.chars().take(500).collect();
-                                let ellipsis = if preview.chars().count() > 500 {
-                                    "…"
-                                } else {
-                                    ""
-                                };
-                                let _ = write!(md, "\n> **🔍 {name}** ({time_str})\n> `{truncated_preview}{ellipsis}`");
-                                // 完整工具调用参数
-                                if let Some(args) = part.get("arguments") {
-                                    let args_str = serde_json::to_string_pretty(args)
-                                        .unwrap_or_default();
-                                    let _ = write!(
-                                        md,
-                                        "\n> **参数:**\n> ```json\n{}\n> ```",
-                                        args_str
-                                            .lines()
-                                            .map(|l| format!("> {l}"))
-                                            .collect::<Vec<_>>()
-                                            .join("\n")
-                                    );
-                                }
-                                md.push_str("\n\n");
-                            }
-                            _ => {}
-                        }
-                    }
-                } else {
-                    // Fallback: legacy tool_calls at top + text below
-                    let tool_section = msg.token_usage.as_ref().and_then(|tu| {
-                        let calls = tu.get("toolCalls")?.as_array()?;
-                        if calls.is_empty() {
-                            return None;
-                        }
-                        let mut lines = vec!["**工具调用:**".to_string()];
-                        for call in calls {
-                            let name = call.get("toolName")?.as_str()?;
-                            let duration = call.get("durationMs")?.as_u64()?;
-                            let preview =
-                                call.get("resultPreview")?.as_str().unwrap_or("");
-                            let time_str = if duration < 1000 {
-                                format!("{duration}ms")
-                            } else {
-                                format!("{:.1}s", duration as f64 / 1000.0)
-                            };
-                            let truncated_preview: String =
-                                preview.chars().take(500).collect();
-                            let ellipsis = if preview.chars().count() > 500 {
-                                "…"
-                            } else {
-                                ""
-                            };
-                            let mut line = format!(
-                                "- ✓ {name} ({time_str}) `{truncated_preview}{ellipsis}`"
-                            );
-                            // 完整工具调用参数
-                            if let Some(args) = call.get("arguments") {
-                                let args_str = serde_json::to_string_pretty(args)
-                                    .unwrap_or_default();
-                                let _ = write!(
-                                    line,
-                                    "\n  参数:\n  ```json\n{}\n  ```",
-                                    args_str
-                                        .lines()
-                                        .map(|l| format!("  {l}"))
-                                        .collect::<Vec<_>>()
-                                        .join("\n")
-                                );
-                            }
-                            lines.push(line);
-                        }
-                        Some(lines.join("\n"))
-                    });
-                    if let Some(ref tools) = tool_section {
-                        md.push_str(tools);
-                        md.push_str("\n\n");
-                    }
-                    if is_error {
-                        for line in msg.content.lines() {
-                            let _ = writeln!(md, "> \u{26a0}\u{fe0f} {line}");
-                        }
-                    } else {
-                        let _ = writeln!(md, "{}", msg.content);
-                    }
-                }
-
-                // Token 用量统计
-                if msg.total_tokens > 0 {
-                    let _ = writeln!(
-                        md,
-                        "\n*Token 用量: prompt={}, completion={}, total={}",
-                        msg.prompt_tokens, msg.completion_tokens, msg.total_tokens
-                    );
-                }
-
-                md.push_str("\n---\n\n");
+                write_markdown_assistant_message(&mut md, msg);
             }
             _ => {}
         }
@@ -420,6 +227,207 @@ fn format_session_markdown(
 
     let _ = writeln!(md, "> 对话结束 — 共 {round} 轮");
     md
+}
+
+fn write_markdown_user_message(md: &mut String, msg: &chat_messages::Model) {
+    use std::fmt::Write;
+
+    let _ = writeln!(md, "## 用户\n\n{}", msg.content);
+    if let Some(ref refs) = msg.material_refs {
+        let material_lines = markdown_material_lines(refs);
+        if !material_lines.is_empty() {
+            let _ = writeln!(md, "\n**附加材料:**\n{}", material_lines.join("\n"));
+        }
+    }
+    md.push_str("\n---\n\n");
+}
+
+fn markdown_material_lines(refs: &serde_json::Value) -> Vec<String> {
+    let mut material_lines = Vec::new();
+    if let Some(inline_obj) = refs.get("inline").and_then(|v| v.as_object()) {
+        let name = inline_obj
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("粘贴文本");
+        if let Some(content) = inline_obj.get("content").and_then(|v| v.as_str()) {
+            material_lines.push(format!(
+                "- {}（{}字）:\n{}\n",
+                name,
+                content.chars().count(),
+                content
+                    .lines()
+                    .map(|l| format!("  {l}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ));
+        } else {
+            material_lines.push(format!("- {name}"));
+        }
+    }
+    if refs.get("documentIds").is_some() {
+        material_lines.push("- 文档（详见上方消息内容）".to_string());
+    }
+    if refs.get("fileIds").is_some() {
+        material_lines.push("- 文件".to_string());
+    }
+    material_lines
+}
+
+fn write_markdown_assistant_message(md: &mut String, msg: &chat_messages::Model) {
+    use std::fmt::Write;
+
+    let is_error = msg.content.starts_with("\u{26a0}\u{fe0f}")
+        || msg.content.starts_with('\u{26a0}');
+    md.push_str("## 助手\n\n");
+
+    let has_content_parts = msg
+        .token_usage
+        .as_ref()
+        .and_then(|tu| tu.get("contentParts")?.as_array().filter(|a| !a.is_empty()));
+    if let Some(parts) = has_content_parts {
+        write_markdown_content_parts(md, parts, is_error);
+    } else {
+        write_markdown_legacy_assistant(md, msg, is_error);
+    }
+
+    if msg.total_tokens > 0 {
+        let _ = writeln!(
+            md,
+            "\n*Token 用量: prompt={}, completion={}, total={}",
+            msg.prompt_tokens, msg.completion_tokens, msg.total_tokens
+        );
+    }
+
+    md.push_str("\n---\n\n");
+}
+
+fn write_markdown_content_parts(
+    md: &mut String,
+    parts: &[serde_json::Value],
+    is_error: bool,
+) {
+    for part in parts {
+        let Some(part_type) = part.get("type").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        match part_type {
+            "text" => write_markdown_text_part(md, part, is_error),
+            "tool_call" => write_markdown_tool_call(md, part, true),
+            _ => {}
+        }
+    }
+}
+
+fn write_markdown_text_part(md: &mut String, part: &serde_json::Value, is_error: bool) {
+    use std::fmt::Write;
+
+    let Some(content) = part.get("content").and_then(|v| v.as_str()) else {
+        return;
+    };
+    if content.is_empty() {
+        return;
+    }
+    if is_error {
+        for line in content.lines() {
+            let _ = writeln!(md, "> \u{26a0}\u{fe0f} {line}");
+        }
+    } else {
+        md.push_str(content);
+        md.push('\n');
+    }
+}
+
+fn write_markdown_legacy_assistant(
+    md: &mut String,
+    msg: &chat_messages::Model,
+    is_error: bool,
+) {
+    use std::fmt::Write;
+
+    if let Some(tool_section) = markdown_legacy_tool_section(msg) {
+        md.push_str(&tool_section);
+        md.push_str("\n\n");
+    }
+    if is_error {
+        for line in msg.content.lines() {
+            let _ = writeln!(md, "> \u{26a0}\u{fe0f} {line}");
+        }
+    } else {
+        let _ = writeln!(md, "{}", msg.content);
+    }
+}
+
+fn markdown_legacy_tool_section(msg: &chat_messages::Model) -> Option<String> {
+    let calls = msg.token_usage.as_ref()?.get("toolCalls")?.as_array()?;
+    if calls.is_empty() {
+        return None;
+    }
+
+    let mut lines = vec!["**工具调用:**".to_string()];
+    for call in calls {
+        let mut line = markdown_tool_call_summary(call, false)?;
+        if let Some(args) = markdown_tool_arguments(call, "  ") {
+            line.push_str(&args);
+        }
+        lines.push(line);
+    }
+    Some(lines.join("\n"))
+}
+
+fn markdown_tool_call_summary(call: &serde_json::Value, quoted: bool) -> Option<String> {
+    let name = call.get("toolName")?.as_str()?;
+    let duration = call.get("durationMs")?.as_u64()?;
+    let preview = call.get("resultPreview")?.as_str().unwrap_or("");
+    let time_str = format_duration(duration);
+    let truncated_preview: String = preview.chars().take(500).collect();
+    let ellipsis = if preview.chars().count() > 500 {
+        "…"
+    } else {
+        ""
+    };
+
+    if quoted {
+        Some(format!(
+            "\n> **🔍 {name}** ({time_str})\n> `{truncated_preview}{ellipsis}`"
+        ))
+    } else {
+        Some(format!(
+            "- ✓ {name} ({time_str}) `{truncated_preview}{ellipsis}`"
+        ))
+    }
+}
+
+fn write_markdown_tool_call(md: &mut String, part: &serde_json::Value, quoted: bool) {
+    if let Some(summary) = markdown_tool_call_summary(part, quoted) {
+        md.push_str(&summary);
+    }
+    if let Some(args) = markdown_tool_arguments(part, if quoted { "> " } else { "  " }) {
+        md.push_str(&args);
+    }
+    md.push_str("\n\n");
+}
+
+fn markdown_tool_arguments(call: &serde_json::Value, prefix: &str) -> Option<String> {
+    let args = call.get("arguments")?;
+    let args_str = serde_json::to_string_pretty(args).unwrap_or_default();
+    let body = args_str
+        .lines()
+        .map(|line| format!("{prefix}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if prefix == "> " {
+        Some(format!("\n> **参数:**\n> ```json\n{body}\n> ```"))
+    } else {
+        Some(format!("\n  参数:\n  ```json\n{body}\n  ```"))
+    }
+}
+
+fn format_duration(duration_ms: u64) -> String {
+    if duration_ms < 1000 {
+        format!("{duration_ms}ms")
+    } else {
+        format!("{:.1}s", duration_ms as f64 / 1000.0)
+    }
 }
 
 /// Export a chat session as debug Markdown (full tool results, debug context, etc.).
@@ -475,8 +483,32 @@ fn format_debug_html(
     let timestamp = chrono::Utc::now().naive_utc().format("%Y-%m-%d %H:%M:%S");
 
     let mut html = String::with_capacity(64 * 1024);
+    write_debug_html_head(&mut html, title);
+    write_debug_html_header(&mut html, title, &timestamp.to_string(), session);
+    write_debug_toc(&mut html, messages);
 
-    // ---- HTML head + inline CSS ----
+    let mut round = 0u32;
+    for (idx, msg) in messages.iter().enumerate() {
+        let msg_num = idx + 1;
+        match msg.role.as_str() {
+            "user" => {
+                round += 1;
+                write_debug_user_message(&mut html, msg, round, msg_num);
+            }
+            "assistant" => write_debug_assistant_message(&mut html, msg, msg_num),
+            _ => {}
+        }
+    }
+
+    let _ = writeln!(
+        html,
+        "<hr class=\"round-sep\"><div class=\"meta\">对话结束 — 共 {round} 轮</div>"
+    );
+    html.push_str("</body>\n</html>\n");
+    html
+}
+
+fn write_debug_html_head(html: &mut String, title: &str) {
     html.push_str(
         r#"<!DOCTYPE html>
 <html lang="zh-CN">
@@ -558,8 +590,16 @@ fn format_debug_html(
 </head>
 <body>
 "#);
+}
 
-    // ---- Header ----
+fn write_debug_html_header(
+    html: &mut String,
+    title: &str,
+    timestamp: &str,
+    session: &chat_sessions::Model,
+) {
+    use std::fmt::Write;
+
     let _ = writeln!(html, "<h1>调试导出: {}</h1>", html_escape(title));
     let _ = writeln!(
         html,
@@ -569,360 +609,375 @@ fn format_debug_html(
     html.push_str(
         "<div class=\"warning\">⚠️ 本文档包含 LLM 调试数据，仅供开发者参考</div>\n",
     );
+}
 
-    // ---- TOC (目录) ----
-    // Build a quick index of user messages for navigation
-    {
-        let mut toc_entries: Vec<(u32, String)> = Vec::new(); // (round, preview)
-        let mut toc_round = 0u32;
-        for msg in messages {
-            if msg.role == "user" {
-                toc_round += 1;
-                let preview: String = msg.content.chars().take(80).collect();
-                let ellipsis = if msg.content.chars().count() > 80 {
-                    "…"
-                } else {
-                    ""
-                };
-                toc_entries.push((toc_round, format!("{preview}{ellipsis}")));
-            }
+fn write_debug_toc(html: &mut String, messages: &[chat_messages::Model]) {
+    use std::fmt::Write;
+
+    let mut toc_entries: Vec<(u32, String)> = Vec::new();
+    let mut toc_round = 0u32;
+    for msg in messages {
+        if msg.role == "user" {
+            toc_round += 1;
+            let preview: String = msg.content.chars().take(80).collect();
+            let ellipsis = if msg.content.chars().count() > 80 {
+                "…"
+            } else {
+                ""
+            };
+            toc_entries.push((toc_round, format!("{preview}{ellipsis}")));
         }
-        if !toc_entries.is_empty() {
-            html.push_str(
-                "<details class=\"toc\" open><summary>📋 对话目录</summary>\n<nav>\n",
-            );
-            for (r, preview) in &toc_entries {
-                let _ = writeln!(html, "<a class=\"toc-link\" href=\"#round-{}\"><span class=\"toc-round\">第 {} 轮</span> {}</a>",
+    }
+
+    if !toc_entries.is_empty() {
+        html.push_str(
+            "<details class=\"toc\" open><summary>📋 对话目录</summary>\n<nav>\n",
+        );
+        for (r, preview) in &toc_entries {
+            let _ = writeln!(html, "<a class=\"toc-link\" href=\"#round-{}\"><span class=\"toc-round\">第 {} 轮</span> {}</a>",
                     r, r, html_escape(preview));
-            }
-            html.push_str("</nav>\n</details>\n");
         }
+        html.push_str("</nav>\n</details>\n");
     }
+}
 
-    // ---- Messages ----
-    let mut round = 0u32;
-    for (idx, msg) in messages.iter().enumerate() {
-        let msg_num = idx + 1;
-        match msg.role.as_str() {
-            "user" => {
-                round += 1;
-                html.push_str("<div class=\"msg-card\">\n");
-                let _ = writeln!(html, "<h2 id=\"round-{round}\"><span class=\"badge badge-user\">User</span> 消息 #{msg_num}</h2>");
-                let _ = writeln!(
-                    html,
-                    "<div class=\"answer-block\">{}</div>",
-                    html_escape(&msg.content)
-                );
-                if let Some(ref refs) = msg.material_refs {
-                    let refs_str = serde_json::to_string_pretty(refs).unwrap_or_default();
-                    html.push_str("<div class=\"section-title\">附加材料</div>\n");
-                    let _ = writeln!(html, "<details><summary>material_refs JSON</summary><pre><code>{}</code></pre></details>",
-                        html_escape(&refs_str));
-                }
-                html.push_str("</div>\n");
-            }
-            "assistant" => {
-                html.push_str("<div class=\"msg-card\">\n");
-                let _ = writeln!(html, "<h2><span class=\"badge badge-assistant\">Assistant</span> 消息 #{msg_num}</h2>");
+fn write_debug_user_message(
+    html: &mut String,
+    msg: &chat_messages::Model,
+    round: u32,
+    msg_num: usize,
+) {
+    use std::fmt::Write;
 
-                // Token usage
-                if msg.total_tokens > 0 {
-                    let _ = writeln!(html, "<div class=\"meta\">Token: prompt=<code>{}</code> completion=<code>{}</code> total=<code>{}</code></div>",
-                        msg.prompt_tokens, msg.completion_tokens, msg.total_tokens);
-                }
-
-                // Debug context
-                let tu = msg.token_usage.as_ref();
-                let debug_ctx = tu.and_then(|v| v.get("debugContext"));
-
-                if let Some(dc) = debug_ctx {
-                    html.push_str("<div class=\"section-title\">调试上下文</div>\n");
-
-                    // System Prompt
-                    if let Some(sp) = dc.get("system_prompt").and_then(|v| v.as_str()) {
-                        let _ = writeln!(html, "<details><summary>System Prompt ({} 字符)</summary><pre>{}</pre></details>",
-                            sp.chars().count(),
-                            html_escape(sp));
-                    }
-
-                    // User Prompt
-                    if let Some(up) = dc.get("user_prompt").and_then(|v| v.as_str()) {
-                        let _ = writeln!(html, "<details><summary>User Prompt ({} 字符)</summary><pre>{}</pre></details>",
-                            up.chars().count(),
-                            html_escape(up));
-                    }
-
-                    // Config Snapshot
-                    if let Some(cs) = dc.get("config_snapshot") {
-                        let cs_str = serde_json::to_string_pretty(cs).unwrap_or_default();
-                        let _ = writeln!(html, "<details><summary>配置快照</summary><pre><code>{}</code></pre></details>",
-                            html_escape(&cs_str));
-                    }
-
-                    // Compaction
-                    if let Some(comp) = dc.get("compaction") {
-                        let kv = |key: &str| -> String {
-                            comp.get(key).map_or_else(
-                                || "—".to_string(),
-                                |v| match v {
-                                    serde_json::Value::Bool(b) => b.to_string(),
-                                    serde_json::Value::Number(n) => n.to_string(),
-                                    serde_json::Value::String(s) => s.clone(),
-                                    other => other.to_string(),
-                                },
-                            )
-                        };
-                        html.push_str("<details><summary>Compaction 状态</summary>\n<table class=\"kv-table\">");
-                        for (k, label) in [
-                            ("triggered", "触发"),
-                            ("summary_length", "摘要长度"),
-                            ("history_total", "历史消息总数"),
-                            ("history_tokens", "历史估算 tokens"),
-                            ("recent_start", "recent_start"),
-                        ] {
-                            let _ = write!(
-                                html,
-                                "<tr><td>{}</td><td>{}</td></tr>",
-                                label,
-                                kv(k)
-                            );
-                        }
-                        html.push_str("</table></details>\n");
-                    }
-
-                    // Semantic Recall
-                    if let Some(sr) = dc.get("semantic_recall") {
-                        let strategy =
-                            sr.get("strategy").and_then(|v| v.as_str()).unwrap_or("—");
-                        let ctx_len = sr
-                            .get("context_length")
-                            .and_then(serde_json::Value::as_u64)
-                            .map_or_else(|| "—".to_string(), |v| v.to_string());
-                        let has_recall = sr
-                            .get("has_recall")
-                            .and_then(serde_json::Value::as_bool)
-                            .map_or_else(|| "—".to_string(), |b| b.to_string());
-                        html.push_str("<details><summary>语义检索</summary>\n<table class=\"kv-table\">");
-                        let _ = write!(html, "<tr><td>策略</td><td>{strategy}</td></tr>");
-                        let _ = write!(
-                            html,
-                            "<tr><td>上下文长度</td><td>{ctx_len}</td></tr>"
-                        );
-                        let _ =
-                            write!(html, "<tr><td>有召回</td><td>{has_recall}</td></tr>");
-                        html.push_str("</table></details>\n");
-                    }
-
-                    // Chat History Summary
-                    if let Some(chs) = dc.get("chat_history_summary") {
-                        let mc = chs
-                            .get("message_count")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let _ = write!(html, "<details><summary>Chat History ({mc} 条消息)</summary>\n<table class=\"kv-table\"><tr><td>#</td><td>角色</td><td>内容/文本数</td><td>工具调用</td></tr>");
-                        if let Some(msgs) = chs.get("messages").and_then(|v| v.as_array())
-                        {
-                            for (i, entry) in msgs.iter().enumerate() {
-                                let role = entry
-                                    .get("role")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("—");
-                                let content_len = entry
-                                    .get("content_count")
-                                    .or_else(|| entry.get("text_items"))
-                                    .and_then(serde_json::Value::as_u64)
-                                    .unwrap_or(0);
-                                let has_tools = entry
-                                    .get("has_tool_calls")
-                                    .and_then(serde_json::Value::as_bool)
-                                    .unwrap_or(false);
-                                let _ = write!(html, "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-                                    i + 1, role, content_len, if has_tools { "✓" } else { "—" });
-                            }
-                        }
-                        html.push_str("</table></details>\n");
-                    }
-
-                    // Tool Rounds — 完整对话脉络
-                    if let Some(rounds) = dc.get("toolRounds").and_then(|v| v.as_array())
-                    {
-                        if !rounds.is_empty() {
-                            html.push_str("<div class=\"section-title\">对话脉络（LLM 完整交互时间线）</div>\n");
-                            html.push_str("<div class=\"timeline\">\n");
-
-                            // Step 1: User Prompt entry
-                            if let Some(up) =
-                                dc.get("user_prompt").and_then(|v| v.as_str())
-                            {
-                                html.push_str(
-                                    "<div class=\"timeline-entry user-entry\">\n",
-                                );
-                                html.push_str(
-                                    "<div class=\"timeline-label\">📥 用户输入</div>\n",
-                                );
-                                let _ = writeln!(
-                                    html,
-                                    "<pre class=\"timeline-content\">{}</pre>",
-                                    html_escape(up)
-                                );
-                                html.push_str("</div>\n");
-                            }
-
-                            // Step 2: Each tool round
-                            for round in rounds {
-                                let round_num = round
-                                    .get("round")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .unwrap_or(0);
-                                let tool_name = round
-                                    .get("toolName")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown");
-                                let duration_ms = round
-                                    .get("durationMs")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .unwrap_or(0);
-                                let result_full = round
-                                    .get("resultFull")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-                                let args = round
-                                    .get("arguments")
-                                    .map(|v| {
-                                        serde_json::to_string_pretty(v)
-                                            .unwrap_or_default()
-                                    })
-                                    .unwrap_or_default();
-
-                                html.push_str(
-                                    "<div class=\"timeline-entry tool-entry\">\n",
-                                );
-                                let _ = writeln!(html, "<div class=\"timeline-label\">🔧 工具调用 #{round_num} — {tool_name} ({duration_ms}ms)</div>");
-
-                                // Arguments
-                                if !args.is_empty() {
-                                    html.push_str(
-                                        "<details><summary>参数</summary><pre><code>",
-                                    );
-                                    html.push_str(&html_escape(&args));
-                                    html.push_str("</code></pre></details>\n");
-                                }
-
-                                // Result
-                                html.push_str("<details><summary>完整返回结果");
-                                if !result_full.is_empty() {
-                                    let _ = write!(
-                                        html,
-                                        " ({} 字符)",
-                                        result_full.chars().count()
-                                    );
-                                }
-                                html.push_str("</summary><pre>");
-                                html.push_str(&html_escape(result_full));
-                                html.push_str("</pre></details>\n");
-
-                                html.push_str("</div>\n");
-                            }
-
-                            html.push_str("</div>\n");
-                        }
-                    }
-                } else {
-                    html.push_str("<div class=\"meta\">无调试数据</div>\n");
-                }
-
-                // Tool call records
-                let has_content_parts = tu.and_then(|v| {
-                    v.get("content_parts")?.as_array().filter(|a| !a.is_empty())
-                });
-                let has_tool_calls = has_content_parts.is_some()
-                    || tu
-                        .and_then(|v| {
-                            v.get("toolCalls")?.as_array().filter(|a| !a.is_empty())
-                        })
-                        .is_some();
-
-                if has_tool_calls {
-                    html.push_str("<div class=\"section-title\">工具调用记录</div>\n");
-                    let parts_iter: Box<dyn Iterator<Item = &serde_json::Value>> =
-                        if let Some(parts) = has_content_parts {
-                            Box::new(parts.iter().filter(|p| {
-                                p.get("type").and_then(|v| v.as_str())
-                                    == Some("tool_call")
-                            }))
-                        } else if let Some(calls) =
-                            tu.and_then(|v| v.get("toolCalls")?.as_array())
-                        {
-                            Box::new(calls.iter())
-                        } else {
-                            Box::new(std::iter::empty())
-                        };
-
-                    for part in parts_iter {
-                        let name = part
-                            .get("toolName")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        let duration = part
-                            .get("durationMs")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let time_str = if duration < 1000 {
-                            format!("{duration}ms")
-                        } else {
-                            format!("{:.1}s", duration as f64 / 1000.0)
-                        };
-
-                        html.push_str("<div class=\"tool-call\">");
-                        let _ = writeln!(html, "<span class=\"tool-name\">🔍 {}</span><span class=\"tool-duration\">{}</span>", html_escape(name), time_str);
-
-                        // Arguments
-                        if let Some(args) = part.get("arguments") {
-                            let args_str =
-                                serde_json::to_string_pretty(args).unwrap_or_default();
-                            let _ = writeln!(html, "<details><summary>参数</summary><pre><code>{}</code></pre></details>",
-                                html_escape(&args_str));
-                        }
-
-                        // Result
-                        let result_text = part
-                            .get("resultFull")
-                            .and_then(|v| v.as_str())
-                            .or_else(|| {
-                                part.get("resultPreview").and_then(|v| v.as_str())
-                            })
-                            .unwrap_or("");
-                        let _ = writeln!(html, "<details><summary>完整结果 ({} 字符)</summary><pre>{}</pre></details>",
-                            result_text.chars().count(),
-                            html_escape(result_text));
-                        html.push_str("</div>\n");
-                    }
-                }
-
-                // Answer content
-                let is_error = msg.content.starts_with('\u{26a0}');
-                html.push_str("<div class=\"section-title\">回答内容</div>\n");
-                if !msg.content.is_empty() {
-                    let _ = writeln!(
-                        html,
-                        "<div class=\"answer-block{}\">{}</div>",
-                        if is_error { " error-block" } else { "" },
-                        html_escape(&msg.content)
-                    );
-                }
-
-                html.push_str("</div>\n");
-            }
-            _ => {}
-        }
-    }
-
+    html.push_str("<div class=\"msg-card\">\n");
+    let _ = writeln!(html, "<h2 id=\"round-{round}\"><span class=\"badge badge-user\">User</span> 消息 #{msg_num}</h2>");
     let _ = writeln!(
         html,
-        "<hr class=\"round-sep\"><div class=\"meta\">对话结束 — 共 {round} 轮</div>"
+        "<div class=\"answer-block\">{}</div>",
+        html_escape(&msg.content)
     );
-    html.push_str("</body>\n</html>\n");
-    html
+    if let Some(ref refs) = msg.material_refs {
+        let refs_str = serde_json::to_string_pretty(refs).unwrap_or_default();
+        html.push_str("<div class=\"section-title\">附加材料</div>\n");
+        let _ = writeln!(html, "<details><summary>material_refs JSON</summary><pre><code>{}</code></pre></details>",
+                        html_escape(&refs_str));
+    }
+    html.push_str("</div>\n");
+}
+
+fn write_debug_assistant_message(
+    html: &mut String,
+    msg: &chat_messages::Model,
+    msg_num: usize,
+) {
+    use std::fmt::Write;
+
+    html.push_str("<div class=\"msg-card\">\n");
+    let _ = writeln!(
+        html,
+        "<h2><span class=\"badge badge-assistant\">Assistant</span> 消息 #{msg_num}</h2>"
+    );
+    if msg.total_tokens > 0 {
+        let _ = writeln!(html, "<div class=\"meta\">Token: prompt=<code>{}</code> completion=<code>{}</code> total=<code>{}</code></div>",
+                        msg.prompt_tokens, msg.completion_tokens, msg.total_tokens);
+    }
+
+    let tu = msg.token_usage.as_ref();
+    if let Some(debug_ctx) = tu.and_then(|v| v.get("debugContext")) {
+        write_debug_context(html, debug_ctx);
+    } else {
+        html.push_str("<div class=\"meta\">无调试数据</div>\n");
+    }
+
+    write_debug_tool_records(html, tu);
+    write_debug_answer(html, msg);
+    html.push_str("</div>\n");
+}
+
+fn write_debug_context(html: &mut String, dc: &serde_json::Value) {
+    use std::fmt::Write;
+
+    html.push_str("<div class=\"section-title\">调试上下文</div>\n");
+    if let Some(sp) = dc.get("system_prompt").and_then(|v| v.as_str()) {
+        let _ = writeln!(
+            html,
+            "<details><summary>System Prompt ({} 字符)</summary><pre>{}</pre></details>",
+            sp.chars().count(),
+            html_escape(sp)
+        );
+    }
+
+    if let Some(up) = dc.get("user_prompt").and_then(|v| v.as_str()) {
+        let _ = writeln!(
+            html,
+            "<details><summary>User Prompt ({} 字符)</summary><pre>{}</pre></details>",
+            up.chars().count(),
+            html_escape(up)
+        );
+    }
+
+    if let Some(cs) = dc.get("config_snapshot") {
+        let cs_str = serde_json::to_string_pretty(cs).unwrap_or_default();
+        let _ = writeln!(
+            html,
+            "<details><summary>配置快照</summary><pre><code>{}</code></pre></details>",
+            html_escape(&cs_str)
+        );
+    }
+
+    write_debug_compaction(html, dc.get("compaction"));
+    write_debug_semantic_recall(html, dc.get("semantic_recall"));
+    write_debug_chat_history(html, dc.get("chat_history_summary"));
+    write_debug_tool_rounds(html, dc);
+}
+
+fn write_debug_compaction(html: &mut String, comp: Option<&serde_json::Value>) {
+    use std::fmt::Write;
+
+    let Some(comp) = comp else {
+        return;
+    };
+    let kv = |key: &str| -> String {
+        comp.get(key).map_or_else(
+            || "—".to_string(),
+            |v| match v {
+                serde_json::Value::Bool(b) => b.to_string(),
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            },
+        )
+    };
+    html.push_str(
+        "<details><summary>Compaction 状态</summary>\n<table class=\"kv-table\">",
+    );
+    for (k, label) in [
+        ("triggered", "触发"),
+        ("summary_length", "摘要长度"),
+        ("history_total", "历史消息总数"),
+        ("history_tokens", "历史估算 tokens"),
+        ("recent_start", "recent_start"),
+    ] {
+        let _ = write!(html, "<tr><td>{label}</td><td>{}</td></tr>", kv(k));
+    }
+    html.push_str("</table></details>\n");
+}
+
+fn write_debug_semantic_recall(html: &mut String, sr: Option<&serde_json::Value>) {
+    use std::fmt::Write;
+
+    let Some(sr) = sr else {
+        return;
+    };
+    let strategy = sr.get("strategy").and_then(|v| v.as_str()).unwrap_or("—");
+    let ctx_len = sr
+        .get("context_length")
+        .and_then(serde_json::Value::as_u64)
+        .map_or_else(|| "—".to_string(), |v| v.to_string());
+    let has_recall = sr
+        .get("has_recall")
+        .and_then(serde_json::Value::as_bool)
+        .map_or_else(|| "—".to_string(), |b| b.to_string());
+    html.push_str("<details><summary>语义检索</summary>\n<table class=\"kv-table\">");
+    let _ = write!(html, "<tr><td>策略</td><td>{strategy}</td></tr>");
+    let _ = write!(html, "<tr><td>上下文长度</td><td>{ctx_len}</td></tr>");
+    let _ = write!(html, "<tr><td>有召回</td><td>{has_recall}</td></tr>");
+    html.push_str("</table></details>\n");
+}
+
+fn write_debug_chat_history(html: &mut String, chs: Option<&serde_json::Value>) {
+    use std::fmt::Write;
+
+    let Some(chs) = chs else {
+        return;
+    };
+    let mc = chs
+        .get("message_count")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let _ = write!(html, "<details><summary>Chat History ({mc} 条消息)</summary>\n<table class=\"kv-table\"><tr><td>#</td><td>角色</td><td>内容/文本数</td><td>工具调用</td></tr>");
+    if let Some(msgs) = chs.get("messages").and_then(|v| v.as_array()) {
+        for (i, entry) in msgs.iter().enumerate() {
+            write_debug_history_row(html, i, entry);
+        }
+    }
+    html.push_str("</table></details>\n");
+}
+
+fn write_debug_history_row(html: &mut String, i: usize, entry: &serde_json::Value) {
+    use std::fmt::Write;
+
+    let role = entry.get("role").and_then(|v| v.as_str()).unwrap_or("—");
+    let content_len = entry
+        .get("content_count")
+        .or_else(|| entry.get("text_items"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let has_tools = entry
+        .get("has_tool_calls")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let _ = write!(
+        html,
+        "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+        i + 1,
+        role,
+        content_len,
+        if has_tools { "✓" } else { "—" }
+    );
+}
+
+fn write_debug_tool_rounds(html: &mut String, dc: &serde_json::Value) {
+    let Some(rounds) = dc.get("toolRounds").and_then(|v| v.as_array()) else {
+        return;
+    };
+    if rounds.is_empty() {
+        return;
+    }
+    html.push_str("<div class=\"section-title\">对话脉络（LLM 完整交互时间线）</div>\n");
+    html.push_str("<div class=\"timeline\">\n");
+    if let Some(up) = dc.get("user_prompt").and_then(|v| v.as_str()) {
+        write_debug_user_timeline_entry(html, up);
+    }
+    for round in rounds {
+        write_debug_tool_timeline_entry(html, round);
+    }
+    html.push_str("</div>\n");
+}
+
+fn write_debug_user_timeline_entry(html: &mut String, user_prompt: &str) {
+    use std::fmt::Write;
+
+    html.push_str("<div class=\"timeline-entry user-entry\">\n");
+    html.push_str("<div class=\"timeline-label\">📥 用户输入</div>\n");
+    let _ = writeln!(
+        html,
+        "<pre class=\"timeline-content\">{}</pre>",
+        html_escape(user_prompt)
+    );
+    html.push_str("</div>\n");
+}
+
+fn write_debug_tool_timeline_entry(html: &mut String, round: &serde_json::Value) {
+    use std::fmt::Write;
+
+    let round_num = round
+        .get("round")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let tool_name = round
+        .get("toolName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let duration_ms = round
+        .get("durationMs")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let result_full = round
+        .get("resultFull")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let args = round
+        .get("arguments")
+        .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
+        .unwrap_or_default();
+
+    html.push_str("<div class=\"timeline-entry tool-entry\">\n");
+    let _ = writeln!(html, "<div class=\"timeline-label\">🔧 工具调用 #{round_num} — {tool_name} ({duration_ms}ms)</div>");
+    if !args.is_empty() {
+        html.push_str("<details><summary>参数</summary><pre><code>");
+        html.push_str(&html_escape(&args));
+        html.push_str("</code></pre></details>\n");
+    }
+    html.push_str("<details><summary>完整返回结果");
+    if !result_full.is_empty() {
+        let _ = write!(html, " ({} 字符)", result_full.chars().count());
+    }
+    html.push_str("</summary><pre>");
+    html.push_str(&html_escape(result_full));
+    html.push_str("</pre></details>\n");
+    html.push_str("</div>\n");
+}
+
+fn write_debug_tool_records(html: &mut String, tu: Option<&serde_json::Value>) {
+    let has_content_parts =
+        tu.and_then(|v| v.get("content_parts")?.as_array().filter(|a| !a.is_empty()));
+    let has_tool_calls = has_content_parts.is_some()
+        || tu
+            .and_then(|v| v.get("toolCalls")?.as_array().filter(|a| !a.is_empty()))
+            .is_some();
+    if !has_tool_calls {
+        return;
+    }
+
+    html.push_str("<div class=\"section-title\">工具调用记录</div>\n");
+    if let Some(parts) = has_content_parts {
+        for part in parts
+            .iter()
+            .filter(|p| p.get("type").and_then(|v| v.as_str()) == Some("tool_call"))
+        {
+            write_debug_tool_record(html, part);
+        }
+    } else if let Some(calls) = tu.and_then(|v| v.get("toolCalls")?.as_array()) {
+        for call in calls {
+            write_debug_tool_record(html, call);
+        }
+    }
+}
+
+fn write_debug_tool_record(html: &mut String, part: &serde_json::Value) {
+    use std::fmt::Write;
+
+    let name = part
+        .get("toolName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let duration = part
+        .get("durationMs")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    html.push_str("<div class=\"tool-call\">");
+    let _ = writeln!(
+        html,
+        "<span class=\"tool-name\">🔍 {}</span><span class=\"tool-duration\">{}</span>",
+        html_escape(name),
+        format_duration(duration)
+    );
+    if let Some(args) = part.get("arguments") {
+        let args_str = serde_json::to_string_pretty(args).unwrap_or_default();
+        let _ = writeln!(
+            html,
+            "<details><summary>参数</summary><pre><code>{}</code></pre></details>",
+            html_escape(&args_str)
+        );
+    }
+    let result_text = part
+        .get("resultFull")
+        .and_then(|v| v.as_str())
+        .or_else(|| part.get("resultPreview").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let _ = writeln!(
+        html,
+        "<details><summary>完整结果 ({} 字符)</summary><pre>{}</pre></details>",
+        result_text.chars().count(),
+        html_escape(result_text)
+    );
+    html.push_str("</div>\n");
+}
+
+fn write_debug_answer(html: &mut String, msg: &chat_messages::Model) {
+    use std::fmt::Write;
+
+    let is_error = msg.content.starts_with('\u{26a0}');
+    html.push_str("<div class=\"section-title\">回答内容</div>\n");
+    if !msg.content.is_empty() {
+        let _ = writeln!(
+            html,
+            "<div class=\"answer-block{}\">{}</div>",
+            if is_error { " error-block" } else { "" },
+            html_escape(&msg.content)
+        );
+    }
 }
 
 /// Escape HTML special characters to prevent XSS in debug output.
