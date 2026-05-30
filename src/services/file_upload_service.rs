@@ -1036,17 +1036,51 @@ pub async fn initiate_upload(
             ErrorDetail::new("upload.parts_total_overflow", "parts total overflow"),
         )
     })?;
+
     let s3_client = require_shared_s3_client(ctx)?;
     let s3_config = require_shared_s3_config(ctx)?;
     let upload_id = generate_id();
     let key_name = temp_key(upload_id);
     let expires_at = upload_expiry();
+    let s3_upload_id = create_s3_multipart(
+        &s3_client,
+        &s3_config.bucket,
+        &key_name,
+        params.mime_type_hint.as_ref(),
+        upload_id,
+    )
+    .await?;
 
+    persist_upload_and_respond(
+        ctx,
+        &s3_client,
+        &s3_config.bucket,
+        &key_name,
+        s3_upload_id,
+        upload_id,
+        tenant_id,
+        user_id,
+        params,
+        part_size,
+        parts_total,
+        expires_at,
+        key,
+    )
+    .await
+}
+
+async fn create_s3_multipart(
+    s3_client: &SharedS3Client,
+    bucket: &str,
+    key_name: &str,
+    mime_type_hint: Option<&String>,
+    upload_id: Uuid,
+) -> loco_rs::Result<String> {
     let create_output = s3_client
         .create_multipart_upload()
-        .bucket(s3_config.bucket.clone())
-        .key(key_name.clone())
-        .set_content_type(params.mime_type_hint.clone())
+        .bucket(bucket.to_string())
+        .key(key_name.to_string())
+        .set_content_type(mime_type_hint.cloned())
         .send()
         .await
         .map_err(|err| {
@@ -1057,27 +1091,41 @@ pub async fn initiate_upload(
                 "failed to initialize multipart upload",
             )
         })?;
+    create_output
+        .upload_id()
+        .ok_or_else(|| {
+            Error::CustomError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorDetail::new(
+                    "upload.missing_s3_upload_id",
+                    "CreateMultipartUpload response missing upload id",
+                ),
+            )
+        })
+        .map(std::string::ToString::to_string)
+}
 
-    let s3_upload_id = create_output.upload_id().ok_or_else(|| {
-        Error::CustomError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ErrorDetail::new(
-                "upload.missing_s3_upload_id",
-                "CreateMultipartUpload response missing upload id",
-            ),
-        )
-    })?;
-
+#[allow(clippy::too_many_arguments)]
+async fn persist_upload_and_respond(
+    ctx: &AppContext,
+    s3_client: &SharedS3Client,
+    bucket: &str,
+    key_name: &str,
+    s3_upload_id: String,
+    upload_id: Uuid,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    params: &InitiateUploadRequest,
+    part_size: i64,
+    parts_total: i32,
+    expires_at: DateTime<FixedOffset>,
+    idem_key: &str,
+) -> loco_rs::Result<JsonEndpointResponse> {
     let txn = match ctx.db.begin().await {
         Ok(txn) => txn,
         Err(e) => {
-            abort_multipart_if_possible(
-                &s3_client,
-                &s3_config.bucket,
-                &key_name,
-                Some(s3_upload_id),
-            )
-            .await;
+            abort_multipart_if_possible(s3_client, bucket, key_name, Some(&s3_upload_id))
+                .await;
             return Err(db_err_into(&e));
         }
     };
@@ -1095,9 +1143,9 @@ pub async fn initiate_upload(
         parts_received: Set(0),
         expected_hash_fast: Set(params.expected_hash_fast.clone()),
         storage_backend: Set(STORAGE_BACKEND_MINIO.to_string()),
-        bucket: Set(s3_config.bucket.clone()),
-        temp_key: Set(key_name.clone()),
-        s3_upload_id: Set(Some(s3_upload_id.to_string())),
+        bucket: Set(bucket.to_string()),
+        temp_key: Set(key_name.to_string()),
+        s3_upload_id: Set(Some(s3_upload_id.clone())),
         status: Set(STATUS_INITIATED.to_string()),
         status_reason: Set(None),
         expires_at: Set(expires_at),
@@ -1113,10 +1161,10 @@ pub async fn initiate_upload(
         Err(e) => {
             let _ = txn.rollback().await;
             abort_multipart_if_possible(
-                &s3_client,
-                &s3_config.bucket,
-                &key_name,
-                Some(s3_upload_id),
+                s3_client,
+                bucket,
+                key_name,
+                Some(s3_upload_id.as_str()),
             )
             .await;
             return Err(db_err_into(&e));
@@ -1126,14 +1174,14 @@ pub async fn initiate_upload(
     let payload = InitiateUploadResponse::from(&upload);
     let response = json_endpoint_response(StatusCode::CREATED, &payload)?;
     if let Err(err) =
-        cache_success(&txn, upload.id, ENDPOINT_INITIATE, key, &response).await
+        cache_success(&txn, upload.id, ENDPOINT_INITIATE, idem_key, &response).await
     {
         let _ = txn.rollback().await;
         abort_multipart_if_possible(
-            &s3_client,
-            &s3_config.bucket,
-            &key_name,
-            Some(s3_upload_id),
+            s3_client,
+            bucket,
+            key_name,
+            Some(s3_upload_id.as_str()),
         )
         .await;
         return Err(err);
@@ -1141,10 +1189,10 @@ pub async fn initiate_upload(
 
     if let Err(err) = txn.commit().await {
         abort_multipart_if_possible(
-            &s3_client,
-            &s3_config.bucket,
-            &key_name,
-            Some(s3_upload_id),
+            s3_client,
+            bucket,
+            key_name,
+            Some(s3_upload_id.as_str()),
         )
         .await;
         return Err(db_err_into(&err));
@@ -1270,7 +1318,31 @@ async fn register_part_inner(
     #[cfg(debug_assertions)]
     maybe_flip_register_part_pre_update_state(ctx, upload_id, user_id).await?;
 
-    let txn = ctx.db.begin().await.db_err()?;
+    upsert_part_and_finalize(
+        &ctx.db,
+        upload_id,
+        part_number_i32,
+        user_id,
+        params,
+        &endpoint,
+        key,
+        &upload.status,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn upsert_part_and_finalize(
+    db: &DatabaseConnection,
+    upload_id: Uuid,
+    part_number_i32: i32,
+    user_id: Uuid,
+    params: &RegisterPartRequest,
+    endpoint: &str,
+    idem_key: &str,
+    current_status: &str,
+) -> loco_rs::Result<JsonEndpointResponse> {
+    let txn = db.begin().await.db_err()?;
 
     file_upload_parts::Entity::insert(file_upload_parts::ActiveModel {
         id: Set(generate_id()),
@@ -1324,7 +1396,7 @@ async fn register_part_inner(
     let next_status = if parts_received > 0 {
         STATUS_IN_PROGRESS
     } else {
-        upload.status.as_str()
+        current_status
     };
 
     if guard_register_part_state_update(
@@ -1347,12 +1419,12 @@ async fn register_part_inner(
 
     let payload = RegisterPartResponse {
         upload_id,
-        part_number,
+        part_number: part_number_i32 as u32,
         parts_received,
         status: next_status.to_string(),
     };
     let response = json_endpoint_response(StatusCode::OK, &payload)?;
-    cache_success(&txn, upload_id, &endpoint, key, &response).await?;
+    cache_success(&txn, upload_id, endpoint, idem_key, &response).await?;
     txn.commit().await.db_err()?;
     Ok(response)
 }
@@ -2137,18 +2209,46 @@ pub async fn abort_upload(
 
     let upload = load_upload(&ctx.db, tenant_id, upload_id).await?;
     if matches!(upload.status.as_str(), STATUS_ABORTED | STATUS_EXPIRED) {
-        let payload = AbortUploadResponse {
-            id: upload.id,
-            status: upload.status.clone(),
-        };
-        let response = json_endpoint_response(StatusCode::OK, &payload)?;
-        let txn = ctx.db.begin().await.db_err()?;
-        cache_success(&txn, upload.id, ENDPOINT_ABORT, key, &response).await?;
-        txn.commit().await.db_err()?;
-        return Ok(response);
+        return cache_abort_response(&ctx.db, &upload, key).await;
     }
 
-    let txn = ctx.db.begin().await.db_err()?;
+    let response = transition_abort_state(
+        &ctx.db, tenant_id, user_id, upload_id, &upload, audit_ctx, key,
+    )
+    .await?;
+
+    let s3_client = require_shared_s3_client(ctx)?;
+    cleanup_abort_s3_objects(&s3_client, &upload).await;
+
+    Ok(response)
+}
+
+async fn cache_abort_response(
+    db: &DatabaseConnection,
+    upload: &file_uploads::Model,
+    idem_key: &str,
+) -> loco_rs::Result<JsonEndpointResponse> {
+    let payload = AbortUploadResponse {
+        id: upload.id,
+        status: upload.status.clone(),
+    };
+    let response = json_endpoint_response(StatusCode::OK, &payload)?;
+    let txn = db.begin().await.db_err()?;
+    cache_success(&txn, upload.id, ENDPOINT_ABORT, idem_key, &response).await?;
+    txn.commit().await.db_err()?;
+    Ok(response)
+}
+
+async fn transition_abort_state(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    upload_id: Uuid,
+    upload: &file_uploads::Model,
+    audit_ctx: &AuditContext,
+    idem_key: &str,
+) -> loco_rs::Result<JsonEndpointResponse> {
+    let txn = db.begin().await.db_err()?;
     let update_result = file_uploads::Entity::update_many()
         .col_expr(file_uploads::Column::Status, Expr::value(STATUS_ABORTED))
         .col_expr(
@@ -2173,7 +2273,7 @@ pub async fn abort_upload(
 
     if update_result.rows_affected == 0 {
         let _ = txn.rollback().await;
-        let current = load_upload(&ctx.db, tenant_id, upload_id).await?;
+        let current = load_upload(db, tenant_id, upload_id).await?;
         return match current.status.as_str() {
             STATUS_COMPLETING | STATUS_COMPLETED => {
                 Err(crate::views::errors::err_custom(
@@ -2183,15 +2283,7 @@ pub async fn abort_upload(
                 ))
             }
             STATUS_ABORTED | STATUS_EXPIRED => {
-                let payload = AbortUploadResponse {
-                    id: current.id,
-                    status: current.status,
-                };
-                let response = json_endpoint_response(StatusCode::OK, &payload)?;
-                let txn = ctx.db.begin().await.db_err()?;
-                cache_success(&txn, current.id, ENDPOINT_ABORT, key, &response).await?;
-                txn.commit().await.db_err()?;
-                Ok(response)
+                cache_abort_response(db, &current, idem_key).await
             }
             _ => Err(crate::views::errors::err_custom(
                 StatusCode::CONFLICT,
@@ -2201,7 +2293,7 @@ pub async fn abort_upload(
         };
     }
 
-    let snapshot = FileUploadAuditSnapshot::from(&upload);
+    let snapshot = FileUploadAuditSnapshot::from(upload);
     audit_service::log(
         &txn,
         audit_ctx,
@@ -2218,21 +2310,25 @@ pub async fn abort_upload(
         status: STATUS_ABORTED.to_string(),
     };
     let response = json_endpoint_response(StatusCode::OK, &payload)?;
-    cache_success(&txn, upload.id, ENDPOINT_ABORT, key, &response).await?;
+    cache_success(&txn, upload.id, ENDPOINT_ABORT, idem_key, &response).await?;
     txn.commit().await.db_err()?;
 
-    let s3_client = require_shared_s3_client(ctx)?;
+    Ok(response)
+}
+
+async fn cleanup_abort_s3_objects(
+    s3_client: &SharedS3Client,
+    upload: &file_uploads::Model,
+) {
     abort_multipart_if_possible(
-        &s3_client,
+        s3_client,
         &upload.bucket,
         &upload.temp_key,
         upload.s3_upload_id.as_deref(),
     )
     .await;
-    delete_temp_prefix(&s3_client, &upload.bucket, upload.id).await;
-    delete_object_if_exists(&s3_client, &upload.bucket, &upload.temp_key).await;
-
-    Ok(response)
+    delete_temp_prefix(s3_client, &upload.bucket, upload.id).await;
+    delete_object_if_exists(s3_client, &upload.bucket, &upload.temp_key).await;
 }
 
 pub async fn resume_upload(
@@ -2314,19 +2410,35 @@ pub async fn purge_uploads(ctx: &AppContext) -> loco_rs::Result<UploadPurgeOutco
         .await
         .db_err()?;
 
+    let soft_deleted = purge_soft_expired(&s3_client, &ctx.db, &soft_targets, now).await;
+    purge_stale_completing(&s3_client, ctx, &stale_completing, now).await?;
+    let hard_deleted = purge_hard_expired(&ctx.db, &hard_targets).await;
+
+    Ok(UploadPurgeOutcome {
+        soft_deleted,
+        hard_deleted,
+    })
+}
+
+async fn purge_soft_expired(
+    s3_client: &SharedS3Client,
+    db: &DatabaseConnection,
+    targets: &[file_uploads::Model],
+    now: chrono::DateTime<FixedOffset>,
+) -> u64 {
     let mut soft_deleted = 0_u64;
-    for upload in soft_targets {
+    for upload in targets {
         abort_multipart_if_possible(
-            &s3_client,
+            s3_client,
             &upload.bucket,
             &upload.temp_key,
             upload.s3_upload_id.as_deref(),
         )
         .await;
-        delete_temp_prefix(&s3_client, &upload.bucket, upload.id).await;
-        delete_object_if_exists(&s3_client, &upload.bucket, &upload.temp_key).await;
+        delete_temp_prefix(s3_client, &upload.bucket, upload.id).await;
+        delete_object_if_exists(s3_client, &upload.bucket, &upload.temp_key).await;
 
-        file_uploads::Entity::update_many()
+        if let Err(e) = file_uploads::Entity::update_many()
             .col_expr(file_uploads::Column::Status, Expr::value(STATUS_EXPIRED))
             .col_expr(
                 file_uploads::Column::StatusReason,
@@ -2339,23 +2451,31 @@ pub async fn purge_uploads(ctx: &AppContext) -> loco_rs::Result<UploadPurgeOutco
             )
             .col_expr(file_uploads::Column::UpdatedAt, Expr::value(now))
             .filter(file_uploads::Column::Id.eq(upload.id))
-            .exec(&ctx.db)
+            .exec(db)
             .await
-            .db_err()?;
+        {
+            tracing::error!(error = ?e, upload_id = %upload.id, "soft-expire update failed");
+            continue;
+        }
         soft_deleted += 1;
     }
+    soft_deleted
+}
 
-    for upload in stale_completing {
-        let before = FileUploadAuditSnapshot::from(&upload);
-        // If the stream-and-verify step crashed before we could persist the
-        // streamed hash, expected_hash will be None and we cannot reconstruct
-        // the final key - in that case only the temp object needs cleanup.
+async fn purge_stale_completing(
+    s3_client: &SharedS3Client,
+    ctx: &AppContext,
+    targets: &[file_uploads::Model],
+    now: chrono::DateTime<FixedOffset>,
+) -> loco_rs::Result<()> {
+    for upload in targets {
+        let before = FileUploadAuditSnapshot::from(upload);
         let final_key = upload
             .expected_hash
             .as_deref()
             .map(|hash| final_storage_key(upload.id, hash));
         cleanup_complete_failure(
-            &s3_client,
+            s3_client,
             &upload.bucket,
             upload.id,
             &upload.temp_key,
@@ -2405,30 +2525,40 @@ pub async fn purge_uploads(ctx: &AppContext) -> loco_rs::Result<UploadPurgeOutco
         )
         .await?;
     }
+    Ok(())
+}
 
+async fn purge_hard_expired(
+    db: &DatabaseConnection,
+    targets: &[file_uploads::Model],
+) -> u64 {
     let mut hard_deleted = 0_u64;
-    for upload in hard_targets {
-        file_upload_idempotency::Entity::delete_many()
-            .filter(file_upload_idempotency::Column::UploadId.eq(upload.id))
-            .exec(&ctx.db)
-            .await
-            .db_err()?;
-        file_upload_parts::Entity::delete_many()
-            .filter(file_upload_parts::Column::UploadId.eq(upload.id))
-            .exec(&ctx.db)
-            .await
-            .db_err()?;
-        file_uploads::Entity::delete_by_id(upload.id)
-            .exec(&ctx.db)
-            .await
-            .db_err()?;
+    for upload in targets {
+        let res: loco_rs::Result<()> = async {
+            file_upload_idempotency::Entity::delete_many()
+                .filter(file_upload_idempotency::Column::UploadId.eq(upload.id))
+                .exec(db)
+                .await
+                .db_err()?;
+            file_upload_parts::Entity::delete_many()
+                .filter(file_upload_parts::Column::UploadId.eq(upload.id))
+                .exec(db)
+                .await
+                .db_err()?;
+            file_uploads::Entity::delete_by_id(upload.id)
+                .exec(db)
+                .await
+                .db_err()?;
+            Ok(())
+        }
+        .await;
+        if let Err(e) = res {
+            tracing::error!(error = ?e, upload_id = %upload.id, "hard-delete failed");
+            continue;
+        }
         hard_deleted += 1;
     }
-
-    Ok(UploadPurgeOutcome {
-        soft_deleted,
-        hard_deleted,
-    })
+    hard_deleted
 }
 
 #[cfg(test)]

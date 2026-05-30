@@ -175,63 +175,7 @@ impl Tool for SearchMaterialTool {
         };
 
         let total_materials = targets.len();
-
-        // Search through materials
-        let mut results = Vec::new();
-        let mut total_matches = 0;
-
-        for mat in &targets {
-            let lines: Vec<&str> = mat.content.lines().collect();
-            let mut mat_matches: Vec<String> = Vec::new();
-
-            for (i, line) in lines.iter().enumerate() {
-                if line.to_lowercase().contains(&query_lower) {
-                    let line_num = i + 1; // 1-indexed
-
-                    // Collect context lines (before)
-                    let mut context = Vec::new();
-                    let ctx_start = i.saturating_sub(CONTEXT_LINES);
-                    for (ci, ctx_line) in lines.iter().enumerate().take(i).skip(ctx_start)
-                    {
-                        context.push(format!("    {}: {}", ci + 1, ctx_line));
-                    }
-
-                    // The matched line
-                    let matched = format!("  {line_num}: {line}");
-
-                    // Collect context lines (after)
-                    let ctx_end = (i + CONTEXT_LINES + 1).min(lines.len());
-                    for (ci, ctx_line) in
-                        lines.iter().enumerate().take(ctx_end).skip(i + 1)
-                    {
-                        context.push(format!("    {}: {}", ci + 1, ctx_line));
-                    }
-
-                    mat_matches.push(format!("{}\n{}", matched, context.join("\n")));
-                    total_matches += 1;
-
-                    if total_matches >= top_k {
-                        break;
-                    }
-                }
-                if total_matches >= top_k {
-                    break;
-                }
-            }
-
-            if !mat_matches.is_empty() {
-                results.push(format!(
-                    "=== 材料: {} (ID: {}) ===\n{}",
-                    mat.title,
-                    mat.id,
-                    mat_matches.join("\n\n")
-                ));
-            }
-
-            if total_matches >= top_k {
-                break;
-            }
-        }
+        let (results, total_matches) = search_materials(&targets, &query_lower, top_k);
 
         if results.is_empty() {
             return Ok(format!(
@@ -248,4 +192,62 @@ impl Tool for SearchMaterialTool {
             results.join("\n\n")
         ))
     }
+}
+
+fn search_materials(
+    targets: &[MaterialRef<'_>],
+    query_lower: &str,
+    top_k: usize,
+) -> (Vec<String>, usize) {
+    let mut results = Vec::new();
+    let mut total_matches = 0;
+
+    for mat in targets {
+        let lines: Vec<&str> = mat.content.lines().collect();
+        let mut mat_matches: Vec<String> = Vec::new();
+
+        for (i, line) in lines.iter().enumerate() {
+            if line.to_lowercase().contains(query_lower) {
+                let line_num = i + 1;
+
+                let mut context = Vec::new();
+                let ctx_start = i.saturating_sub(CONTEXT_LINES);
+                for (ci, ctx_line) in lines.iter().enumerate().take(i).skip(ctx_start) {
+                    context.push(format!("    {}: {}", ci + 1, ctx_line));
+                }
+
+                let matched = format!("  {line_num}: {line}");
+
+                let ctx_end = (i + CONTEXT_LINES + 1).min(lines.len());
+                for (ci, ctx_line) in lines.iter().enumerate().take(ctx_end).skip(i + 1) {
+                    context.push(format!("    {}: {}", ci + 1, ctx_line));
+                }
+
+                mat_matches.push(format!("{}\n{}", matched, context.join("\n")));
+                total_matches += 1;
+
+                if total_matches >= top_k {
+                    break;
+                }
+            }
+            if total_matches >= top_k {
+                break;
+            }
+        }
+
+        if !mat_matches.is_empty() {
+            results.push(format!(
+                "=== 材料: {} (ID: {}) ===\n{}",
+                mat.title,
+                mat.id,
+                mat_matches.join("\n\n")
+            ));
+        }
+
+        if total_matches >= top_k {
+            break;
+        }
+    }
+
+    (results, total_matches)
 }

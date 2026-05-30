@@ -153,6 +153,53 @@ struct PipelineParams<'a> {
     embedding_model_name: &'a str,
 }
 
+fn build_chunk_points_and_models(
+    chunks: &[crate::modules::knowledge_base::service::chunking_service::RawChunk],
+    embeddings: &[rig::embeddings::Embedding],
+    p: &PipelineParams<'_>,
+) -> (Vec<ChunkPoint>, Vec<kc_models::ActiveModel>, i32) {
+    let mut chunk_points = Vec::with_capacity(chunks.len());
+    let mut chunk_models = Vec::with_capacity(chunks.len());
+    let mut total_tokens: i32 = 0;
+
+    for (i, (chunk, embedding)) in chunks.iter().zip(embeddings.iter()).enumerate() {
+        let chunk_id = Uuid::now_v7();
+        let embedding_f32: Vec<f32> = embedding.vec.iter().map(|&v| v as f32).collect();
+        total_tokens += chunk.token_count;
+
+        chunk_points.push(ChunkPoint {
+            chunk_id,
+            document_id: p.document_id,
+            chunk_index: i as i32,
+            content: chunk.content.clone(),
+            heading_path: chunk.heading_path.clone(),
+            page_number: None,
+            char_start: Some(chunk.char_start),
+            char_end: Some(chunk.char_end),
+            token_count: chunk.token_count,
+            embedding: embedding_f32,
+            scope: p.scope.to_string(),
+            created_by: p.created_by,
+        });
+
+        chunk_models.push(kc_models::ActiveModel {
+            id: ActiveValue::Set(chunk_id),
+            document_id: ActiveValue::Set(p.document_id),
+            tenant_id: ActiveValue::Set(p.tenant_id),
+            chunk_index: ActiveValue::Set(i as i32),
+            content: ActiveValue::Set(chunk.content.clone()),
+            heading_path: ActiveValue::Set(chunk.heading_path.clone()),
+            page_number: ActiveValue::Set(None),
+            token_count: ActiveValue::Set(chunk.token_count),
+            char_start: ActiveValue::Set(Some(chunk.char_start)),
+            char_end: ActiveValue::Set(Some(chunk.char_end)),
+            ..Default::default()
+        });
+    }
+
+    (chunk_points, chunk_models, total_tokens)
+}
+
 async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Result<()> {
     // 4. Parse document — select parser by MIME type from source_type
     let parser = p
@@ -217,44 +264,8 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     }
 
     // 8. Build ChunkPoints + kb_chunks ActiveModels
-    let mut chunk_points = Vec::with_capacity(chunks.len());
-    let mut chunk_models = Vec::with_capacity(chunks.len());
-    let mut total_tokens: i32 = 0;
-
-    for (i, (chunk, embedding)) in chunks.iter().zip(embeddings.iter()).enumerate() {
-        let chunk_id = Uuid::now_v7();
-        let embedding_f32: Vec<f32> = embedding.vec.iter().map(|&v| v as f32).collect();
-        total_tokens += chunk.token_count;
-
-        chunk_points.push(ChunkPoint {
-            chunk_id,
-            document_id: p.document_id,
-            chunk_index: i as i32,
-            content: chunk.content.clone(),
-            heading_path: chunk.heading_path.clone(),
-            page_number: None,
-            char_start: Some(chunk.char_start),
-            char_end: Some(chunk.char_end),
-            token_count: chunk.token_count,
-            embedding: embedding_f32,
-            scope: p.scope.to_string(),
-            created_by: p.created_by,
-        });
-
-        chunk_models.push(kc_models::ActiveModel {
-            id: ActiveValue::Set(chunk_id),
-            document_id: ActiveValue::Set(p.document_id),
-            tenant_id: ActiveValue::Set(p.tenant_id),
-            chunk_index: ActiveValue::Set(i as i32),
-            content: ActiveValue::Set(chunk.content.clone()),
-            heading_path: ActiveValue::Set(chunk.heading_path.clone()),
-            page_number: ActiveValue::Set(None),
-            token_count: ActiveValue::Set(chunk.token_count),
-            char_start: ActiveValue::Set(Some(chunk.char_start)),
-            char_end: ActiveValue::Set(Some(chunk.char_end)),
-            ..Default::default()
-        });
-    }
+    let (chunk_points, chunk_models, total_tokens) =
+        build_chunk_points_and_models(&chunks, &embeddings, p);
 
     // 9. Write chunks to PG
     document_service::insert_chunks(db, chunk_models).await?;

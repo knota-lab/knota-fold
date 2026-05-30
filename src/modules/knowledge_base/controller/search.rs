@@ -146,27 +146,18 @@ pub(crate) async fn chunks(
     format::json(response)
 }
 
-#[utoipa::path(
-    post,
-    path = "/api/kb/qa/v3/stream",
-    tag = "知识库",
-    description = "智能问答v3（流式）",
-    responses((status = 200, description = "SSE stream"))
-)]
-#[debug_handler]
-pub(crate) async fn qa_v3_stream(
-    tc: TenantContext,
-    State(ctx): State<AppContext>,
-    Json(params): Json<QaRequest>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
-    // M10: Validate instruction is not empty
-    if params.instruction.trim().is_empty() {
-        return Err(crate::views::errors::err_bad_request(
-            "knowledge_base.instruction_empty",
-            "instruction cannot be empty",
-        ));
-    }
+struct QaV3StreamDeps {
+    embedding_client: SharedEmbeddingClient,
+    search_provider: SharedSearchProvider,
+    qa_client: SharedQaClient,
+    memory_store: SharedMemoryStore,
+    session_locks: SessionLockMap,
+    compaction_guard: crate::initializers::knowledge_base::CompactionGuard,
+    broker: Arc<dyn ToolResultBroker>,
+    kb_config: crate::config::KnowledgeBaseConfig,
+}
 
+fn resolve_qa_v3_deps(ctx: &AppContext) -> Result<QaV3StreamDeps> {
     let embedding_client =
         ctx.shared_store
             .get::<SharedEmbeddingClient>()
@@ -229,15 +220,50 @@ pub(crate) async fn qa_v3_stream(
         .ok_or_else(|| Error::Message("settings missing".into()))?;
     let kb_config = settings
         .knowledge_base
-        .as_ref()
         .ok_or_else(|| Error::Message("knowledge base not configured".into()))?;
+
+    Ok(QaV3StreamDeps {
+        embedding_client,
+        search_provider,
+        qa_client,
+        memory_store,
+        session_locks,
+        compaction_guard,
+        broker,
+        kb_config,
+    })
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/kb/qa/v3/stream",
+    tag = "知识库",
+    description = "智能问答v3（流式）",
+    responses((status = 200, description = "SSE stream"))
+)]
+#[debug_handler]
+#[allow(clippy::significant_drop_tightening, clippy::redundant_clone)]
+pub(crate) async fn qa_v3_stream(
+    tc: TenantContext,
+    State(ctx): State<AppContext>,
+    Json(params): Json<QaRequest>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
+    // M10: Validate instruction is not empty
+    if params.instruction.trim().is_empty() {
+        return Err(crate::views::errors::err_bad_request(
+            "knowledge_base.instruction_empty",
+            "instruction cannot be empty",
+        ));
+    }
+
+    let deps = resolve_qa_v3_deps(&ctx)?;
 
     let (tx, rx) = mpsc::channel::<String>(64);
 
     // Clone/move all values for 'static spawn
     let db = ctx.db.clone();
-    let qa_config = kb_config.qa.clone();
-    let embedding_model = kb_config.embedding.model.clone();
+    let qa_config = deps.kb_config.qa.clone();
+    let embedding_model = deps.kb_config.embedding.model.clone();
     let tenant_id = tc.tenant_id;
     let user_id = tc.user_id;
 
@@ -250,20 +276,20 @@ pub(crate) async fn qa_v3_stream(
         let result =
             crate::modules::knowledge_base::service::qa_v3_service::process_qa_v3_stream(
                 &db,
-                &embedding_client,
-                &qa_client,
+                &deps.embedding_client,
+                &deps.qa_client,
                 &crate::modules::knowledge_base::service::qa_v3_service::QaStreamParams {
-                    search_provider,
-                    memory_store,
+                    search_provider: deps.search_provider,
+                    memory_store: deps.memory_store,
                     request: params,
                     tenant_id,
                     user_id,
                     config: qa_config,
                     embedding_model_name: embedding_model,
                     tx,
-                    session_locks,
-                    compaction_guard,
-                    broker,
+                    session_locks: deps.session_locks,
+                    compaction_guard: deps.compaction_guard,
+                    broker: deps.broker,
                 },
             )
             .await;

@@ -1,4 +1,5 @@
 use crate::utils::error::IntoModelResult;
+use axum::http::StatusCode;
 use loco_openapi::prelude::*;
 use loco_rs::{bgworker::BackgroundWorker, prelude::*};
 use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
@@ -290,32 +291,13 @@ pub(crate) async fn trigger(
     }
 
     let worker_code = get_worker_code(db, schedule.worker_def_id).await?;
-    let Some(worker_def) =
-        scheduled_worker_definitions::Model::find_active_by_code(db, &worker_code)
-            .await?
-    else {
-        return crate::views::errors::not_found(
-            "worker.not_found_or_inactive",
-            "Worker 未找到或未激活",
-        );
-    };
-
-    let grant = scheduled_worker_tenant_grants::Model::find_granted(
+    let worker_def = validate_trigger_authorization(
         db,
-        worker_def.id,
+        &worker_code,
+        schedule.worker_def_id,
         tc.tenant_id,
     )
     .await?;
-    if grant.is_none() {
-        return crate::views::errors::worker::not_authorized();
-    }
-
-    let Ok(tenant) = tenants::Model::find_by_id(db, tc.tenant_id).await else {
-        return crate::views::errors::not_found("common.tenant_not_found", "租户未找到");
-    };
-    if tenant.status != "active" {
-        return crate::views::errors::forbidden("common.tenant_inactive", "租户已停用");
-    }
 
     if !worker_def.allow_concurrent {
         let running = scheduled_worker_executions::Model::find_running_for_schedule(
@@ -401,6 +383,49 @@ pub(crate) async fn trigger(
     format::json(TriggerResponse {
         execution_id: execution.id.to_string(),
     })
+}
+
+async fn validate_trigger_authorization(
+    db: &sea_orm::DatabaseConnection,
+    worker_code: &str,
+    worker_def_id: Uuid,
+    tenant_id: Uuid,
+) -> Result<scheduled_worker_definitions::Model> {
+    let Some(worker_def) =
+        scheduled_worker_definitions::Model::find_active_by_code(db, worker_code).await?
+    else {
+        return Err(crate::views::errors::err_not_found(
+            "worker.not_found_or_inactive",
+            "Worker 未找到或未激活",
+        ));
+    };
+
+    let grant =
+        scheduled_worker_tenant_grants::Model::find_granted(db, worker_def_id, tenant_id)
+            .await?;
+    if grant.is_none() {
+        return Err(crate::views::errors::err_custom(
+            StatusCode::FORBIDDEN,
+            "worker.not_authorized",
+            "无权操作此 Worker",
+        ));
+    }
+
+    let Ok(tenant) = tenants::Model::find_by_id(db, tenant_id).await else {
+        return Err(crate::views::errors::err_not_found(
+            "common.tenant_not_found",
+            "租户未找到",
+        ));
+    };
+    if tenant.status != "active" {
+        return Err(crate::views::errors::err_custom(
+            StatusCode::FORBIDDEN,
+            "common.tenant_inactive",
+            "租户已停用",
+        ));
+    }
+
+    Ok(worker_def)
 }
 
 async fn get_worker_code(

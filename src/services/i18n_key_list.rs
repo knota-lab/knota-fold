@@ -211,6 +211,64 @@ pub async fn list_global_keys(
 
 /// List a tenant's keys with **inherited global values** as the baseline.
 ///
+/// Merge global and tenant rows into the `entries` vector, populating
+/// `by_locale` with inherited baselines and tenant overrides.
+fn merge_global_and_tenant_rows(
+    entries: &mut [KeyEntryResponse],
+    order: &HashMap<(String, String), usize>,
+    global_rows: &[trans_model::Model],
+    tenant_rows: &[trans_model::Model],
+) {
+    let mut global_index: HashMap<(String, String, String), &trans_model::Model> =
+        HashMap::with_capacity(global_rows.len());
+    for row in global_rows {
+        global_index.insert(
+            (row.namespace.clone(), row.key.clone(), row.locale.clone()),
+            row,
+        );
+    }
+
+    // Seed cells from globals first (inherited baseline).
+    for row in global_rows {
+        let Some(&idx) = order.get(&(row.namespace.clone(), row.key.clone())) else {
+            continue;
+        };
+        entries[idx].by_locale.insert(
+            row.locale.clone(),
+            KeyLocaleValue {
+                id: String::new(),
+                value: row.value.clone(),
+                updated_at: row.updated_at.to_rfc3339(),
+                is_override: false,
+                inherited_value: None,
+            },
+        );
+    }
+
+    // Tenant rows shadow globals; record the shadowed text as
+    // `inherited_value` so the UI can offer "reset to global" inline.
+    for row in tenant_rows {
+        let Some(&idx) = order.get(&(row.namespace.clone(), row.key.clone())) else {
+            continue;
+        };
+        let inherited = global_index
+            .get(&(row.namespace.clone(), row.key.clone(), row.locale.clone()))
+            .map(|g| g.value.clone());
+        entries[idx].by_locale.insert(
+            row.locale.clone(),
+            KeyLocaleValue {
+                id: row.id.to_string(),
+                value: row.value.clone(),
+                updated_at: row.updated_at.to_rfc3339(),
+                is_override: true,
+                inherited_value: inherited,
+            },
+        );
+    }
+}
+
+/// List tenant-scoped i18n keys, merging global and override rows.
+///
 /// Unlike [`list_global_keys`], a row appears here as soon as **either** a
 /// global translation OR a tenant override exists for `(namespace, key)`.
 /// For each `(namespace, key, locale)` cell the tenant override wins; if
@@ -285,11 +343,6 @@ pub async fn list_tenant_keys(
         });
     }
 
-    // ── Pass 2: fetch BOTH global and tenant detail rows for the page. ──────
-    //
-    // Two queries with the same OR-chain pair filter, scoped by tenant_id.
-    // Page size is bounded (≤200) so the OR-chain stays well within planner
-    // limits.
     let global_rows = i18n_queries::fetch_global_rows(db, &key_rows)
         .await
         .db_err()?;
@@ -298,54 +351,7 @@ pub async fn list_tenant_keys(
         .await
         .db_err()?;
 
-    // Index globals by (ns, key, locale) so the tenant pass can look up the
-    // shadowed value in O(1) and stamp it onto `inherited_value`.
-    let mut global_index: HashMap<(String, String, String), &trans_model::Model> =
-        HashMap::with_capacity(global_rows.len());
-    for row in &global_rows {
-        global_index.insert(
-            (row.namespace.clone(), row.key.clone(), row.locale.clone()),
-            row,
-        );
-    }
-
-    // Seed cells from globals first (inherited baseline).
-    for row in &global_rows {
-        let Some(&idx) = order.get(&(row.namespace.clone(), row.key.clone())) else {
-            continue;
-        };
-        entries[idx].by_locale.insert(
-            row.locale.clone(),
-            KeyLocaleValue {
-                id: String::new(),
-                value: row.value.clone(),
-                updated_at: row.updated_at.to_rfc3339(),
-                is_override: false,
-                inherited_value: None,
-            },
-        );
-    }
-
-    // Tenant rows shadow globals; record the shadowed text as
-    // `inherited_value` so the UI can offer "reset to global" inline.
-    for row in &tenant_rows {
-        let Some(&idx) = order.get(&(row.namespace.clone(), row.key.clone())) else {
-            continue;
-        };
-        let inherited = global_index
-            .get(&(row.namespace.clone(), row.key.clone(), row.locale.clone()))
-            .map(|g| g.value.clone());
-        entries[idx].by_locale.insert(
-            row.locale.clone(),
-            KeyLocaleValue {
-                id: row.id.to_string(),
-                value: row.value.clone(),
-                updated_at: row.updated_at.to_rfc3339(),
-                is_override: true,
-                inherited_value: inherited,
-            },
-        );
-    }
+    merge_global_and_tenant_rows(&mut entries, &order, &global_rows, &tenant_rows);
 
     let entry_meta = i18n_queries::fetch_entries_by_pairs(db, &key_rows)
         .await

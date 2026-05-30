@@ -6,24 +6,21 @@ use chrono::Utc;
 use loco_rs::{
     app::AppContext, bgworker::BackgroundWorker, controller::ErrorDetail, Error, Result,
 };
+use sea_orm::DatabaseConnection;
 
 use crate::config::ConfigExt;
 use crate::models::{scheduled_worker_definitions, scheduled_worker_executions};
 use crate::workers::test_job_worker::{TestJobWorker, TestJobWorkerArgs};
 
-pub async fn run_with_status_tracking<F, Fut>(
-    ctx: &AppContext,
+async fn validate_and_load_config(
+    db: &DatabaseConnection,
     execution_id: uuid::Uuid,
     retry_count: i32,
-    worker_code: String,
-    work_fn: F,
-) -> Result<()>
-where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<String>>,
-{
-    let db = &ctx.db;
-
+    worker_code: &str,
+) -> Result<(
+    scheduled_worker_executions::Model,
+    scheduled_worker_definitions::Model,
+)> {
     let execution = scheduled_worker_executions::Model::find_by_id(db, execution_id)
         .await?
         .ok_or_else(|| {
@@ -44,6 +41,34 @@ where
         ));
     }
 
+    let worker_def = scheduled_worker_definitions::Model::find_by_code(db, worker_code)
+        .await?
+        .ok_or_else(|| {
+            let desc = format!("worker def not found: {worker_code}");
+            Error::CustomError(
+                StatusCode::NOT_FOUND,
+                ErrorDetail::new("worker.def_not_found", &desc),
+            )
+        })?;
+
+    Ok((execution, worker_def))
+}
+
+pub async fn run_with_status_tracking<F, Fut>(
+    ctx: &AppContext,
+    execution_id: uuid::Uuid,
+    retry_count: i32,
+    worker_code: String,
+    work_fn: F,
+) -> Result<()>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<String>>,
+{
+    let db = &ctx.db;
+    let (_execution, worker_def) =
+        validate_and_load_config(db, execution_id, retry_count, &worker_code).await?;
+
     let started_at = Utc::now().fixed_offset();
     scheduled_worker_executions::Model::update_status(
         db,
@@ -59,16 +84,6 @@ where
         },
     )
     .await?;
-
-    let worker_def = scheduled_worker_definitions::Model::find_by_code(db, &worker_code)
-        .await?
-        .ok_or_else(|| {
-            let desc = format!("worker def not found: {worker_code}");
-            Error::CustomError(
-                StatusCode::NOT_FOUND,
-                ErrorDetail::new("worker.def_not_found", &desc),
-            )
-        })?;
 
     let timeout_secs = worker_def.timeout_secs.max(1) as u64;
     let max_retries = worker_def.max_retries;

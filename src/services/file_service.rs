@@ -23,7 +23,8 @@ use loco_rs::{
 use sea_orm::{
     sea_query::{Expr, OnConflict, Query},
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait, TryInsertResult,
+    DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    TransactionTrait, TryInsertResult,
 };
 use uuid::Uuid;
 
@@ -428,15 +429,7 @@ async fn small_upload_inner(
     user_id: Uuid,
     params: &SmallUploadRequest,
     bytes: bytes::Bytes,
-    // Keep audit_ctx in the shared helper to minimize churn: both user and sys
-    // façades already construct the correct tenant-scoped audit context.
     audit_ctx: &AuditContext,
-    // Wave 5 D4: optional same-transaction attach. When present, the file
-    // row + its initial business-resource binding succeed or fail as one
-    // logical operation. See [`weave_attach_into_upload`] below for the
-    // per-path semantics (Insert / Revive are fully atomic; the
-    // dedup-active path attaches in a follow-up txn since the file row
-    // pre-exists this call).
     attach: Option<file_reference_service::AttachRequest>,
 ) -> loco_rs::Result<FileResponse> {
     validate_small_upload_params(params, &bytes)?;
@@ -463,36 +456,19 @@ async fn small_upload_inner(
     let s3_client = require_shared_s3_client(ctx)?;
     let s3_config = require_shared_s3_config(ctx)?;
 
-    let active_model = files::ActiveModel {
-        id: ActiveValue::Set(file_id),
-        tenant_id: ActiveValue::Set(tenant_id),
-        name: ActiveValue::Set(params.name.clone()),
-        mime_type: ActiveValue::Set(detected_mime.to_string()),
-        size: ActiveValue::Set(size),
-        content_hash: ActiveValue::Set(content_hash.clone()),
-        content_hash_algo: ActiveValue::Set(CONTENT_HASH_ALGO_B3.to_string()),
-        content_hash_fast: ActiveValue::Set(None),
-        storage_backend: ActiveValue::Set(STORAGE_BACKEND_MINIO.to_string()),
-        bucket: ActiveValue::Set(s3_config.bucket.clone()),
-        storage_key: ActiveValue::Set(storage_key.clone()),
-        multipart_upload_id: ActiveValue::Set(None),
-        status: ActiveValue::Set(ACTIVE_STATUS.to_string()),
-        status_reason: ActiveValue::Set(None),
-        deleted_at: ActiveValue::Set(None),
-        purge_at: ActiveValue::Set(None),
-        deleted_by: ActiveValue::Set(None),
-        uploaded_by: ActiveValue::Set(user_id),
-        created_by: ActiveValue::Set(user_id),
-        updated_by: ActiveValue::Set(user_id),
-        ..Default::default()
-    };
+    let active_model = build_file_active_model(
+        file_id,
+        tenant_id,
+        user_id,
+        params,
+        detected_mime,
+        size,
+        &content_hash,
+        &s3_config.bucket,
+        &storage_key,
+    );
 
-    // Wave 2a B2 (Oracle re-review fix v2): PUT-first → INSERT+audit in one
-    // DatabaseTransaction. Object durability is established BEFORE the DB
-    // row; the DB row + audit entry become visible atomically only on
-    // txn.commit(). This closes the concurrent-dedup race where another
-    // request could observe an uncommitted row that we later roll back due
-    // to audit failure.
+    // PUT-first: establish object durability before DB row.
     if let Err(err) = s3_client
         .put_object()
         .bucket(s3_config.bucket.clone())
@@ -513,23 +489,8 @@ async fn small_upload_inner(
     let txn = match ctx.db.begin().await {
         Ok(t) => t,
         Err(e) => {
-            // PUT succeeded but we can't open a txn — orphan object exists.
-            // Best-effort cleanup using the inline form (the helper is
-            // declared further down inside this fn).
-            if let Err(cleanup_err) = s3_client
-                .delete_object()
-                .bucket(s3_config.bucket.clone())
-                .key(storage_key.clone())
-                .send()
-                .await
-            {
-                tracing::error!(
-                    error = ?cleanup_err,
-                    file_id = %file_id,
-                    key = %storage_key,
-                    "failed to delete just-uploaded object after txn.begin failure"
-                );
-            }
+            cleanup_uploaded_object(&s3_client, &s3_config.bucket, &storage_key, file_id)
+                .await;
             return Err(db_err_into(&e));
         }
     };
@@ -548,34 +509,9 @@ async fn small_upload_inner(
         .exec(&txn)
         .await;
 
-    // Helper: best-effort delete of the just-PUT object on the failure paths.
-    async fn cleanup_uploaded_object(
-        client: &SharedS3Client,
-        bucket: &str,
-        key: &str,
-        file_id: Uuid,
-    ) {
-        if let Err(cleanup_err) = client
-            .delete_object()
-            .bucket(bucket.to_string())
-            .key(key.to_string())
-            .send()
-            .await
-        {
-            tracing::error!(
-                error = ?cleanup_err,
-                file_id = %file_id,
-                key = %key,
-                "failed to delete just-uploaded object after DB conflict/error"
-            );
-        }
-    }
-
     let insert_result = match insert_result {
         Ok(r) => r,
         Err(e) => {
-            // Rollback the (empty) txn before touching S3 so we don't hold
-            // an open transaction while doing network IO.
             let _ = txn.rollback().await;
             cleanup_uploaded_object(&s3_client, &s3_config.bucket, &storage_key, file_id)
                 .await;
@@ -583,186 +519,43 @@ async fn small_upload_inner(
         }
     };
 
-    // Wave 5 D4: tracks whether `attach` has already been applied inside
-    // a same-txn branch (Path 1 / Path 3). Path 2 (dedup-active) leaves
-    // it false because the file row pre-exists this call, so we attach
-    // in a follow-up fresh transaction after the match resolves.
-    let mut same_txn_attach_done = false;
-
     let model = match insert_result {
         TryInsertResult::Inserted(_) => {
-            // Read-back + audit MUST happen inside the same txn so that the
-            // new row is invisible to concurrent readers until audit succeeds
-            // and we commit. Concurrent same-hash uploads will hit
-            // TryInsertResult::Conflicted (unique key blocks duplicates even
-            // pre-commit), but their `find_by_hash` against `&ctx.db` won't
-            // see this row until we commit — which only happens after audit.
-            let inserted = match get_by_id(&txn, tenant_id, file_id).await {
-                Ok(m) => m,
-                Err(e) => {
-                    let _ = txn.rollback().await;
-                    cleanup_uploaded_object(
-                        &s3_client,
-                        &s3_config.bucket,
-                        &storage_key,
-                        file_id,
-                    )
-                    .await;
-                    return Err(e);
-                }
-            };
-            let snapshot = FileAuditSnapshot::from(&inserted);
-            if let Err(audit_err) = audit_service::log(
-                &txn,
-                audit_ctx,
-                AuditAction::Create,
-                "file",
-                &inserted.id.to_string(),
-                None::<&FileAuditSnapshot>,
-                Some(&snapshot),
+            handle_inserted_file(
+                txn,
+                &InsertedFileParams {
+                    s3_client: &s3_client,
+                    bucket: &s3_config.bucket,
+                    storage_key: &storage_key,
+                    tenant_id,
+                    file_id,
+                    user_id,
+                    audit_ctx,
+                    attach: attach.as_ref(),
+                    params,
+                },
             )
-            .await
-            {
-                // Audit failed: rollback the txn (drops the unpublished row)
-                // and clean up the just-PUT object so the caller can retry.
-                let _ = txn.rollback().await;
-                cleanup_uploaded_object(
-                    &s3_client,
-                    &s3_config.bucket,
-                    &storage_key,
-                    file_id,
-                )
-                .await;
-                return Err(audit_err);
-            }
-            // Wave 5 D4 — Path 1 (Insert): same-txn attach. If it fails,
-            // rolling back this txn drops the just-inserted file row + the
-            // audit entry; we then clean up the PUT object so nothing leaks.
-            if let Some(ref attach_req) = attach {
-                let mut req = attach_req.clone();
-                req.file_id = inserted.id;
-                if let Err(attach_err) =
-                    file_reference_service::attach_in_txn(&txn, audit_ctx, req).await
-                {
-                    let _ = txn.rollback().await;
-                    cleanup_uploaded_object(
-                        &s3_client,
-                        &s3_config.bucket,
-                        &storage_key,
-                        file_id,
-                    )
-                    .await;
-                    return Err(attach_err);
-                }
-                same_txn_attach_done = true;
-            }
-            // Commit only after audit success — guarantees the row + audit
-            // entry become visible atomically and the object is durable.
-            if let Err(commit_err) = txn.commit().await {
-                cleanup_uploaded_object(
-                    &s3_client,
-                    &s3_config.bucket,
-                    &storage_key,
-                    file_id,
-                )
-                .await;
-                return Err(db_err_into(&commit_err));
-            }
-            inserted
+            .await?
         }
         TryInsertResult::Conflicted => {
             // Same tenant already has a row with this (hash, size). Drop the
-            // (empty) txn first, then clean up the orphan object we just PUT
-            // (its storage_key embeds a fresh file_id distinct from the
-            // existing row's key, so deleting it is safe). Finally re-query
-            // outside the txn to read the committed winner.
+            // (empty) txn first, then clean up the orphan object we just PUT.
             let _ = txn.rollback().await;
             cleanup_uploaded_object(&s3_client, &s3_config.bucket, &storage_key, file_id)
                 .await;
-            let winner = find_any_by_hash(&ctx.db, tenant_id, &content_hash)
-                .await?
-                .filter(|model| model.size == size)
-                .ok_or_else(|| {
-                    Error::CustomError(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        ErrorDetail::new(
-                            "file.dedup_conflict_winner_missing",
-                            "duplicate file row not found after conflict",
-                        ),
-                    )
-                })?;
-
-            if winner.deleted_at.is_none() {
-                winner
-            } else {
-                let revive_txn = ctx.db.begin().await.db_err()?;
-                let current = sys_get_by_id(&revive_txn, tenant_id, winner.id).await?;
-                if current.deleted_at.is_none() {
-                    revive_txn.rollback().await.db_err()?;
-                    current
-                } else {
-                    let purge_at = current.purge_at.ok_or_else(|| {
-                        crate::views::errors::err_custom(
-                            StatusCode::GONE,
-                            "grace_expired",
-                            "file restore grace period has expired",
-                        )
-                    })?;
-                    let now = Utc::now().fixed_offset();
-                    if now >= purge_at {
-                        revive_txn.rollback().await.db_err()?;
-                        return Err(crate::views::errors::err_custom(
-                            StatusCode::GONE,
-                            "grace_expired",
-                            "file restore grace period has expired",
-                        ));
-                    }
-
-                    let before = FileAuditSnapshot::from(&current);
-                    let mut active_model: files::ActiveModel = current.into();
-                    active_model.status = ActiveValue::Set(ACTIVE_STATUS.to_string());
-                    active_model.deleted_at = ActiveValue::Set(None);
-                    active_model.purge_at = ActiveValue::Set(None);
-                    active_model.deleted_by = ActiveValue::Set(None);
-                    active_model.status_reason =
-                        ActiveValue::Set(Some(DEDUP_REVIVE_REASON.to_string()));
-                    active_model.name = ActiveValue::Set(params.name.clone());
-                    active_model.updated_at = ActiveValue::Set(now);
-                    active_model.updated_by = ActiveValue::Set(user_id);
-                    let revived = active_model.update(&revive_txn).await.db_err()?;
-                    let after = FileAuditSnapshot::from(&revived);
-                    audit_service::log(
-                        &revive_txn,
-                        audit_ctx,
-                        AuditAction::Restore,
-                        "file",
-                        &revived.id.to_string(),
-                        Some(&before),
-                        Some(&after),
-                    )
-                    .await?;
-                    // Wave 5 D4 — Path 3 (Revive): same-txn attach. Failure
-                    // rolls back the revive (file stays soft-deleted in
-                    // grace, exactly as before this call).
-                    if let Some(ref attach_req) = attach {
-                        let mut req = attach_req.clone();
-                        req.file_id = revived.id;
-                        if let Err(attach_err) = file_reference_service::attach_in_txn(
-                            &revive_txn,
-                            audit_ctx,
-                            req,
-                        )
-                        .await
-                        {
-                            let _ = revive_txn.rollback().await;
-                            return Err(attach_err);
-                        }
-                        same_txn_attach_done = true;
-                    }
-                    revive_txn.commit().await.db_err()?;
-                    revived
-                }
-            }
+            handle_conflict_dedup(
+                ctx,
+                &content_hash,
+                size,
+                &UploadActor {
+                    tenant_id,
+                    user_id,
+                    audit_ctx,
+                },
+                attach.as_ref(),
+                params,
+            )
+            .await?
         }
         TryInsertResult::Empty => {
             let _ = txn.rollback().await;
@@ -778,21 +571,234 @@ async fn small_upload_inner(
         }
     };
 
-    // Wave 5 D4 — Path 2 (Dedup-active winner): the file row pre-existed
-    // this call and is already committed, so we cannot make this attach
-    // atomic with file creation. Run it in a fresh txn; on attach failure
-    // the file row stays as-is (it was not created by this call) and we
-    // surface the error so the caller knows binding did not happen. We do
-    // NOT delete the S3 object — it belongs to the pre-existing file.
-    if !same_txn_attach_done {
-        if let Some(ref attach_req) = attach {
-            let mut req = attach_req.clone();
-            req.file_id = model.id;
-            file_reference_service::attach(&ctx.db, audit_ctx, req).await?;
+    Ok(FileResponse::from(model))
+}
+
+async fn cleanup_uploaded_object(
+    client: &SharedS3Client,
+    bucket: &str,
+    key: &str,
+    file_id: Uuid,
+) {
+    if let Err(cleanup_err) = client
+        .delete_object()
+        .bucket(bucket.to_string())
+        .key(key.to_string())
+        .send()
+        .await
+    {
+        tracing::error!(
+            error = ?cleanup_err,
+            file_id = %file_id,
+            key = %key,
+            "failed to delete just-uploaded object after DB conflict/error"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_file_active_model(
+    file_id: Uuid,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    params: &SmallUploadRequest,
+    detected_mime: &str,
+    size: i64,
+    content_hash: &str,
+    bucket: &str,
+    storage_key: &str,
+) -> files::ActiveModel {
+    files::ActiveModel {
+        id: ActiveValue::Set(file_id),
+        tenant_id: ActiveValue::Set(tenant_id),
+        name: ActiveValue::Set(params.name.clone()),
+        mime_type: ActiveValue::Set(detected_mime.to_string()),
+        size: ActiveValue::Set(size),
+        content_hash: ActiveValue::Set(content_hash.to_string()),
+        content_hash_algo: ActiveValue::Set(CONTENT_HASH_ALGO_B3.to_string()),
+        content_hash_fast: ActiveValue::Set(None),
+        storage_backend: ActiveValue::Set(STORAGE_BACKEND_MINIO.to_string()),
+        bucket: ActiveValue::Set(bucket.to_string()),
+        storage_key: ActiveValue::Set(storage_key.to_string()),
+        multipart_upload_id: ActiveValue::Set(None),
+        status: ActiveValue::Set(ACTIVE_STATUS.to_string()),
+        status_reason: ActiveValue::Set(None),
+        deleted_at: ActiveValue::Set(None),
+        purge_at: ActiveValue::Set(None),
+        deleted_by: ActiveValue::Set(None),
+        uploaded_by: ActiveValue::Set(user_id),
+        created_by: ActiveValue::Set(user_id),
+        updated_by: ActiveValue::Set(user_id),
+        ..Default::default()
+    }
+}
+
+/// Parameters for [`handle_inserted_file`].
+struct InsertedFileParams<'a> {
+    s3_client: &'a SharedS3Client,
+    bucket: &'a str,
+    storage_key: &'a str,
+    tenant_id: Uuid,
+    file_id: Uuid,
+    user_id: Uuid,
+    audit_ctx: &'a AuditContext,
+    attach: Option<&'a file_reference_service::AttachRequest>,
+    params: &'a SmallUploadRequest,
+}
+
+/// Handle the `TryInsertResult::Inserted` branch: read back the row, audit,
+/// optionally attach in the same txn, and commit. On failure, rollback and
+/// clean up the S3 object.
+async fn handle_inserted_file(
+    txn: DatabaseTransaction,
+    p: &InsertedFileParams<'_>,
+) -> loco_rs::Result<files::Model> {
+    let s3_client = p.s3_client;
+    let bucket = p.bucket;
+    let storage_key = p.storage_key;
+    let tenant_id = p.tenant_id;
+    let file_id = p.file_id;
+    let _ = p.user_id;
+    let audit_ctx = p.audit_ctx;
+    let attach = p.attach;
+    let params = p.params;
+    let inserted = match get_by_id(&txn, tenant_id, file_id).await {
+        Ok(m) => m,
+        Err(e) => {
+            let _ = txn.rollback().await;
+            cleanup_uploaded_object(s3_client, bucket, storage_key, file_id).await;
+            return Err(e);
+        }
+    };
+    let snapshot = FileAuditSnapshot::from(&inserted);
+    if let Err(audit_err) = audit_service::log(
+        &txn,
+        audit_ctx,
+        AuditAction::Create,
+        "file",
+        &inserted.id.to_string(),
+        None::<&FileAuditSnapshot>,
+        Some(&snapshot),
+    )
+    .await
+    {
+        let _ = txn.rollback().await;
+        cleanup_uploaded_object(s3_client, bucket, storage_key, file_id).await;
+        return Err(audit_err);
+    }
+    // Wave 5 D4 — Path 1 (Insert): same-txn attach.
+    if let Some(attach_req) = attach {
+        let mut req = attach_req.clone();
+        req.file_id = inserted.id;
+        if let Err(attach_err) =
+            file_reference_service::attach_in_txn(&txn, audit_ctx, req).await
+        {
+            let _ = txn.rollback().await;
+            cleanup_uploaded_object(s3_client, bucket, storage_key, file_id).await;
+            return Err(attach_err);
         }
     }
+    if let Err(commit_err) = txn.commit().await {
+        cleanup_uploaded_object(s3_client, bucket, storage_key, file_id).await;
+        return Err(db_err_into(&commit_err));
+    }
+    let _ = params;
+    Ok(inserted)
+}
 
-    Ok(FileResponse::from(model))
+/// Identity and audit context shared by upload helper functions.
+struct UploadActor<'a> {
+    tenant_id: Uuid,
+    user_id: Uuid,
+    audit_ctx: &'a AuditContext,
+}
+
+/// Handle the `TryInsertResult::Conflicted` branch: find the existing winner,
+/// revive if soft-deleted, and optionally attach.
+async fn handle_conflict_dedup(
+    ctx: &AppContext,
+    content_hash: &str,
+    size: i64,
+    actor: &UploadActor<'_>,
+    attach: Option<&file_reference_service::AttachRequest>,
+    params: &SmallUploadRequest,
+) -> loco_rs::Result<files::Model> {
+    let winner = find_any_by_hash(&ctx.db, actor.tenant_id, content_hash)
+        .await?
+        .filter(|model| model.size == size)
+        .ok_or_else(|| {
+            Error::CustomError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorDetail::new(
+                    "file.dedup_conflict_winner_missing",
+                    "duplicate file row not found after conflict",
+                ),
+            )
+        })?;
+
+    if winner.deleted_at.is_none() {
+        return Ok(winner);
+    }
+
+    let revive_txn = ctx.db.begin().await.db_err()?;
+    let current = sys_get_by_id(&revive_txn, actor.tenant_id, winner.id).await?;
+    if current.deleted_at.is_none() {
+        revive_txn.rollback().await.db_err()?;
+        return Ok(current);
+    }
+
+    let purge_at = current.purge_at.ok_or_else(|| {
+        crate::views::errors::err_custom(
+            StatusCode::GONE,
+            "grace_expired",
+            "file restore grace period has expired",
+        )
+    })?;
+    let now = Utc::now().fixed_offset();
+    if now >= purge_at {
+        revive_txn.rollback().await.db_err()?;
+        return Err(crate::views::errors::err_custom(
+            StatusCode::GONE,
+            "grace_expired",
+            "file restore grace period has expired",
+        ));
+    }
+
+    let before = FileAuditSnapshot::from(&current);
+    let mut active_model: files::ActiveModel = current.into();
+    active_model.status = ActiveValue::Set(ACTIVE_STATUS.to_string());
+    active_model.deleted_at = ActiveValue::Set(None);
+    active_model.purge_at = ActiveValue::Set(None);
+    active_model.deleted_by = ActiveValue::Set(None);
+    active_model.status_reason = ActiveValue::Set(Some(DEDUP_REVIVE_REASON.to_string()));
+    active_model.name = ActiveValue::Set(params.name.clone());
+    active_model.updated_at = ActiveValue::Set(now);
+    active_model.updated_by = ActiveValue::Set(actor.user_id);
+    let revived = active_model.update(&revive_txn).await.db_err()?;
+    let after = FileAuditSnapshot::from(&revived);
+    audit_service::log(
+        &revive_txn,
+        actor.audit_ctx,
+        AuditAction::Restore,
+        "file",
+        &revived.id.to_string(),
+        Some(&before),
+        Some(&after),
+    )
+    .await?;
+    // Wave 5 D4 — Path 3 (Revive): same-txn attach.
+    if let Some(attach_req) = attach {
+        let mut req = attach_req.clone();
+        req.file_id = revived.id;
+        if let Err(attach_err) =
+            file_reference_service::attach_in_txn(&revive_txn, actor.audit_ctx, req).await
+        {
+            let _ = revive_txn.rollback().await;
+            return Err(attach_err);
+        }
+    }
+    revive_txn.commit().await.db_err()?;
+    Ok(revived)
 }
 
 #[tracing::instrument(skip_all)]
@@ -1203,98 +1209,104 @@ pub async fn purge_files(ctx: &AppContext) -> loco_rs::Result<PurgeOutcome> {
     let mut purged = 0_u64;
     let mut errors = 0_u64;
     for file in targets {
-        let delete_object_result = s3_client
-            .delete_object()
-            .bucket(file.bucket.clone())
-            .key(file.storage_key.clone())
-            .send()
-            .await;
-        if let Err(err) = delete_object_result {
-            tracing::warn!(error = ?err, file_id = %file.id, "purge_files failed to delete object; skipping DB row delete");
+        if purge_single_file(ctx, &s3_client, &file).await {
+            purged += 1;
+        } else {
             errors += 1;
-            continue;
         }
-
-        let txn = match ctx.db.begin().await {
-            Ok(txn) => txn,
-            Err(err) => {
-                tracing::error!(error = ?err, file_id = %file.id, "purge_files failed to open transaction");
-                errors += 1;
-                continue;
-            }
-        };
-
-        let current = match files::Entity::find_by_id(file.id).one(&txn).await {
-            Ok(Some(current)) => current,
-            Ok(None) => {
-                let _ = txn.rollback().await;
-                tracing::warn!(file_id = %file.id, "purge_files target row disappeared before DB delete");
-                continue;
-            }
-            Err(err) => {
-                let _ = txn.rollback().await;
-                tracing::error!(error = ?err, file_id = %file.id, "purge_files failed to reload target row");
-                errors += 1;
-                continue;
-            }
-        };
-        let before = FileAuditSnapshot::from(&current);
-
-        let delete_result = files::Entity::delete_many()
-            .filter(files::Column::Id.eq(file.id))
-            .exec(&txn)
-            .await;
-        let delete_result = match delete_result {
-            Ok(result) if result.rows_affected == 1 => result,
-            Ok(_) => {
-                let _ = txn.rollback().await;
-                tracing::error!(file_id = %file.id, "purge_files did not delete target row");
-                errors += 1;
-                continue;
-            }
-            Err(err) => {
-                let _ = txn.rollback().await;
-                tracing::error!(error = ?err, file_id = %file.id, "purge_files failed to delete row");
-                errors += 1;
-                continue;
-            }
-        };
-
-        let audit_ctx = AuditContext {
-            trace_id: None,
-            request_id: None,
-            tenant_id: file.tenant_id,
-            user_id: None,
-            ip_address: None,
-            user_agent: None,
-        };
-        if let Err(err) = audit_service::log(
-            &txn,
-            &audit_ctx,
-            AuditAction::Purge,
-            "file",
-            &file.id.to_string(),
-            Some(&before),
-            None::<&FileAuditSnapshot>,
-        )
-        .await
-        {
-            let _ = txn.rollback().await;
-            tracing::error!(error = ?err, file_id = %file.id, rows_affected = delete_result.rows_affected, "purge_files failed to audit row deletion");
-            errors += 1;
-            continue;
-        }
-
-        if let Err(err) = txn.commit().await {
-            tracing::error!(error = ?err, file_id = %file.id, "purge_files failed to commit transaction");
-            errors += 1;
-            continue;
-        }
-
-        purged += 1;
     }
 
     Ok(PurgeOutcome { purged, errors })
+}
+
+/// Returns `true` if purged successfully, `false` on error (error already logged).
+async fn purge_single_file(
+    ctx: &AppContext,
+    s3_client: &SharedS3Client,
+    file: &files::Model,
+) -> bool {
+    if let Err(err) = s3_client
+        .delete_object()
+        .bucket(file.bucket.clone())
+        .key(file.storage_key.clone())
+        .send()
+        .await
+    {
+        tracing::warn!(error = ?err, file_id = %file.id, "purge_files failed to delete object; skipping DB row delete");
+        return false;
+    }
+
+    let txn = match ctx.db.begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            tracing::error!(error = ?err, file_id = %file.id, "purge_files failed to open transaction");
+            return false;
+        }
+    };
+
+    let current = match files::Entity::find_by_id(file.id).one(&txn).await {
+        Ok(Some(current)) => current,
+        Ok(None) => {
+            let _ = txn.rollback().await;
+            tracing::warn!(file_id = %file.id, "purge_files target row disappeared before DB delete");
+            return false;
+        }
+        Err(err) => {
+            let _ = txn.rollback().await;
+            tracing::error!(error = ?err, file_id = %file.id, "purge_files failed to reload target row");
+            return false;
+        }
+    };
+    let before = FileAuditSnapshot::from(&current);
+
+    let delete_result = match files::Entity::delete_many()
+        .filter(files::Column::Id.eq(file.id))
+        .exec(&txn)
+        .await
+    {
+        Ok(result) if result.rows_affected == 1 => result,
+        Ok(_) => {
+            let _ = txn.rollback().await;
+            tracing::error!(file_id = %file.id, "purge_files did not delete target row");
+            return false;
+        }
+        Err(err) => {
+            let _ = txn.rollback().await;
+            tracing::error!(error = ?err, file_id = %file.id, "purge_files failed to delete row");
+            return false;
+        }
+    };
+
+    let audit_ctx = AuditContext {
+        trace_id: None,
+        request_id: None,
+        tenant_id: file.tenant_id,
+        user_id: None,
+        ip_address: None,
+        user_agent: None,
+    };
+    if let Err(err) = audit_service::log(
+        &txn,
+        &audit_ctx,
+        AuditAction::Purge,
+        "file",
+        &file.id.to_string(),
+        Some(&before),
+        None::<&FileAuditSnapshot>,
+    )
+    .await
+    {
+        let _ = txn.rollback().await;
+        tracing::error!(error = ?err, file_id = %file.id, rows_affected = delete_result.rows_affected, "purge_files failed to audit row deletion");
+        return false;
+    }
+
+    if let Err(err) = txn.commit().await {
+        tracing::error!(error = ?err, file_id = %file.id, "purge_files failed to commit transaction");
+        return false;
+    }
+
+    true
 }
 
 #[tracing::instrument(skip_all)]

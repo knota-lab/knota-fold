@@ -9,6 +9,7 @@ use uuid::Uuid;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 
+use crate::models::_entities::chat_messages;
 use crate::modules::knowledge_base::service::chat_service;
 
 // ---------------------------------------------------------------------------
@@ -114,7 +115,6 @@ impl Tool for ReadConversationTurnTool {
         fields(tool = "read_conversation_turn", start_turn = %args.start_turn)
     )]
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        // --- Load all messages for the session ---
         let messages = chat_service::get_session_messages(
             &self.db,
             self.session_id,
@@ -124,62 +124,14 @@ impl Tool for ReadConversationTurnTool {
         .await
         .map_err(|e| ReadConversationTurnError(format!("加载会话消息失败: {e}")))?;
 
-        // --- Pair messages into turns ---
-        // Each user message starts a turn; the following assistant message (if any) completes it.
-        struct Turn {
-            user_content: String,
-            assistant: Option<AssistantData>,
-        }
-
-        struct AssistantData {
-            content: String,
-            tool_calls: Option<serde_json::Value>,
-        }
-
-        let mut turns: Vec<Turn> = Vec::new();
-
-        for msg in &messages {
-            match msg.role.as_str() {
-                "user" => {
-                    turns.push(Turn {
-                        user_content: msg.content.clone(),
-                        assistant: None,
-                    });
-                }
-                "assistant" => {
-                    // Attach to the most recent turn that doesn't yet have an assistant.
-                    if let Some(last) = turns.last_mut() {
-                        if last.assistant.is_none() {
-                            last.assistant = Some(AssistantData {
-                                content: msg.content.clone(),
-                                tool_calls: msg.token_usage.clone(),
-                            });
-                            continue;
-                        }
-                    }
-                    // Orphan assistant (no preceding user in our list) — start a new turn.
-                    turns.push(Turn {
-                        user_content: String::new(),
-                        assistant: Some(AssistantData {
-                            content: msg.content.clone(),
-                            tool_calls: msg.token_usage.clone(),
-                        }),
-                    });
-                }
-                _ => {
-                    // Ignore system / tool messages
-                }
-            }
-        }
+        let turns = pair_messages_into_turns(&messages);
 
         let total_turns = turns.len() as u32;
 
-        // --- No messages ---
         if total_turns == 0 {
             return Ok("当前会话暂无对话历史。".to_string());
         }
 
-        // --- Validate start_turn ---
         if args.start_turn < 1 {
             return Ok("轮次号从 1 开始".to_string());
         }
@@ -191,93 +143,136 @@ impl Tool for ReadConversationTurnTool {
             ));
         }
 
-        // --- Resolve end_turn ---
         let end_turn = args
             .end_turn
             .unwrap_or(args.start_turn)
             .min(args.start_turn + MAX_TURNS_PER_READ - 1)
             .min(total_turns);
 
-        // --- Render turns ---
-        let mut output_parts: Vec<String> = Vec::new();
+        let output = render_turns(&turns, args.start_turn, end_turn);
 
-        for turn_idx in args.start_turn..=end_turn {
-            let turn = &turns[(turn_idx - 1) as usize];
-            let mut parts: Vec<String> = Vec::new();
+        Ok(output)
+    }
+}
 
-            parts.push(format!("=== 第 {turn_idx} 轮对话 ==="));
-            parts.push(String::new()); // blank line
+struct AssistantData {
+    content: String,
+    tool_calls: Option<serde_json::Value>,
+}
 
-            // User message
-            let user_char_count = turn.user_content.chars().count();
-            parts.push(format!(
-                "[用户] ({} 字符):\n{}",
-                user_char_count,
-                truncate_to_chars(&turn.user_content, MAX_CHARS_PER_MESSAGE)
-            ));
+struct Turn {
+    user_content: String,
+    assistant: Option<AssistantData>,
+}
 
-            match &turn.assistant {
-                Some(asst) => {
-                    let asst_char_count = asst.content.chars().count();
+fn pair_messages_into_turns(messages: &[chat_messages::Model]) -> Vec<Turn> {
+    let mut turns: Vec<Turn> = Vec::new();
 
-                    // Extract tool_calls from token_usage JSON
-                    let tool_calls_list: Vec<&serde_json::Value> = asst
-                        .tool_calls
-                        .as_ref()
-                        .and_then(|tu| tu.get("toolCalls"))
-                        .and_then(|tc| tc.as_array())
-                        .map(|arr| arr.iter().collect())
-                        .unwrap_or_default();
-
-                    let tool_call_count = tool_calls_list.len();
-
-                    let header = if tool_call_count > 0 {
-                        format!(
-                            "[助手] ({asst_char_count} 字符, 含 {tool_call_count} 次工具调用):"
-                        )
-                    } else {
-                        format!("[助手] ({asst_char_count} 字符):")
-                    };
-                    parts.push(header);
-
-                    // Render each tool call
-                    for (i, tc) in tool_calls_list.iter().enumerate() {
-                        let tool_name = tc
-                            .get("toolName")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        let duration_ms = tc
-                            .get("duration_ms")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let result_preview = tc
-                            .get("result_preview")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-
-                        parts.push(format!(
-                            "[工具调用 {}: {}] 耗时 {}ms\n  结果预览: {}",
-                            i + 1,
-                            tool_name,
-                            duration_ms,
-                            truncate_to_chars(
-                                result_preview,
-                                PREVIEW_CHARS_FOR_TOOL_RESULT
-                            )
-                        ));
-                    }
-
-                    // Assistant text content (after tool calls)
-                    parts.push(truncate_to_chars(&asst.content, MAX_CHARS_PER_MESSAGE));
-                }
-                None => {
-                    parts.push("[待回复]".to_string());
-                }
+    for msg in messages {
+        match msg.role.as_str() {
+            "user" => {
+                turns.push(Turn {
+                    user_content: msg.content.clone(),
+                    assistant: None,
+                });
             }
+            "assistant" => {
+                if let Some(last) = turns.last_mut() {
+                    if last.assistant.is_none() {
+                        last.assistant = Some(AssistantData {
+                            content: msg.content.clone(),
+                            tool_calls: msg.token_usage.clone(),
+                        });
+                        continue;
+                    }
+                }
+                turns.push(Turn {
+                    user_content: String::new(),
+                    assistant: Some(AssistantData {
+                        content: msg.content.clone(),
+                        tool_calls: msg.token_usage.clone(),
+                    }),
+                });
+            }
+            _ => {}
+        }
+    }
 
-            output_parts.push(parts.join("\n"));
+    turns
+}
+
+fn render_turns(turns: &[Turn], start_turn: u32, end_turn: u32) -> String {
+    let mut output_parts: Vec<String> = Vec::new();
+
+    for turn_idx in start_turn..=end_turn {
+        let turn = &turns[(turn_idx - 1) as usize];
+        let mut parts: Vec<String> = Vec::new();
+
+        parts.push(format!("=== 第 {turn_idx} 轮对话 ==="));
+        parts.push(String::new());
+
+        let user_char_count = turn.user_content.chars().count();
+        parts.push(format!(
+            "[用户] ({} 字符):\n{}",
+            user_char_count,
+            truncate_to_chars(&turn.user_content, MAX_CHARS_PER_MESSAGE)
+        ));
+
+        match &turn.assistant {
+            Some(asst) => {
+                let asst_char_count = asst.content.chars().count();
+
+                let tool_calls_list: Vec<&serde_json::Value> = asst
+                    .tool_calls
+                    .as_ref()
+                    .and_then(|tu| tu.get("toolCalls"))
+                    .and_then(|tc| tc.as_array())
+                    .map(|arr| arr.iter().collect())
+                    .unwrap_or_default();
+
+                let tool_call_count = tool_calls_list.len();
+
+                let header = if tool_call_count > 0 {
+                    format!(
+                        "[助手] ({asst_char_count} 字符, 含 {tool_call_count} 次工具调用):"
+                    )
+                } else {
+                    format!("[助手] ({asst_char_count} 字符):")
+                };
+                parts.push(header);
+
+                for (i, tc) in tool_calls_list.iter().enumerate() {
+                    let tool_name = tc
+                        .get("toolName")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let duration_ms = tc
+                        .get("duration_ms")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0);
+                    let result_preview = tc
+                        .get("result_preview")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    parts.push(format!(
+                        "[工具调用 {}: {}] 耗时 {}ms\n  结果预览: {}",
+                        i + 1,
+                        tool_name,
+                        duration_ms,
+                        truncate_to_chars(result_preview, PREVIEW_CHARS_FOR_TOOL_RESULT)
+                    ));
+                }
+
+                parts.push(truncate_to_chars(&asst.content, MAX_CHARS_PER_MESSAGE));
+            }
+            None => {
+                parts.push("[待回复]".to_string());
+            }
         }
 
-        Ok(output_parts.join("\n\n"))
+        output_parts.push(parts.join("\n"));
     }
+
+    output_parts.join("\n\n")
 }

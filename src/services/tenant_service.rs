@@ -73,6 +73,80 @@ pub async fn create_tenant(
     tenants_model::Model::create(db, am).await.model_err()
 }
 
+/// Initialize roles from templates inside an existing transaction.
+/// Returns Casbin policy data to sync AFTER commit.
+#[allow(clippy::type_complexity)]
+async fn init_roles_from_templates(
+    txn: &sea_orm::DatabaseTransaction,
+    tenant_id: Uuid,
+    operator_user_id: Uuid,
+) -> loco_rs::Result<Vec<(String, Vec<(String, String)>)>> {
+    let templates = sys_role_templates::Entity::find().all(txn).await.db_err()?;
+
+    let mut casbin_role_policies: Vec<(String, Vec<(String, String)>)> = Vec::new();
+
+    for template in &templates {
+        let role_am = roles_model::ActiveModel {
+            name: ActiveValue::Set(template.name.clone()),
+            code: ActiveValue::Set(template.code.clone()),
+            description: ActiveValue::Set(template.description.clone()),
+            is_system: ActiveValue::Set(true),
+            ..Default::default()
+        };
+        let role =
+            roles_model::Model::create_role(txn, tenant_id, role_am, operator_user_id)
+                .await
+                .model_err()?;
+
+        let template_menus = sys_role_template_menus::Entity::find()
+            .filter(sys_role_template_menus::Column::TemplateId.eq(template.id))
+            .all(txn)
+            .await
+            .db_err()?;
+
+        for tm in &template_menus {
+            role_menus::ActiveModel {
+                tenant_id: ActiveValue::Set(tenant_id),
+                role_id: ActiveValue::Set(role.id),
+                sys_menu_id: ActiveValue::Set(tm.sys_menu_id),
+            }
+            .insert(txn)
+            .await
+            .db_err()?;
+        }
+
+        let template_perms = sys_role_template_permissions::Entity::find()
+            .filter(sys_role_template_permissions::Column::TemplateId.eq(template.id))
+            .all(txn)
+            .await
+            .db_err()?;
+
+        let mut obj_acts = Vec::new();
+        for tp in &template_perms {
+            let perm = permissions_model::Model::find_or_create_by_obj_act(
+                txn, &tp.obj, &tp.act,
+            )
+            .await
+            .model_err()?;
+
+            role_permissions::ActiveModel {
+                tenant_id: ActiveValue::Set(tenant_id),
+                role_id: ActiveValue::Set(role.id),
+                permission_id: ActiveValue::Set(perm.id),
+            }
+            .insert(txn)
+            .await
+            .db_err()?;
+
+            obj_acts.push((tp.obj.clone(), tp.act.clone()));
+        }
+
+        casbin_role_policies.push((role.code.clone(), obj_acts));
+    }
+
+    Ok(casbin_role_policies)
+}
+
 /// Create a tenant with full initialization: roles from templates, menus, permissions, and Casbin policies.
 #[tracing::instrument(skip_all)]
 pub async fn create_tenant_with_init(
@@ -94,76 +168,9 @@ pub async fn create_tenant_with_init(
     };
     let tenant = tenants_model::Model::create(&txn, am).await.model_err()?;
 
-    // Step 2: Read all role templates
-    let templates = sys_role_templates::Entity::find()
-        .all(&txn)
-        .await
-        .db_err()?;
-
-    // Collect Casbin policy data to sync AFTER commit (to avoid connection pool exhaustion)
-    let mut casbin_role_policies: Vec<(String, Vec<(String, String)>)> = Vec::new();
-
-    for template in &templates {
-        // Step 3: Create role from template
-        let role_am = roles_model::ActiveModel {
-            name: ActiveValue::Set(template.name.clone()),
-            code: ActiveValue::Set(template.code.clone()),
-            description: ActiveValue::Set(template.description.clone()),
-            is_system: ActiveValue::Set(true),
-            ..Default::default()
-        };
-        let role =
-            roles_model::Model::create_role(&txn, tenant.id, role_am, operator_user_id)
-                .await
-                .model_err()?;
-
-        // Step 4: Copy template menu associations
-        let template_menus = sys_role_template_menus::Entity::find()
-            .filter(sys_role_template_menus::Column::TemplateId.eq(template.id))
-            .all(&txn)
-            .await
-            .db_err()?;
-
-        for tm in &template_menus {
-            role_menus::ActiveModel {
-                tenant_id: ActiveValue::Set(tenant.id),
-                role_id: ActiveValue::Set(role.id),
-                sys_menu_id: ActiveValue::Set(tm.sys_menu_id),
-            }
-            .insert(&txn)
-            .await
-            .db_err()?;
-        }
-
-        // Step 5: Copy template permission associations
-        let template_perms = sys_role_template_permissions::Entity::find()
-            .filter(sys_role_template_permissions::Column::TemplateId.eq(template.id))
-            .all(&txn)
-            .await
-            .db_err()?;
-
-        let mut obj_acts = Vec::new();
-        for tp in &template_perms {
-            let perm = permissions_model::Model::find_or_create_by_obj_act(
-                &txn, &tp.obj, &tp.act,
-            )
-            .await
-            .model_err()?;
-
-            role_permissions::ActiveModel {
-                tenant_id: ActiveValue::Set(tenant.id),
-                role_id: ActiveValue::Set(role.id),
-                permission_id: ActiveValue::Set(perm.id),
-            }
-            .insert(&txn)
-            .await
-            .db_err()?;
-
-            obj_acts.push((tp.obj.clone(), tp.act.clone()));
-        }
-
-        casbin_role_policies.push((role.code.clone(), obj_acts));
-    }
+    // Step 2–5: Create roles from templates, copy menus and permissions
+    let casbin_role_policies =
+        init_roles_from_templates(&txn, tenant.id, operator_user_id).await?;
 
     txn.commit().await.db_err()?;
 

@@ -95,28 +95,7 @@ pub struct ListParams {
 
 // ── Handlers ────────────────────────────────────────────────────
 
-pub async fn stats() -> Result<Json<serde_json::Value>> {
-    Ok(Json(serde_json::json!({
-        "droppedCount": crate::app_logs::layer::dropped_count(),
-    })))
-}
-
-pub async fn list(Query(params): Query<ListParams>) -> Result<Json<ListResponse>> {
-    let page = params.page.unwrap_or(1).max(1);
-    let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
-    let offset = (page - 1) * page_size;
-
-    let Some(db) = writer::log_db() else {
-        return Ok(Json(ListResponse {
-            items: vec![],
-            total_items: 0,
-            total_pages: 0,
-            page,
-            page_size,
-        }));
-    };
-
-    // Build WHERE clauses.
+fn build_where_clause(params: &ListParams) -> String {
     let mut where_parts: Vec<&'static str> = Vec::new();
     if params.method.is_some() {
         where_parts.push("method = ?");
@@ -158,52 +137,83 @@ pub async fn list(Query(params): Query<ListParams>) -> Result<Json<ListResponse>
         where_parts.push("request_id = ?");
     }
 
-    let where_sql = if where_parts.is_empty() {
+    if where_parts.is_empty() {
         String::new()
     } else {
         format!("WHERE {}", where_parts.join(" AND "))
+    }
+}
+
+macro_rules! bind_log_params {
+    ($q:expr, $params:expr) => {{
+        let mut q = $q;
+        if let Some(ref v) = $params.method {
+            q = q.bind(v.as_str());
+        }
+        if let Some(ref v) = $params.path {
+            q = q.bind(v.as_str());
+        }
+        if let Some(v) = $params.status_code {
+            q = q.bind(v);
+        }
+        if let Some(v) = $params.from {
+            q = q.bind(v);
+        }
+        if let Some(v) = $params.to {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = $params.q {
+            q = q.bind(v.as_str());
+        }
+        if let Some(ref v) = $params.trace_id {
+            q = q.bind(v.as_str());
+        }
+        if let Some(ref v) = $params.ip_address {
+            q = q.bind(v.as_str());
+        }
+        if let Some(v) = $params.min_duration {
+            q = q.bind(v);
+        }
+        if let Some(v) = $params.max_duration {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = $params.user_id {
+            q = q.bind(v.as_str());
+        }
+        if let Some(ref v) = $params.request_id {
+            q = q.bind(v.as_str());
+        }
+        q
+    }};
+}
+
+pub async fn stats() -> Result<Json<serde_json::Value>> {
+    Ok(Json(serde_json::json!({
+        "droppedCount": crate::app_logs::layer::dropped_count(),
+    })))
+}
+
+pub async fn list(Query(params): Query<ListParams>) -> Result<Json<ListResponse>> {
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
+    let offset = (page - 1) * page_size;
+
+    let Some(db) = writer::log_db() else {
+        return Ok(Json(ListResponse {
+            items: vec![],
+            total_items: 0,
+            total_pages: 0,
+            page,
+            page_size,
+        }));
     };
+
+    let where_sql = build_where_clause(&params);
 
     // Count.
     let count_sql = format!("SELECT COUNT(*) FROM request_logs {where_sql}");
-    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
-    if let Some(ref v) = params.method {
-        count_q = count_q.bind(v.as_str());
-    }
-    if let Some(ref v) = params.path {
-        count_q = count_q.bind(v.as_str());
-    }
-    if let Some(v) = params.status_code {
-        count_q = count_q.bind(v);
-    }
-    if let Some(v) = params.from {
-        count_q = count_q.bind(v);
-    }
-    if let Some(v) = params.to {
-        count_q = count_q.bind(v);
-    }
-    if let Some(ref v) = params.q {
-        count_q = count_q.bind(v.as_str());
-    }
-    if let Some(ref v) = params.trace_id {
-        count_q = count_q.bind(v.as_str());
-    }
-    if let Some(ref v) = params.ip_address {
-        count_q = count_q.bind(v.as_str());
-    }
-    if let Some(v) = params.min_duration {
-        count_q = count_q.bind(v);
-    }
-    if let Some(v) = params.max_duration {
-        count_q = count_q.bind(v);
-    }
-    if let Some(ref v) = params.user_id {
-        count_q = count_q.bind(v.as_str());
-    }
-    if let Some(ref v) = params.request_id {
-        count_q = count_q.bind(v.as_str());
-    }
-
+    let count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+    let count_q = bind_log_params!(count_q, params);
     let total_items: i64 = count_q.fetch_one(db).await.loco_err()?;
 
     // Data.
@@ -213,43 +223,8 @@ pub async fn list(Query(params): Query<ListParams>) -> Result<Json<ListResponse>
           FROM request_logs {where_sql} \
          ORDER BY timestamp DESC LIMIT ? OFFSET ?"
     );
-    let mut data_q = sqlx::query_as::<_, RequestLogItem>(&data_sql);
-    if let Some(ref v) = params.method {
-        data_q = data_q.bind(v.as_str());
-    }
-    if let Some(ref v) = params.path {
-        data_q = data_q.bind(v.as_str());
-    }
-    if let Some(v) = params.status_code {
-        data_q = data_q.bind(v);
-    }
-    if let Some(v) = params.from {
-        data_q = data_q.bind(v);
-    }
-    if let Some(v) = params.to {
-        data_q = data_q.bind(v);
-    }
-    if let Some(ref v) = params.q {
-        data_q = data_q.bind(v.as_str());
-    }
-    if let Some(ref v) = params.trace_id {
-        data_q = data_q.bind(v.as_str());
-    }
-    if let Some(ref v) = params.ip_address {
-        data_q = data_q.bind(v.as_str());
-    }
-    if let Some(v) = params.min_duration {
-        data_q = data_q.bind(v);
-    }
-    if let Some(v) = params.max_duration {
-        data_q = data_q.bind(v);
-    }
-    if let Some(ref v) = params.user_id {
-        data_q = data_q.bind(v.as_str());
-    }
-    if let Some(ref v) = params.request_id {
-        data_q = data_q.bind(v.as_str());
-    }
+    let data_q = sqlx::query_as::<_, RequestLogItem>(&data_sql);
+    let mut data_q = bind_log_params!(data_q, params);
     data_q = data_q.bind(page_size).bind(offset);
 
     let rows = data_q.fetch_all(db).await.loco_err()?;
