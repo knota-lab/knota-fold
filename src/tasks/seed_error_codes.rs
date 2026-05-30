@@ -134,7 +134,7 @@ fn extract_error_codes() -> ExtractionReport {
                 let mut variants: Vec<(String, usize)> =
                     desc_counts.into_iter().collect();
                 // Sort by count descending (majority first).
-                variants.sort_by(|a, b| b.1.cmp(&a.1));
+                variants.sort_by_key(|variant| std::cmp::Reverse(variant.1));
                 Some(ConflictDetail {
                     code: code.clone(),
                     variants,

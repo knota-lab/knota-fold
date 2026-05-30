@@ -1,9 +1,4 @@
 //! knota-fold — knowledge management platform backend.
-//!
-//! Remaining allows are for lints that are either:
-//! - Documentation boilerplate too voluminous to maintain (`missing_errors_doc`, `missing_panics_doc`)
-//! - Unavoidable DB column type mismatches (`cast_*` lints)
-//! - Structural lints requiring deep refactoring (`too_many_lines`, `large_futures`, etc.)
 
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
