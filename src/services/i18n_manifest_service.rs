@@ -29,7 +29,8 @@ use std::collections::{BTreeSet, HashSet};
 
 use loco_rs::prelude::*;
 use sea_orm::{
-    ActiveValue, ColumnTrait, EntityTrait, QueryFilter, Statement, TransactionTrait,
+    ActiveValue, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, Statement,
+    TransactionTrait,
 };
 
 use crate::models::_entities::{i18n_entries, i18n_entry_locations};
@@ -50,6 +51,121 @@ const MAX_LOCATIONS_PER_ENTRY: usize = 64;
 /// Keep them in sync — anything bigger is rejected to avoid storing entire
 /// paragraphs as i18n keys.
 const MAX_SOURCE_TEXT_LEN: usize = 2048;
+
+struct ManifestProcessResult {
+    created: u64,
+    updated: u64,
+    total_locations: u64,
+    synced_inserted: u64,
+    synced_overwritten: u64,
+    touched_ids: HashSet<uuid::Uuid>,
+    synced_namespaces: BTreeSet<String>,
+}
+
+async fn process_manifest_entries(
+    txn: &DatabaseTransaction,
+    entries: &[&ManifestEntryInput],
+) -> loco_rs::Result<ManifestProcessResult> {
+    let mut created = 0u64;
+    let mut updated = 0u64;
+    let mut total_locations = 0u64;
+    let mut synced_inserted = 0u64;
+    let mut synced_overwritten = 0u64;
+    let mut touched_ids: HashSet<uuid::Uuid> = HashSet::new();
+    let mut synced_namespaces: BTreeSet<String> = BTreeSet::new();
+
+    for entry in entries {
+        let existing =
+            entry_model::Model::find_by_namespace_key(txn, &entry.namespace, &entry.key)
+                .await
+                .db_err()?;
+
+        let now = chrono::Utc::now().fixed_offset();
+        let entry_id = if let Some(row) = existing {
+            let am = i18n_entries::ActiveModel {
+                id: ActiveValue::Unchanged(row.id),
+                description: ActiveValue::Set(
+                    entry
+                        .description
+                        .clone()
+                        .or_else(|| row.description.clone()),
+                ),
+                status: ActiveValue::Set(entry_model::STATUS_ACTIVE.to_string()),
+                last_seen_at: ActiveValue::Set(now),
+                ..Default::default()
+            };
+            am.update(txn).await.db_err()?;
+            updated += 1;
+            row.id
+        } else {
+            let new_id = generate_id();
+            let am = i18n_entries::ActiveModel {
+                id: ActiveValue::Set(new_id),
+                namespace: ActiveValue::Set(entry.namespace.clone()),
+                key: ActiveValue::Set(entry.key.clone()),
+                description: ActiveValue::Set(entry.description.clone()),
+                status: ActiveValue::Set(entry_model::STATUS_ACTIVE.to_string()),
+                last_seen_at: ActiveValue::Set(now),
+                ..Default::default()
+            };
+            am.insert(txn).await.db_err()?;
+            created += 1;
+            new_id
+        };
+        touched_ids.insert(entry_id);
+
+        i18n_entry_locations::Entity::delete_many()
+            .filter(i18n_entry_locations::Column::EntryId.eq(entry_id))
+            .exec(txn)
+            .await
+            .db_err()?;
+
+        for loc in &entry.locations {
+            let am = i18n_entry_locations::ActiveModel {
+                entry_id: ActiveValue::Set(entry_id),
+                file_path: ActiveValue::Set(loc.file_path.clone()),
+                line: ActiveValue::Set(loc.line),
+                ..Default::default()
+            };
+            am.insert(txn).await.db_err()?;
+            total_locations += 1;
+        }
+
+        if let Some(source) = entry.source_text.as_deref() {
+            if !source.is_empty() {
+                let outcome = i18n_service::force_sync_global_in_txn(
+                    txn,
+                    &entry.namespace,
+                    &entry.key,
+                    BASE_LOCALE,
+                    source,
+                )
+                .await?;
+                match outcome {
+                    i18n_service::ForceSyncOutcome::Inserted => {
+                        synced_inserted += 1;
+                        synced_namespaces.insert(entry.namespace.clone());
+                    }
+                    i18n_service::ForceSyncOutcome::Updated => {
+                        synced_overwritten += 1;
+                        synced_namespaces.insert(entry.namespace.clone());
+                    }
+                    i18n_service::ForceSyncOutcome::Unchanged => {}
+                }
+            }
+        }
+    }
+
+    Ok(ManifestProcessResult {
+        created,
+        updated,
+        total_locations,
+        synced_inserted,
+        synced_overwritten,
+        touched_ids,
+        synced_namespaces,
+    })
+}
 
 #[tracing::instrument(skip_all)]
 pub async fn apply_manifest(
@@ -85,112 +201,13 @@ pub async fn apply_manifest(
     // ── Apply in a single transaction ───────────────────────────────────────
     let txn = ctx.db.begin().await.db_err()?;
 
-    let mut created = 0u64;
-    let mut updated = 0u64;
-    let mut total_locations = 0u64;
-    let mut synced_inserted = 0u64;
-    let mut synced_overwritten = 0u64;
-    let mut touched_ids: HashSet<uuid::Uuid> = HashSet::new();
-    // (BASE_LOCALE, namespace) pairs whose bundle gained at least one inserted
-    // or overwritten row — we bump their revision once after the per-entry
-    // loop. `Unchanged` outcomes do NOT bump revision (no actual data change).
-    let mut synced_namespaces: BTreeSet<String> = BTreeSet::new();
-
-    for entry in &deduped {
-        // 必须用 &txn，不能用 &ctx.db：事务持有池里的连接，循环里再向池
-        // 申请第二条连接会和事务自身死锁，在 max_connections=1 下立刻
-        // ConnectionAcquire(Timeout)，更大池子下也会让并发上传相互阻塞。
-        let existing =
-            entry_model::Model::find_by_namespace_key(&txn, &entry.namespace, &entry.key)
-                .await
-                .db_err()?;
-
-        let now = chrono::Utc::now().fixed_offset();
-        let entry_id = if let Some(row) = existing {
-            let am = i18n_entries::ActiveModel {
-                id: ActiveValue::Unchanged(row.id),
-                description: ActiveValue::Set(
-                    entry
-                        .description
-                        .clone()
-                        .or_else(|| row.description.clone()),
-                ),
-                status: ActiveValue::Set(entry_model::STATUS_ACTIVE.to_string()),
-                last_seen_at: ActiveValue::Set(now),
-                ..Default::default()
-            };
-            am.update(&txn).await.db_err()?;
-            updated += 1;
-            row.id
-        } else {
-            let new_id = generate_id();
-            let am = i18n_entries::ActiveModel {
-                id: ActiveValue::Set(new_id),
-                namespace: ActiveValue::Set(entry.namespace.clone()),
-                key: ActiveValue::Set(entry.key.clone()),
-                description: ActiveValue::Set(entry.description.clone()),
-                status: ActiveValue::Set(entry_model::STATUS_ACTIVE.to_string()),
-                last_seen_at: ActiveValue::Set(now),
-                ..Default::default()
-            };
-            am.insert(&txn).await.db_err()?;
-            created += 1;
-            new_id
-        };
-        touched_ids.insert(entry_id);
-
-        // Replace locations.
-        i18n_entry_locations::Entity::delete_many()
-            .filter(i18n_entry_locations::Column::EntryId.eq(entry_id))
-            .exec(&txn)
-            .await
-            .db_err()?;
-
-        for loc in &entry.locations {
-            let am = i18n_entry_locations::ActiveModel {
-                entry_id: ActiveValue::Set(entry_id),
-                file_path: ActiveValue::Set(loc.file_path.clone()),
-                line: ActiveValue::Set(loc.line),
-                ..Default::default()
-            };
-            am.insert(&txn).await.db_err()?;
-            total_locations += 1;
-        }
-
-        // Force-sync zh-CN baseline from inline source default
-        // (`t('Ns.key', '中文')`). Frontend source is authoritative — admin
-        // edits to zh-CN are overwritten on the next manifest upload.
-        // Skipped silently when source_text is absent or empty.
-        if let Some(source) = entry.source_text.as_deref() {
-            if !source.is_empty() {
-                let outcome = i18n_service::force_sync_global_in_txn(
-                    &txn,
-                    &entry.namespace,
-                    &entry.key,
-                    BASE_LOCALE,
-                    source,
-                )
-                .await?;
-                match outcome {
-                    i18n_service::ForceSyncOutcome::Inserted => {
-                        synced_inserted += 1;
-                        synced_namespaces.insert(entry.namespace.clone());
-                    }
-                    i18n_service::ForceSyncOutcome::Updated => {
-                        synced_overwritten += 1;
-                        synced_namespaces.insert(entry.namespace.clone());
-                    }
-                    i18n_service::ForceSyncOutcome::Unchanged => {}
-                }
-            }
-        }
-    }
+    let entry_result = process_manifest_entries(&txn, &deduped).await?;
 
     // ── Mark stale: any active entry whose id is NOT in touched_ids ────────
     // We use a raw statement so we don't have to load every active row into
     // memory just to compute a set difference.
     let backend = txn.get_database_backend();
-    let stale_result = if touched_ids.is_empty() {
+    let stale_result = if entry_result.touched_ids.is_empty() {
         txn.execute(Statement::from_sql_and_values(
             backend,
             "UPDATE i18n_entries \
@@ -202,15 +219,17 @@ pub async fn apply_manifest(
         .db_err()?
     } else {
         // Build placeholder list `($1,$2,...)`.
-        let placeholders: Vec<String> =
-            (1..=touched_ids.len()).map(|i| format!("${i}")).collect();
+        let placeholders: Vec<String> = (1..=entry_result.touched_ids.len())
+            .map(|i| format!("${i}"))
+            .collect();
         let sql = format!(
             "UPDATE i18n_entries \
              SET status = 'stale', updated_at = CURRENT_TIMESTAMP \
              WHERE status = 'active' AND id NOT IN ({})",
             placeholders.join(",")
         );
-        let values: Vec<sea_orm::Value> = touched_ids
+        let values: Vec<sea_orm::Value> = entry_result
+            .touched_ids
             .iter()
             .map(|id| sea_orm::Value::Uuid(Some(Box::new(*id))))
             .collect();
@@ -221,9 +240,7 @@ pub async fn apply_manifest(
     let stale = stale_result.rows_affected();
 
     // Bump global bundle revision once per namespace that received a sync
-    // (insert OR overwrite). Cascades to existing tenant revision rows
-    // automatically (see `i18n_service::bump_global_revision`).
-    for ns in &synced_namespaces {
+    for ns in &entry_result.synced_namespaces {
         i18n_service::bump_global_revision_pub(&txn, BASE_LOCALE, ns).await?;
     }
 
@@ -231,7 +248,7 @@ pub async fn apply_manifest(
 
     // Cache invalidation must happen post-commit; otherwise readers could
     // repopulate the cache from the pre-commit snapshot.
-    for ns in &synced_namespaces {
+    for ns in &entry_result.synced_namespaces {
         i18n_service::invalidate_global_bundle_cache(ctx, BASE_LOCALE, ns).await;
     }
 
@@ -244,13 +261,13 @@ pub async fn apply_manifest(
         payload.commit_sha.as_deref().unwrap_or("manifest"),
         None::<&serde_json::Value>,
         Some(&serde_json::json!({
-            "createdEntries": created,
-            "updatedEntries": updated,
+            "createdEntries": entry_result.created,
+            "updatedEntries": entry_result.updated,
             "staleEntries": stale,
-            "totalLocations": total_locations,
-            "syncedInserted": synced_inserted,
-            "syncedOverwritten": synced_overwritten,
-            "syncedNamespaces": synced_namespaces.iter().collect::<Vec<_>>(),
+            "totalLocations": entry_result.total_locations,
+            "syncedInserted": entry_result.synced_inserted,
+            "syncedOverwritten": entry_result.synced_overwritten,
+            "syncedNamespaces": entry_result.synced_namespaces.iter().collect::<Vec<_>>(),
             "generatedAt": payload.generated_at,
             "commitSha": payload.commit_sha,
         })),
@@ -259,12 +276,12 @@ pub async fn apply_manifest(
     .model_err()?;
 
     Ok(ManifestUploadResponse {
-        created_entries: created,
-        updated_entries: updated,
+        created_entries: entry_result.created,
+        updated_entries: entry_result.updated,
         stale_entries: stale,
-        total_locations,
-        synced_inserted,
-        synced_overwritten,
+        total_locations: entry_result.total_locations,
+        synced_inserted: entry_result.synced_inserted,
+        synced_overwritten: entry_result.synced_overwritten,
     })
 }
 

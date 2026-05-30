@@ -456,6 +456,17 @@ async fn small_upload_inner(
     let s3_client = require_shared_s3_client(ctx)?;
     let s3_config = require_shared_s3_config(ctx)?;
 
+    let txn = put_object_and_begin_txn(
+        &s3_client,
+        &s3_config.bucket,
+        &storage_key,
+        file_id,
+        &bytes,
+        detected_mime,
+        &ctx.db,
+    )
+    .await?;
+
     let active_model = build_file_active_model(
         file_id,
         tenant_id,
@@ -468,33 +479,44 @@ async fn small_upload_inner(
         &storage_key,
     );
 
-    // PUT-first: establish object durability before DB row.
-    if let Err(err) = s3_client
-        .put_object()
-        .bucket(s3_config.bucket.clone())
-        .key(storage_key.clone())
-        .body(ByteStream::from(bytes.clone()))
-        .content_type(detected_mime)
-        .send()
-        .await
-    {
-        tracing::error!(error = ?err, file_id = %file_id, "failed to upload file object");
-        return Err(crate::views::errors::err_custom(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "storage_unavailable",
-            "failed to store uploaded object",
-        ));
-    }
+    let model = insert_and_resolve_conflict(
+        ctx,
+        txn,
+        active_model,
+        &s3_client,
+        &s3_config.bucket,
+        &storage_key,
+        &content_hash,
+        size,
+        file_id,
+        tenant_id,
+        user_id,
+        audit_ctx,
+        attach.as_ref(),
+        params,
+    )
+    .await?;
 
-    let txn = match ctx.db.begin().await {
-        Ok(t) => t,
-        Err(e) => {
-            cleanup_uploaded_object(&s3_client, &s3_config.bucket, &storage_key, file_id)
-                .await;
-            return Err(db_err_into(&e));
-        }
-    };
+    Ok(FileResponse::from(model))
+}
 
+#[allow(clippy::too_many_arguments)]
+async fn insert_and_resolve_conflict(
+    ctx: &AppContext,
+    txn: DatabaseTransaction,
+    active_model: files::ActiveModel,
+    s3_client: &SharedS3Client,
+    bucket: &str,
+    storage_key: &str,
+    content_hash: &str,
+    size: i64,
+    file_id: Uuid,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    audit_ctx: &AuditContext,
+    attach: Option<&file_reference_service::AttachRequest>,
+    params: &SmallUploadRequest,
+) -> loco_rs::Result<files::Model> {
     let insert_result = files::Entity::insert(active_model)
         .on_conflict(
             OnConflict::columns([
@@ -513,65 +535,95 @@ async fn small_upload_inner(
         Ok(r) => r,
         Err(e) => {
             let _ = txn.rollback().await;
-            cleanup_uploaded_object(&s3_client, &s3_config.bucket, &storage_key, file_id)
-                .await;
+            cleanup_uploaded_object(s3_client, bucket, storage_key, file_id).await;
             return Err(db_err_into(&e));
         }
     };
 
-    let model = match insert_result {
+    match insert_result {
         TryInsertResult::Inserted(_) => {
             handle_inserted_file(
                 txn,
                 &InsertedFileParams {
-                    s3_client: &s3_client,
-                    bucket: &s3_config.bucket,
-                    storage_key: &storage_key,
+                    s3_client,
+                    bucket,
+                    storage_key,
                     tenant_id,
                     file_id,
                     user_id,
                     audit_ctx,
-                    attach: attach.as_ref(),
+                    attach,
                     params,
                 },
             )
-            .await?
+            .await
         }
         TryInsertResult::Conflicted => {
             // Same tenant already has a row with this (hash, size). Drop the
             // (empty) txn first, then clean up the orphan object we just PUT.
             let _ = txn.rollback().await;
-            cleanup_uploaded_object(&s3_client, &s3_config.bucket, &storage_key, file_id)
-                .await;
+            cleanup_uploaded_object(s3_client, bucket, storage_key, file_id).await;
             handle_conflict_dedup(
                 ctx,
-                &content_hash,
+                content_hash,
                 size,
                 &UploadActor {
                     tenant_id,
                     user_id,
                     audit_ctx,
                 },
-                attach.as_ref(),
+                attach,
                 params,
             )
-            .await?
+            .await
         }
         TryInsertResult::Empty => {
             let _ = txn.rollback().await;
-            cleanup_uploaded_object(&s3_client, &s3_config.bucket, &storage_key, file_id)
-                .await;
-            return Err(Error::CustomError(
+            cleanup_uploaded_object(s3_client, bucket, storage_key, file_id).await;
+            Err(Error::CustomError(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ErrorDetail::new(
                     "file.empty_insert",
                     "file insert unexpectedly produced an empty insert statement",
                 ),
-            ));
+            ))
         }
-    };
+    }
+}
 
-    Ok(FileResponse::from(model))
+async fn put_object_and_begin_txn(
+    s3_client: &SharedS3Client,
+    bucket: &str,
+    storage_key: &str,
+    file_id: Uuid,
+    bytes: &bytes::Bytes,
+    content_type: &str,
+    db: &DatabaseConnection,
+) -> loco_rs::Result<DatabaseTransaction> {
+    if let Err(err) = s3_client
+        .put_object()
+        .bucket(bucket)
+        .key(storage_key)
+        .body(ByteStream::from(bytes.clone()))
+        .content_type(content_type)
+        .send()
+        .await
+    {
+        tracing::error!(error = ?err, file_id = %file_id, "failed to upload file object");
+        return Err(crate::views::errors::err_custom(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "storage_unavailable",
+            "failed to store uploaded object",
+        ));
+    }
+
+    match db.begin().await {
+        Ok(t) => Ok(t),
+        Err(e) => {
+            cleanup_uploaded_object(s3_client, bucket, storage_key, file_id).await;
+            Err(db_err_into(&e))
+        }
+    }
 }
 
 async fn cleanup_uploaded_object(

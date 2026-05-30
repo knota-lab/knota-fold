@@ -1440,188 +1440,178 @@ pub fn complete_upload<'a>(
     audit_ctx: &'a AuditContext,
     attach: Option<file_reference_service::AttachRequest>,
 ) -> Pin<Box<dyn Future<Output = loco_rs::Result<JsonEndpointResponse>> + Send + 'a>> {
-    Box::pin(async move {
-        let key = ensure_idempotency_key(idempotency_key)?;
-        if let Some(cached) = find_cached_success_by_upload(
-            &ctx.db,
-            tenant_id,
-            upload_id,
-            ENDPOINT_COMPLETE,
-            key,
-        )
-        .await?
-        {
-            return Ok(cached);
-        }
+    Box::pin(complete_upload_inner(
+        ctx,
+        tenant_id,
+        user_id,
+        upload_id,
+        idempotency_key,
+        audit_ctx,
+        attach,
+    ))
+}
 
-        let mut upload = load_upload(&ctx.db, tenant_id, upload_id).await?;
-        match upload.status.as_str() {
+#[allow(clippy::too_many_arguments)]
+async fn complete_upload_inner<'a>(
+    ctx: &'a AppContext,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    upload_id: Uuid,
+    idempotency_key: Option<&'a str>,
+    audit_ctx: &'a AuditContext,
+    attach: Option<file_reference_service::AttachRequest>,
+) -> loco_rs::Result<JsonEndpointResponse> {
+    let key = ensure_idempotency_key(idempotency_key)?;
+    if let Some(cached) = find_cached_success_by_upload(
+        &ctx.db,
+        tenant_id,
+        upload_id,
+        ENDPOINT_COMPLETE,
+        key,
+    )
+    .await?
+    {
+        return Ok(cached);
+    }
+
+    let mut upload = load_upload(&ctx.db, tenant_id, upload_id).await?;
+    match upload.status.as_str() {
+        STATUS_COMPLETED => {
+            let file =
+                fetch_completed_file(&ctx.db, parse_completed_file_id(&upload)?).await?;
+            let payload = completed_response(&file, upload_id);
+            let response = json_endpoint_response(StatusCode::OK, &payload)?;
+            let txn = ctx.db.begin().await.db_err()?;
+            cache_success(&txn, upload.id, ENDPOINT_COMPLETE, key, &response).await?;
+            txn.commit().await.db_err()?;
+            return Ok(response);
+        }
+        STATUS_COMPLETING => {
+            return Err(crate::views::errors::err_custom(
+                StatusCode::CONFLICT,
+                "upload_busy",
+                "upload cannot be completed while completing or completed",
+            ));
+        }
+        STATUS_ABORTED => {
+            return Err(crate::views::errors::err_custom(
+                StatusCode::CONFLICT,
+                "upload_aborted",
+                "upload has been aborted",
+            ));
+        }
+        STATUS_EXPIRED => {
+            return Err(crate::views::errors::err_custom(
+                StatusCode::GONE,
+                "upload_expired",
+                "upload has expired",
+            ));
+        }
+        STATUS_INITIATED | STATUS_IN_PROGRESS => {}
+        _ => {
+            return Err(crate::views::errors::err_custom(
+                StatusCode::CONFLICT,
+                "upload_invalid_state",
+                "upload cannot be completed in its current state",
+            ));
+        }
+    }
+
+    let parts = load_parts(&ctx.db, upload_id).await?;
+    ensure_parts_continuity(&upload, &parts)?;
+
+    let lock_result = file_uploads::Entity::update_many()
+        .col_expr(file_uploads::Column::Status, Expr::value(STATUS_COMPLETING))
+        .col_expr(file_uploads::Column::UpdatedAt, Expr::value(Utc::now()))
+        .col_expr(file_uploads::Column::UpdatedBy, Expr::value(user_id))
+        .filter(file_uploads::Column::Id.eq(upload_id))
+        .filter(file_uploads::Column::TenantId.eq(tenant_id))
+        .filter(
+            file_uploads::Column::Status
+                .is_in([STATUS_INITIATED.to_string(), STATUS_IN_PROGRESS.to_string()]),
+        )
+        .exec(&ctx.db)
+        .await
+        .db_err()?;
+
+    if lock_result.rows_affected == 0 {
+        let current = load_upload(&ctx.db, tenant_id, upload_id).await?;
+        return match current.status.as_str() {
             STATUS_COMPLETED => {
                 let file =
-                    fetch_completed_file(&ctx.db, parse_completed_file_id(&upload)?)
+                    fetch_completed_file(&ctx.db, parse_completed_file_id(&current)?)
                         .await?;
                 let payload = completed_response(&file, upload_id);
                 let response = json_endpoint_response(StatusCode::OK, &payload)?;
                 let txn = ctx.db.begin().await.db_err()?;
-                cache_success(&txn, upload.id, ENDPOINT_COMPLETE, key, &response).await?;
+                cache_success(&txn, current.id, ENDPOINT_COMPLETE, key, &response)
+                    .await?;
                 txn.commit().await.db_err()?;
-                return Ok(response);
+                Ok(response)
             }
-            STATUS_COMPLETING => {
-                return Err(crate::views::errors::err_custom(
-                    StatusCode::CONFLICT,
-                    "upload_busy",
-                    "upload cannot be completed while completing or completed",
-                ));
-            }
-            STATUS_ABORTED => {
-                return Err(crate::views::errors::err_custom(
-                    StatusCode::CONFLICT,
-                    "upload_aborted",
-                    "upload has been aborted",
-                ));
-            }
-            STATUS_EXPIRED => {
-                return Err(crate::views::errors::err_custom(
-                    StatusCode::GONE,
-                    "upload_expired",
-                    "upload has expired",
-                ));
-            }
-            STATUS_INITIATED | STATUS_IN_PROGRESS => {}
-            _ => {
-                return Err(crate::views::errors::err_custom(
-                    StatusCode::CONFLICT,
-                    "upload_invalid_state",
-                    "upload cannot be completed in its current state",
-                ));
-            }
-        }
-
-        let parts = load_parts(&ctx.db, upload_id).await?;
-        ensure_parts_continuity(&upload, &parts)?;
-
-        let lock_result =
-            file_uploads::Entity::update_many()
-                .col_expr(file_uploads::Column::Status, Expr::value(STATUS_COMPLETING))
-                .col_expr(file_uploads::Column::UpdatedAt, Expr::value(Utc::now()))
-                .col_expr(file_uploads::Column::UpdatedBy, Expr::value(user_id))
-                .filter(file_uploads::Column::Id.eq(upload_id))
-                .filter(file_uploads::Column::TenantId.eq(tenant_id))
-                .filter(file_uploads::Column::Status.is_in([
-                    STATUS_INITIATED.to_string(),
-                    STATUS_IN_PROGRESS.to_string(),
-                ]))
-                .exec(&ctx.db)
-                .await
-                .db_err()?;
-
-        if lock_result.rows_affected == 0 {
-            let current = load_upload(&ctx.db, tenant_id, upload_id).await?;
-            return match current.status.as_str() {
-                STATUS_COMPLETED => {
-                    let file =
-                        fetch_completed_file(&ctx.db, parse_completed_file_id(&current)?)
-                            .await?;
-                    let payload = completed_response(&file, upload_id);
-                    let response = json_endpoint_response(StatusCode::OK, &payload)?;
-                    let txn = ctx.db.begin().await.db_err()?;
-                    cache_success(&txn, current.id, ENDPOINT_COMPLETE, key, &response)
-                        .await?;
-                    txn.commit().await.db_err()?;
-                    Ok(response)
-                }
-                STATUS_COMPLETING => Err(crate::views::errors::err_custom(
-                    StatusCode::CONFLICT,
-                    "upload_busy",
-                    "upload cannot be completed while completing or completed",
-                )),
-                STATUS_ABORTED => Err(crate::views::errors::err_custom(
-                    StatusCode::CONFLICT,
-                    "upload_aborted",
-                    "upload has been aborted",
-                )),
-                STATUS_EXPIRED => Err(crate::views::errors::err_custom(
-                    StatusCode::GONE,
-                    "upload_expired",
-                    "upload has expired",
-                )),
-                _ => Err(crate::views::errors::err_custom(
-                    StatusCode::CONFLICT,
-                    "upload_invalid_state",
-                    "upload cannot be completed in its current state",
-                )),
-            };
-        }
-
-        let s3_client = require_shared_s3_client(ctx)?;
-        let s3_upload_id = upload.s3_upload_id.clone().ok_or_else(|| {
-            crate::views::errors::err_custom(
+            STATUS_COMPLETING => Err(crate::views::errors::err_custom(
+                StatusCode::CONFLICT,
+                "upload_busy",
+                "upload cannot be completed while completing or completed",
+            )),
+            STATUS_ABORTED => Err(crate::views::errors::err_custom(
+                StatusCode::CONFLICT,
+                "upload_aborted",
+                "upload has been aborted",
+            )),
+            STATUS_EXPIRED => Err(crate::views::errors::err_custom(
                 StatusCode::GONE,
                 "upload_expired",
-                "multipart upload is no longer active",
-            )
-        })?;
-
-        if let Err(err) = complete_multipart_upload(
-            &s3_client,
-            &upload.bucket,
-            &upload.temp_key,
-            &s3_upload_id,
-            &parts,
-        )
-        .await
-        {
-            best_effort_terminalize_upload_row(
-                &ctx.db,
-                upload_id,
-                user_id,
-                STATUS_COMPLETING,
-                COMPLETE_RETRYABLE_STATUS_REASON,
-                false,
-            )
-            .await;
-            return Err(err);
-        }
-
-        let streamed_hashes = match stream_object_hashes(
-            &s3_client,
-            &upload.bucket,
-            &upload.temp_key,
-            upload.expected_size,
-        )
-        .await
-        {
-            Ok(result) => result,
-            Err(err) => {
-                cleanup_complete_failure(
-                    &s3_client,
-                    &upload.bucket,
-                    upload.id,
-                    &upload.temp_key,
-                    None,
-                )
-                .await;
-                best_effort_terminalize_upload_row(
-                    &ctx.db,
-                    upload_id,
-                    user_id,
-                    STATUS_ABORTED,
-                    COMPLETE_OBJECT_READ_FAILED_REASON,
-                    true,
-                )
-                .await;
-                return Err(err);
-            }
+                "upload has expired",
+            )),
+            _ => Err(crate::views::errors::err_custom(
+                StatusCode::CONFLICT,
+                "upload_invalid_state",
+                "upload cannot be completed in its current state",
+            )),
         };
+    }
 
-        if streamed_hashes.actual_size != upload.expected_size as u64 {
-            tracing::warn!(
-                upload_id = %upload.id,
-                expected_size = upload.expected_size,
-                actual_size = streamed_hashes.actual_size,
-                "uploaded object size mismatch"
-            );
+    let s3_client = require_shared_s3_client(ctx)?;
+    let s3_upload_id = upload.s3_upload_id.clone().ok_or_else(|| {
+        crate::views::errors::err_custom(
+            StatusCode::GONE,
+            "upload_expired",
+            "multipart upload is no longer active",
+        )
+    })?;
+
+    if let Err(err) = complete_multipart_upload(
+        &s3_client,
+        &upload.bucket,
+        &upload.temp_key,
+        &s3_upload_id,
+        &parts,
+    )
+    .await
+    {
+        best_effort_terminalize_upload_row(
+            &ctx.db,
+            upload_id,
+            user_id,
+            STATUS_COMPLETING,
+            COMPLETE_RETRYABLE_STATUS_REASON,
+            false,
+        )
+        .await;
+        return Err(err);
+    }
+
+    let streamed_hashes = match stream_object_hashes(
+        &s3_client,
+        &upload.bucket,
+        &upload.temp_key,
+        upload.expected_size,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(err) => {
             cleanup_complete_failure(
                 &s3_client,
                 &upload.bucket,
@@ -1635,119 +1625,90 @@ pub fn complete_upload<'a>(
                 upload_id,
                 user_id,
                 STATUS_ABORTED,
-                SIZE_MISMATCH_STATUS_REASON,
+                COMPLETE_OBJECT_READ_FAILED_REASON,
+                true,
+            )
+            .await;
+            return Err(err);
+        }
+    };
+
+    if streamed_hashes.actual_size != upload.expected_size as u64 {
+        tracing::warn!(
+            upload_id = %upload.id,
+            expected_size = upload.expected_size,
+            actual_size = streamed_hashes.actual_size,
+            "uploaded object size mismatch"
+        );
+        cleanup_complete_failure(
+            &s3_client,
+            &upload.bucket,
+            upload.id,
+            &upload.temp_key,
+            None,
+        )
+        .await;
+        best_effort_terminalize_upload_row(
+            &ctx.db,
+            upload_id,
+            user_id,
+            STATUS_ABORTED,
+            SIZE_MISMATCH_STATUS_REASON,
+            true,
+        )
+        .await;
+        return Err(crate::views::errors::err_custom(
+            StatusCode::PRECONDITION_FAILED,
+            SIZE_MISMATCH_STATUS_REASON,
+            "uploaded object size does not match expectedSize",
+        ));
+    }
+
+    // The streamed hash is the authoritative content hash. If the client
+    // declared an expected hash up-front (small uploads / instant-confirm
+    // path), enforce it here. Otherwise (large multipart streams) we accept
+    // whatever streamed hash the server computed as the truth.
+    if let Some(declared_hash) = upload.expected_hash.as_deref() {
+        if streamed_hashes.full_hash != declared_hash {
+            cleanup_complete_failure(
+                &s3_client,
+                &upload.bucket,
+                upload.id,
+                &upload.temp_key,
+                None,
+            )
+            .await;
+            best_effort_terminalize_upload_row(
+                &ctx.db,
+                upload_id,
+                user_id,
+                STATUS_ABORTED,
+                HASH_MISMATCH_STATUS_REASON,
                 true,
             )
             .await;
             return Err(crate::views::errors::err_custom(
                 StatusCode::PRECONDITION_FAILED,
-                SIZE_MISMATCH_STATUS_REASON,
-                "uploaded object size does not match expectedSize",
+                "hash_mismatch",
+                "server-side BLAKE3 verification failed",
             ));
         }
-
-        // The streamed hash is the authoritative content hash. If the client
-        // declared an expected hash up-front (small uploads / instant-confirm
-        // path), enforce it here. Otherwise (large multipart streams) we accept
-        // whatever streamed hash the server computed as the truth.
-        if let Some(declared_hash) = upload.expected_hash.as_deref() {
-            if streamed_hashes.full_hash != declared_hash {
-                cleanup_complete_failure(
-                    &s3_client,
-                    &upload.bucket,
-                    upload.id,
-                    &upload.temp_key,
-                    None,
-                )
-                .await;
-                best_effort_terminalize_upload_row(
-                    &ctx.db,
-                    upload_id,
-                    user_id,
-                    STATUS_ABORTED,
-                    HASH_MISMATCH_STATUS_REASON,
-                    true,
-                )
-                .await;
-                return Err(crate::views::errors::err_custom(
-                    StatusCode::PRECONDITION_FAILED,
-                    "hash_mismatch",
-                    "server-side BLAKE3 verification failed",
-                ));
-            }
-        } else {
-            // No client-declared hash -> adopt the streamed hash as authoritative
-            // and persist it so downstream paths (stale cleanup, dedup lookup,
-            // final_storage_key) have a single source of truth on the upload row.
-            upload.expected_hash = Some(streamed_hashes.full_hash.clone());
-            if let Err(err) = file_uploads::Entity::update_many()
-                .col_expr(
-                    file_uploads::Column::ExpectedHash,
-                    Expr::value(streamed_hashes.full_hash.clone()),
-                )
-                .col_expr(file_uploads::Column::UpdatedAt, Expr::value(Utc::now()))
-                .filter(file_uploads::Column::Id.eq(upload.id))
-                .exec(&ctx.db)
-                .await
-            {
-                tracing::error!(error = ?err, upload_id = %upload.id, "failed to persist streamed expected_hash");
-                cleanup_complete_failure(
-                    &s3_client,
-                    &upload.bucket,
-                    upload.id,
-                    &upload.temp_key,
-                    None,
-                )
-                .await;
-                best_effort_terminalize_upload_row(
-                    &ctx.db,
-                    upload_id,
-                    user_id,
-                    STATUS_ABORTED,
-                    COMPLETE_DB_FAILED_REASON,
-                    true,
-                )
-                .await;
-                return Err(db_err_into(&err));
-            }
-        }
-        // From this point onward, `upload.expected_hash` is guaranteed to be Some.
-        let authoritative_hash = upload
-            .expected_hash
-            .as_deref()
-            .expect("expected_hash set above");
-
-        if let Some(expected_hash_fast) = upload.expected_hash_fast.as_deref() {
-            if streamed_hashes.fast_hash.as_deref() != Some(expected_hash_fast) {
-                cleanup_complete_failure(
-                    &s3_client,
-                    &upload.bucket,
-                    upload.id,
-                    &upload.temp_key,
-                    None,
-                )
-                .await;
-                best_effort_terminalize_upload_row(
-                    &ctx.db,
-                    upload_id,
-                    user_id,
-                    STATUS_ABORTED,
-                    FAST_HASH_MISMATCH_STATUS_REASON,
-                    true,
-                )
-                .await;
-                return Err(crate::views::errors::err_custom(
-                    StatusCode::PRECONDITION_FAILED,
-                    FAST_HASH_MISMATCH_STATUS_REASON,
-                    "server-side fast hash verification failed",
-                ));
-            }
-        } else if upload.expected_size >= FAST_HASH_THRESHOLD as i64 {
-            tracing::warn!(upload_id = %upload.id, "legacy upload completed without expected_hash_fast");
-        }
-
-        let detected_mime = detect_mime(&streamed_hashes.mime_sample);
-        if is_blacklisted(detected_mime) {
+    } else {
+        // No client-declared hash -> adopt the streamed hash as authoritative
+        // and persist it so downstream paths (stale cleanup, dedup lookup,
+        // final_storage_key) have a single source of truth on the upload row.
+        upload.expected_hash = Some(streamed_hashes.full_hash.clone());
+        if let Err(err) = file_uploads::Entity::update_many()
+            .col_expr(
+                file_uploads::Column::ExpectedHash,
+                Expr::value(streamed_hashes.full_hash.clone()),
+            )
+            .col_expr(file_uploads::Column::UpdatedAt, Expr::value(Utc::now()))
+            .filter(file_uploads::Column::Id.eq(upload.id))
+            .exec(&ctx.db)
+            .await
+        {
+            tracing::error!(error = ?err, upload_id = %upload.id, "failed to persist streamed expected_hash");
             cleanup_complete_failure(
                 &s3_client,
                 &upload.bucket,
@@ -1761,30 +1722,114 @@ pub fn complete_upload<'a>(
                 upload_id,
                 user_id,
                 STATUS_ABORTED,
-                MIME_BLACKLIST_STATUS_REASON,
+                COMPLETE_DB_FAILED_REASON,
+                true,
+            )
+            .await;
+            return Err(db_err_into(&err));
+        }
+    }
+    // From this point onward, `upload.expected_hash` is guaranteed to be Some.
+    let authoritative_hash = upload
+        .expected_hash
+        .as_deref()
+        .expect("expected_hash set above");
+
+    if let Some(expected_hash_fast) = upload.expected_hash_fast.as_deref() {
+        if streamed_hashes.fast_hash.as_deref() != Some(expected_hash_fast) {
+            cleanup_complete_failure(
+                &s3_client,
+                &upload.bucket,
+                upload.id,
+                &upload.temp_key,
+                None,
+            )
+            .await;
+            best_effort_terminalize_upload_row(
+                &ctx.db,
+                upload_id,
+                user_id,
+                STATUS_ABORTED,
+                FAST_HASH_MISMATCH_STATUS_REASON,
                 true,
             )
             .await;
             return Err(crate::views::errors::err_custom(
-                StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "unsupported_media_type",
-                "detected MIME type is blocked for upload",
+                StatusCode::PRECONDITION_FAILED,
+                FAST_HASH_MISMATCH_STATUS_REASON,
+                "server-side fast hash verification failed",
             ));
         }
+    } else if upload.expected_size >= FAST_HASH_THRESHOLD as i64 {
+        tracing::warn!(upload_id = %upload.id, "legacy upload completed without expected_hash_fast");
+    }
 
-        let file_id = upload.id;
-        let final_key = final_storage_key(file_id, authoritative_hash);
-        let copy_source = format!("{}/{}", upload.bucket, upload.temp_key);
+    let detected_mime = detect_mime(&streamed_hashes.mime_sample);
+    if is_blacklisted(detected_mime) {
+        cleanup_complete_failure(
+            &s3_client,
+            &upload.bucket,
+            upload.id,
+            &upload.temp_key,
+            None,
+        )
+        .await;
+        best_effort_terminalize_upload_row(
+            &ctx.db,
+            upload_id,
+            user_id,
+            STATUS_ABORTED,
+            MIME_BLACKLIST_STATUS_REASON,
+            true,
+        )
+        .await;
+        return Err(crate::views::errors::err_custom(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "unsupported_media_type",
+            "detected MIME type is blocked for upload",
+        ));
+    }
 
-        if let Err(err) = s3_client
-            .copy_object()
-            .bucket(upload.bucket.clone())
-            .key(final_key.clone())
-            .copy_source(copy_source)
-            .send()
-            .await
-        {
-            tracing::error!(error = ?err, upload_id = %upload.id, final_key, "failed to copy temp object to final key");
+    let file_id = upload.id;
+    let final_key = final_storage_key(file_id, authoritative_hash);
+    let copy_source = format!("{}/{}", upload.bucket, upload.temp_key);
+
+    if let Err(err) = s3_client
+        .copy_object()
+        .bucket(upload.bucket.clone())
+        .key(final_key.clone())
+        .copy_source(copy_source)
+        .send()
+        .await
+    {
+        tracing::error!(error = ?err, upload_id = %upload.id, final_key, "failed to copy temp object to final key");
+        cleanup_complete_failure(
+            &s3_client,
+            &upload.bucket,
+            upload.id,
+            &upload.temp_key,
+            Some(&final_key),
+        )
+        .await;
+        best_effort_terminalize_upload_row(
+            &ctx.db,
+            upload_id,
+            user_id,
+            STATUS_ABORTED,
+            COMPLETE_COPY_FAILED_REASON,
+            true,
+        )
+        .await;
+        return Err(crate::views::errors::err_custom(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "storage_unavailable",
+            "failed to copy completed upload to final key",
+        ));
+    }
+
+    let txn = match ctx.db.begin().await {
+        Ok(txn) => txn,
+        Err(e) => {
             cleanup_complete_failure(
                 &s3_client,
                 &upload.bucket,
@@ -1797,21 +1842,57 @@ pub fn complete_upload<'a>(
                 &ctx.db,
                 upload_id,
                 user_id,
-                STATUS_ABORTED,
-                COMPLETE_COPY_FAILED_REASON,
-                true,
+                STATUS_COMPLETING,
+                COMPLETE_DB_FAILED_REASON,
+                false,
             )
             .await;
-            return Err(crate::views::errors::err_custom(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "storage_unavailable",
-                "failed to copy completed upload to final key",
-            ));
+            return Err(db_err_into(&e));
         }
+    };
 
-        let txn = match ctx.db.begin().await {
-            Ok(txn) => txn,
-            Err(e) => {
+    let response = match insert_file_row(
+        &txn,
+        &upload,
+        file_id,
+        user_id,
+        detected_mime,
+        streamed_hashes.fast_hash.clone(),
+        &final_key,
+    )
+    .await
+    {
+        Ok(TryInsertResult::Inserted(_)) => {
+            let inserted_file = match fetch_completed_file(&txn, file_id).await {
+                Ok(file) => file,
+                Err(err) => {
+                    let _ = txn.rollback().await;
+                    cleanup_complete_failure(
+                        &s3_client,
+                        &upload.bucket,
+                        upload.id,
+                        &upload.temp_key,
+                        Some(&final_key),
+                    )
+                    .await;
+                    best_effort_terminalize_upload_row(
+                        &ctx.db,
+                        upload_id,
+                        user_id,
+                        STATUS_COMPLETING,
+                        COMPLETE_DB_FAILED_REASON,
+                        false,
+                    )
+                    .await;
+                    return Err(err);
+                }
+            };
+
+            if let Err(err) =
+                finalize_inserted_file(&txn, &upload, &inserted_file, user_id, audit_ctx)
+                    .await
+            {
+                let _ = txn.rollback().await;
                 cleanup_complete_failure(
                     &s3_client,
                     &upload.bucket,
@@ -1829,163 +1910,14 @@ pub fn complete_upload<'a>(
                     false,
                 )
                 .await;
-                return Err(db_err_into(&e));
+                return Err(err);
             }
-        };
 
-        let response = match insert_file_row(
-            &txn,
-            &upload,
-            file_id,
-            user_id,
-            detected_mime,
-            streamed_hashes.fast_hash.clone(),
-            &final_key,
-        )
-        .await
-        {
-            Ok(TryInsertResult::Inserted(_)) => {
-                let inserted_file = match fetch_completed_file(&txn, file_id).await {
-                    Ok(file) => file,
-                    Err(err) => {
-                        let _ = txn.rollback().await;
-                        cleanup_complete_failure(
-                            &s3_client,
-                            &upload.bucket,
-                            upload.id,
-                            &upload.temp_key,
-                            Some(&final_key),
-                        )
-                        .await;
-                        best_effort_terminalize_upload_row(
-                            &ctx.db,
-                            upload_id,
-                            user_id,
-                            STATUS_COMPLETING,
-                            COMPLETE_DB_FAILED_REASON,
-                            false,
-                        )
-                        .await;
-                        return Err(err);
-                    }
-                };
-
-                if let Err(err) = finalize_inserted_file(
-                    &txn,
-                    &upload,
-                    &inserted_file,
-                    user_id,
-                    audit_ctx,
-                )
-                .await
-                {
-                    let _ = txn.rollback().await;
-                    cleanup_complete_failure(
-                        &s3_client,
-                        &upload.bucket,
-                        upload.id,
-                        &upload.temp_key,
-                        Some(&final_key),
-                    )
-                    .await;
-                    best_effort_terminalize_upload_row(
-                        &ctx.db,
-                        upload_id,
-                        user_id,
-                        STATUS_COMPLETING,
-                        COMPLETE_DB_FAILED_REASON,
-                        false,
-                    )
-                    .await;
-                    return Err(err);
-                }
-
-                let payload = completed_response(&inserted_file, upload.id);
-                let response = json_endpoint_response(StatusCode::OK, &payload)?;
-                if let Err(err) =
-                    cache_success(&txn, upload.id, ENDPOINT_COMPLETE, key, &response)
-                        .await
-                {
-                    let _ = txn.rollback().await;
-                    cleanup_complete_failure(
-                        &s3_client,
-                        &upload.bucket,
-                        upload.id,
-                        &upload.temp_key,
-                        Some(&final_key),
-                    )
-                    .await;
-                    best_effort_terminalize_upload_row(
-                        &ctx.db,
-                        upload_id,
-                        user_id,
-                        STATUS_COMPLETING,
-                        COMPLETE_DB_FAILED_REASON,
-                        false,
-                    )
-                    .await;
-                    return Err(err);
-                }
-
-                // Bind the freshly inserted file row to its business resource
-                // in the SAME transaction. Failure rolls back the whole
-                // commit so we never expose an orphan file. Mirrors
-                // `small_upload_inner` Path 1 (Insert) and `instant_upload`
-                // Miss-then-Confirm semantics.
-                if let Some(req) = attach.clone() {
-                    let req = file_reference_service::AttachRequest {
-                        file_id: inserted_file.id,
-                        ..req
-                    };
-                    if let Err(err) =
-                        file_reference_service::attach_in_txn(&txn, audit_ctx, req).await
-                    {
-                        let _ = txn.rollback().await;
-                        cleanup_complete_failure(
-                            &s3_client,
-                            &upload.bucket,
-                            upload.id,
-                            &upload.temp_key,
-                            Some(&final_key),
-                        )
-                        .await;
-                        best_effort_terminalize_upload_row(
-                            &ctx.db,
-                            upload_id,
-                            user_id,
-                            STATUS_COMPLETING,
-                            COMPLETE_DB_FAILED_REASON,
-                            false,
-                        )
-                        .await;
-                        return Err(err);
-                    }
-                }
-
-                if let Err(err) = txn.commit().await {
-                    cleanup_complete_failure(
-                        &s3_client,
-                        &upload.bucket,
-                        upload.id,
-                        &upload.temp_key,
-                        Some(&final_key),
-                    )
-                    .await;
-                    best_effort_terminalize_upload_row(
-                        &ctx.db,
-                        upload_id,
-                        user_id,
-                        STATUS_ABORTED,
-                        COMPLETE_DB_FAILED_REASON,
-                        true,
-                    )
-                    .await;
-                    return Err(db_err_into(&err));
-                }
-
-                response
-            }
-            Ok(TryInsertResult::Conflicted | TryInsertResult::Empty) => {
+            let payload = completed_response(&inserted_file, upload.id);
+            let response = json_endpoint_response(StatusCode::OK, &payload)?;
+            if let Err(err) =
+                cache_success(&txn, upload.id, ENDPOINT_COMPLETE, key, &response).await
+            {
                 let _ = txn.rollback().await;
                 cleanup_complete_failure(
                     &s3_client,
@@ -1995,175 +1927,54 @@ pub fn complete_upload<'a>(
                     Some(&final_key),
                 )
                 .await;
-
-                // Look up the dedup winner WITHOUT filtering soft-deleted: a
-                // matching row may exist in `deleted` state (admin soft-deleted
-                // it earlier) and still own the unique (tenant, hash, size)
-                // index slot that just rejected our INSERT. Active rows sort
-                // first; revive_or_use_winner restores soft-deleted ones inside
-                // the grace window and emits an audit log. Mirrors small_upload
-                // (services/file_service.rs `small_upload_inner`) and
-                // instant_upload semantics so all three paths converge on the
-                // same dedup primitive.
-                let candidate = file_repo::find_any_by_hash_and_size(
+                best_effort_terminalize_upload_row(
                     &ctx.db,
-                    upload.tenant_id,
-                    authoritative_hash,
-                    upload.expected_size,
+                    upload_id,
+                    user_id,
+                    STATUS_COMPLETING,
+                    COMPLETE_DB_FAILED_REASON,
+                    false,
                 )
-                .await?
-                .ok_or_else(|| {
-                    Error::CustomError(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        ErrorDetail::new(
-                            "upload.dedup_winner_missing",
-                            "dedup winner missing after conflict",
-                        ),
-                    )
-                })?;
-
-                let (winner, _revived) = match file_service::revive_or_use_winner(
-                    &ctx.db, candidate, user_id, audit_ctx,
-                )
-                .await
-                {
-                    Ok(pair) => pair,
-                    Err(err) => {
-                        // grace_expired (GONE) or other revive failure: the
-                        // upload row is still in `completing`. Without an
-                        // explicit terminalize, subsequent DELETE /upload would
-                        // 409 `upload_busy` (assert_active_upload). Mark
-                        // ABORTED so the user can retry from scratch.
-                        best_effort_terminalize_upload_row(
-                            &ctx.db,
-                            upload_id,
-                            user_id,
-                            STATUS_ABORTED,
-                            COMPLETE_DB_FAILED_REASON,
-                            true,
-                        )
-                        .await;
-                        return Err(err);
-                    }
-                };
-
-                let reuse_txn = ctx.db.begin().await.db_err()?;
-                file_uploads::Entity::update_many()
-                    .col_expr(file_uploads::Column::Status, Expr::value(STATUS_COMPLETED))
-                    .col_expr(
-                        file_uploads::Column::CompletedFileId,
-                        Expr::value(winner.id),
-                    )
-                    .col_expr(
-                        file_uploads::Column::StatusReason,
-                        Expr::value(sea_orm::Value::String(None)),
-                    )
-                    .col_expr(
-                        file_uploads::Column::S3UploadId,
-                        Expr::value(sea_orm::Value::String(None)),
-                    )
-                    .col_expr(file_uploads::Column::UpdatedAt, Expr::value(Utc::now()))
-                    .col_expr(file_uploads::Column::UpdatedBy, Expr::value(user_id))
-                    .filter(file_uploads::Column::Id.eq(upload.id))
-                    .exec(&reuse_txn)
-                    .await
-                    .db_err()?;
-
-                let upload_snapshot = FileUploadAuditSnapshot::from(&upload);
-                let file_snapshot = FileAuditSnapshot::from(&winner);
-                if let Err(err) = audit_service::log(
-                    &reuse_txn,
-                    audit_ctx,
-                    AuditAction::UploadComplete,
-                    "file_upload",
-                    &upload.id.to_string(),
-                    Some(&upload_snapshot),
-                    Some(&file_snapshot),
-                )
-                .await
-                {
-                    let _ = reuse_txn.rollback().await;
-                    best_effort_terminalize_upload_row(
-                        &ctx.db,
-                        upload_id,
-                        user_id,
-                        STATUS_ABORTED,
-                        COMPLETE_DB_FAILED_REASON,
-                        true,
-                    )
-                    .await;
-                    return Err(err);
-                }
-
-                let payload = completed_response(&winner, upload.id);
-                let response = json_endpoint_response(StatusCode::OK, &payload)?;
-                if let Err(err) = cache_success(
-                    &reuse_txn,
-                    upload.id,
-                    ENDPOINT_COMPLETE,
-                    key,
-                    &response,
-                )
-                .await
-                {
-                    let _ = reuse_txn.rollback().await;
-                    best_effort_terminalize_upload_row(
-                        &ctx.db,
-                        upload_id,
-                        user_id,
-                        STATUS_ABORTED,
-                        COMPLETE_DB_FAILED_REASON,
-                        true,
-                    )
-                    .await;
-                    return Err(err);
-                }
-
-                // Dedup-winner reuse: still bind the (revived) winner file
-                // to the requested business resource in the same txn so
-                // multipart `complete` matches small/instant semantics. S3
-                // temp_key was already cleaned above (cleanup_complete_failure)
-                // so attach failure only needs to terminalize the upload row.
-                if let Some(req) = attach.clone() {
-                    let req = file_reference_service::AttachRequest {
-                        file_id: winner.id,
-                        ..req
-                    };
-                    if let Err(err) =
-                        file_reference_service::attach_in_txn(&reuse_txn, audit_ctx, req)
-                            .await
-                    {
-                        let _ = reuse_txn.rollback().await;
-                        best_effort_terminalize_upload_row(
-                            &ctx.db,
-                            upload_id,
-                            user_id,
-                            STATUS_ABORTED,
-                            COMPLETE_DB_FAILED_REASON,
-                            true,
-                        )
-                        .await;
-                        return Err(err);
-                    }
-                }
-
-                if let Err(err) = reuse_txn.commit().await {
-                    best_effort_terminalize_upload_row(
-                        &ctx.db,
-                        upload_id,
-                        user_id,
-                        STATUS_ABORTED,
-                        COMPLETE_DB_FAILED_REASON,
-                        true,
-                    )
-                    .await;
-                    return Err(db_err_into(&err));
-                }
-
-                response
+                .await;
+                return Err(err);
             }
-            Err(err) => {
-                let _ = txn.rollback().await;
+
+            // Bind the freshly inserted file row to its business resource
+            // in the SAME transaction. Failure rolls back the whole
+            // commit so we never expose an orphan file. Mirrors
+            // `small_upload_inner` Path 1 (Insert) and `instant_upload`
+            // Miss-then-Confirm semantics.
+            if let Some(req) = attach.clone() {
+                let req = file_reference_service::AttachRequest {
+                    file_id: inserted_file.id,
+                    ..req
+                };
+                if let Err(err) =
+                    file_reference_service::attach_in_txn(&txn, audit_ctx, req).await
+                {
+                    let _ = txn.rollback().await;
+                    cleanup_complete_failure(
+                        &s3_client,
+                        &upload.bucket,
+                        upload.id,
+                        &upload.temp_key,
+                        Some(&final_key),
+                    )
+                    .await;
+                    best_effort_terminalize_upload_row(
+                        &ctx.db,
+                        upload_id,
+                        user_id,
+                        STATUS_COMPLETING,
+                        COMPLETE_DB_FAILED_REASON,
+                        false,
+                    )
+                    .await;
+                    return Err(err);
+                }
+            }
+
+            if let Err(err) = txn.commit().await {
                 cleanup_complete_failure(
                     &s3_client,
                     &upload.bucket,
@@ -2183,12 +1994,207 @@ pub fn complete_upload<'a>(
                 .await;
                 return Err(db_err_into(&err));
             }
-        };
 
-        delete_object_if_exists(&s3_client, &upload.bucket, &upload.temp_key).await;
-        delete_temp_prefix(&s3_client, &upload.bucket, upload.id).await;
-        Ok(response)
-    })
+            response
+        }
+        Ok(TryInsertResult::Conflicted | TryInsertResult::Empty) => {
+            let _ = txn.rollback().await;
+            cleanup_complete_failure(
+                &s3_client,
+                &upload.bucket,
+                upload.id,
+                &upload.temp_key,
+                Some(&final_key),
+            )
+            .await;
+
+            // Look up the dedup winner WITHOUT filtering soft-deleted: a
+            // matching row may exist in `deleted` state (admin soft-deleted
+            // it earlier) and still own the unique (tenant, hash, size)
+            // index slot that just rejected our INSERT. Active rows sort
+            // first; revive_or_use_winner restores soft-deleted ones inside
+            // the grace window and emits an audit log. Mirrors small_upload
+            // (services/file_service.rs `small_upload_inner`) and
+            // instant_upload semantics so all three paths converge on the
+            // same dedup primitive.
+            let candidate = file_repo::find_any_by_hash_and_size(
+                &ctx.db,
+                upload.tenant_id,
+                authoritative_hash,
+                upload.expected_size,
+            )
+            .await?
+            .ok_or_else(|| {
+                Error::CustomError(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ErrorDetail::new(
+                        "upload.dedup_winner_missing",
+                        "dedup winner missing after conflict",
+                    ),
+                )
+            })?;
+
+            let (winner, _revived) = match file_service::revive_or_use_winner(
+                &ctx.db, candidate, user_id, audit_ctx,
+            )
+            .await
+            {
+                Ok(pair) => pair,
+                Err(err) => {
+                    // grace_expired (GONE) or other revive failure: the
+                    // upload row is still in `completing`. Without an
+                    // explicit terminalize, subsequent DELETE /upload would
+                    // 409 `upload_busy` (assert_active_upload). Mark
+                    // ABORTED so the user can retry from scratch.
+                    best_effort_terminalize_upload_row(
+                        &ctx.db,
+                        upload_id,
+                        user_id,
+                        STATUS_ABORTED,
+                        COMPLETE_DB_FAILED_REASON,
+                        true,
+                    )
+                    .await;
+                    return Err(err);
+                }
+            };
+
+            let reuse_txn = ctx.db.begin().await.db_err()?;
+            file_uploads::Entity::update_many()
+                .col_expr(file_uploads::Column::Status, Expr::value(STATUS_COMPLETED))
+                .col_expr(
+                    file_uploads::Column::CompletedFileId,
+                    Expr::value(winner.id),
+                )
+                .col_expr(
+                    file_uploads::Column::StatusReason,
+                    Expr::value(sea_orm::Value::String(None)),
+                )
+                .col_expr(
+                    file_uploads::Column::S3UploadId,
+                    Expr::value(sea_orm::Value::String(None)),
+                )
+                .col_expr(file_uploads::Column::UpdatedAt, Expr::value(Utc::now()))
+                .col_expr(file_uploads::Column::UpdatedBy, Expr::value(user_id))
+                .filter(file_uploads::Column::Id.eq(upload.id))
+                .exec(&reuse_txn)
+                .await
+                .db_err()?;
+
+            let upload_snapshot = FileUploadAuditSnapshot::from(&upload);
+            let file_snapshot = FileAuditSnapshot::from(&winner);
+            if let Err(err) = audit_service::log(
+                &reuse_txn,
+                audit_ctx,
+                AuditAction::UploadComplete,
+                "file_upload",
+                &upload.id.to_string(),
+                Some(&upload_snapshot),
+                Some(&file_snapshot),
+            )
+            .await
+            {
+                let _ = reuse_txn.rollback().await;
+                best_effort_terminalize_upload_row(
+                    &ctx.db,
+                    upload_id,
+                    user_id,
+                    STATUS_ABORTED,
+                    COMPLETE_DB_FAILED_REASON,
+                    true,
+                )
+                .await;
+                return Err(err);
+            }
+
+            let payload = completed_response(&winner, upload.id);
+            let response = json_endpoint_response(StatusCode::OK, &payload)?;
+            if let Err(err) =
+                cache_success(&reuse_txn, upload.id, ENDPOINT_COMPLETE, key, &response)
+                    .await
+            {
+                let _ = reuse_txn.rollback().await;
+                best_effort_terminalize_upload_row(
+                    &ctx.db,
+                    upload_id,
+                    user_id,
+                    STATUS_ABORTED,
+                    COMPLETE_DB_FAILED_REASON,
+                    true,
+                )
+                .await;
+                return Err(err);
+            }
+
+            // Dedup-winner reuse: still bind the (revived) winner file
+            // to the requested business resource in the same txn so
+            // multipart `complete` matches small/instant semantics. S3
+            // temp_key was already cleaned above (cleanup_complete_failure)
+            // so attach failure only needs to terminalize the upload row.
+            if let Some(req) = attach.clone() {
+                let req = file_reference_service::AttachRequest {
+                    file_id: winner.id,
+                    ..req
+                };
+                if let Err(err) =
+                    file_reference_service::attach_in_txn(&reuse_txn, audit_ctx, req)
+                        .await
+                {
+                    let _ = reuse_txn.rollback().await;
+                    best_effort_terminalize_upload_row(
+                        &ctx.db,
+                        upload_id,
+                        user_id,
+                        STATUS_ABORTED,
+                        COMPLETE_DB_FAILED_REASON,
+                        true,
+                    )
+                    .await;
+                    return Err(err);
+                }
+            }
+
+            if let Err(err) = reuse_txn.commit().await {
+                best_effort_terminalize_upload_row(
+                    &ctx.db,
+                    upload_id,
+                    user_id,
+                    STATUS_ABORTED,
+                    COMPLETE_DB_FAILED_REASON,
+                    true,
+                )
+                .await;
+                return Err(db_err_into(&err));
+            }
+
+            response
+        }
+        Err(err) => {
+            let _ = txn.rollback().await;
+            cleanup_complete_failure(
+                &s3_client,
+                &upload.bucket,
+                upload.id,
+                &upload.temp_key,
+                Some(&final_key),
+            )
+            .await;
+            best_effort_terminalize_upload_row(
+                &ctx.db,
+                upload_id,
+                user_id,
+                STATUS_ABORTED,
+                COMPLETE_DB_FAILED_REASON,
+                true,
+            )
+            .await;
+            return Err(db_err_into(&err));
+        }
+    };
+
+    delete_object_if_exists(&s3_client, &upload.bucket, &upload.temp_key).await;
+    delete_temp_prefix(&s3_client, &upload.bucket, upload.id).await;
+    Ok(response)
 }
 
 pub async fn abort_upload(
