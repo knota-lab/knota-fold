@@ -3,12 +3,12 @@ use super::{
     cleanup_complete_failure, complete_multipart_upload, completed_response, db_err_into,
     delete_object_if_exists, delete_temp_prefix, detect_mime, ensure_idempotency_key,
     ensure_parts_continuity, fetch_completed_file, file_reference_service, file_repo,
-    file_service, file_upload_parts, file_uploads, final_storage_key,
+    file_service, file_upload_parts, file_uploads, files, final_storage_key,
     finalize_inserted_file, find_cached_success_by_upload, insert_file_row,
     is_blacklisted, json_endpoint_response, load_parts, load_upload,
     parse_completed_file_id, require_shared_s3_client, stream_object_hashes, AuditAction,
     CompleteUploadRequest, FileAuditSnapshot, FileUploadAuditSnapshot,
-    JsonEndpointResponse, SharedS3Client, COMPLETE_COPY_FAILED_REASON,
+    JsonEndpointResponse, SharedS3Client, StreamedHashes, COMPLETE_COPY_FAILED_REASON,
     COMPLETE_DB_FAILED_REASON, COMPLETE_OBJECT_READ_FAILED_REASON,
     COMPLETE_RETRYABLE_STATUS_REASON, ENDPOINT_COMPLETE,
     FAST_HASH_MISMATCH_STATUS_REASON, FAST_HASH_THRESHOLD, HASH_MISMATCH_STATUS_REASON,
@@ -27,6 +27,13 @@ use sea_orm::{
     TryInsertResult,
 };
 use uuid::Uuid;
+
+struct VerifiedUploadObject {
+    file_id: Uuid,
+    authoritative_hash: String,
+    detected_mime: &'static str,
+    fast_hash: Option<String>,
+}
 
 pub(super) async fn complete_upload_inner(
     req: CompleteUploadRequest<'_>,
@@ -168,285 +175,25 @@ async fn complete_upload_after_lock(
     s3_upload_id: String,
     key: &str,
 ) -> loco_rs::Result<JsonEndpointResponse> {
-    if let Err(err) = complete_multipart_upload(
-        s3_client,
-        &upload.bucket,
-        &upload.temp_key,
-        &s3_upload_id,
-        &parts,
-    )
-    .await
-    {
-        best_effort_terminalize_upload_row(
-            &req.ctx.db,
-            req.upload_id,
-            req.user_id,
-            STATUS_COMPLETING,
-            COMPLETE_RETRYABLE_STATUS_REASON,
-            false,
-        )
-        .await;
-        return Err(err);
-    }
-
-    let streamed_hashes = match stream_object_hashes(
-        s3_client,
-        &upload.bucket,
-        &upload.temp_key,
-        upload.expected_size,
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(err) => {
-            cleanup_complete_failure(
-                s3_client,
-                &upload.bucket,
-                upload.id,
-                &upload.temp_key,
-                None,
-            )
-            .await;
-            best_effort_terminalize_upload_row(
-                &req.ctx.db,
-                req.upload_id,
-                req.user_id,
-                STATUS_ABORTED,
-                COMPLETE_OBJECT_READ_FAILED_REASON,
-                true,
-            )
-            .await;
-            return Err(err);
-        }
-    };
-
-    if streamed_hashes.actual_size != upload.expected_size as u64 {
-        tracing::warn!(
-            upload_id = %upload.id,
-            expected_size = upload.expected_size,
-            actual_size = streamed_hashes.actual_size,
-            "uploaded object size mismatch"
-        );
-        cleanup_complete_failure(
-            s3_client,
-            &upload.bucket,
-            upload.id,
-            &upload.temp_key,
-            None,
-        )
-        .await;
-        best_effort_terminalize_upload_row(
-            &req.ctx.db,
-            req.upload_id,
-            req.user_id,
-            STATUS_ABORTED,
-            SIZE_MISMATCH_STATUS_REASON,
-            true,
-        )
-        .await;
-        return Err(crate::views::errors::err_custom(
-            StatusCode::PRECONDITION_FAILED,
-            SIZE_MISMATCH_STATUS_REASON,
-            "uploaded object size does not match expectedSize",
-        ));
-    }
-
-    if let Some(declared_hash) = upload.expected_hash.as_deref() {
-        if streamed_hashes.full_hash != declared_hash {
-            cleanup_complete_failure(
-                s3_client,
-                &upload.bucket,
-                upload.id,
-                &upload.temp_key,
-                None,
-            )
-            .await;
-            best_effort_terminalize_upload_row(
-                &req.ctx.db,
-                req.upload_id,
-                req.user_id,
-                STATUS_ABORTED,
-                HASH_MISMATCH_STATUS_REASON,
-                true,
-            )
-            .await;
-            return Err(crate::views::errors::err_custom(
-                StatusCode::PRECONDITION_FAILED,
-                "hash_mismatch",
-                "server-side BLAKE3 verification failed",
-            ));
-        }
-    } else {
-        upload.expected_hash = Some(streamed_hashes.full_hash.clone());
-        if let Err(err) = file_uploads::Entity::update_many()
-            .col_expr(
-                file_uploads::Column::ExpectedHash,
-                Expr::value(streamed_hashes.full_hash.clone()),
-            )
-            .col_expr(file_uploads::Column::UpdatedAt, Expr::value(Utc::now()))
-            .filter(file_uploads::Column::Id.eq(upload.id))
-            .exec(&req.ctx.db)
-            .await
-        {
-            tracing::error!(error = ?err, upload_id = %upload.id, "failed to persist streamed expected_hash");
-            cleanup_complete_failure(
-                s3_client,
-                &upload.bucket,
-                upload.id,
-                &upload.temp_key,
-                None,
-            )
-            .await;
-            best_effort_terminalize_upload_row(
-                &req.ctx.db,
-                req.upload_id,
-                req.user_id,
-                STATUS_ABORTED,
-                COMPLETE_DB_FAILED_REASON,
-                true,
-            )
-            .await;
-            return Err(db_err_into(&err));
-        }
-    }
-
-    let authoritative_hash = upload
-        .expected_hash
-        .clone()
-        .expect("expected_hash set above");
-
-    if let Some(expected_hash_fast) = upload.expected_hash_fast.as_deref() {
-        if streamed_hashes.fast_hash.as_deref() != Some(expected_hash_fast) {
-            cleanup_complete_failure(
-                s3_client,
-                &upload.bucket,
-                upload.id,
-                &upload.temp_key,
-                None,
-            )
-            .await;
-            best_effort_terminalize_upload_row(
-                &req.ctx.db,
-                req.upload_id,
-                req.user_id,
-                STATUS_ABORTED,
-                FAST_HASH_MISMATCH_STATUS_REASON,
-                true,
-            )
-            .await;
-            return Err(crate::views::errors::err_custom(
-                StatusCode::PRECONDITION_FAILED,
-                FAST_HASH_MISMATCH_STATUS_REASON,
-                "server-side fast hash verification failed",
-            ));
-        }
-    } else if upload.expected_size >= FAST_HASH_THRESHOLD as i64 {
-        tracing::warn!(upload_id = %upload.id, "legacy upload completed without expected_hash_fast");
-    }
-
-    let detected_mime = detect_mime(&streamed_hashes.mime_sample);
-    if is_blacklisted(detected_mime) {
-        cleanup_complete_failure(
-            s3_client,
-            &upload.bucket,
-            upload.id,
-            &upload.temp_key,
-            None,
-        )
-        .await;
-        best_effort_terminalize_upload_row(
-            &req.ctx.db,
-            req.upload_id,
-            req.user_id,
-            STATUS_ABORTED,
-            MIME_BLACKLIST_STATUS_REASON,
-            true,
-        )
-        .await;
-        return Err(crate::views::errors::err_custom(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "unsupported_media_type",
-            "detected MIME type is blocked for upload",
-        ));
-    }
-
-    let file_id = upload.id;
-    let final_key = final_storage_key(file_id, &authoritative_hash);
-    let copy_source = format!("{}/{}", upload.bucket, upload.temp_key);
-
-    if let Err(err) = s3_client
-        .copy_object()
-        .bucket(upload.bucket.clone())
-        .key(final_key.clone())
-        .copy_source(copy_source)
-        .send()
-        .await
-    {
-        tracing::error!(error = ?err, upload_id = %upload.id, final_key, "failed to copy temp object to final key");
-        cleanup_complete_failure(
-            s3_client,
-            &upload.bucket,
-            upload.id,
-            &upload.temp_key,
-            Some(&final_key),
-        )
-        .await;
-        best_effort_terminalize_upload_row(
-            &req.ctx.db,
-            req.upload_id,
-            req.user_id,
-            STATUS_ABORTED,
-            COMPLETE_COPY_FAILED_REASON,
-            true,
-        )
-        .await;
-        return Err(crate::views::errors::err_custom(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "storage_unavailable",
-            "failed to copy completed upload to final key",
-        ));
-    }
-
-    let txn = match req.ctx.db.begin().await {
-        Ok(txn) => txn,
-        Err(e) => {
-            cleanup_complete_failure(
-                s3_client,
-                &upload.bucket,
-                upload.id,
-                &upload.temp_key,
-                Some(&final_key),
-            )
-            .await;
-            best_effort_terminalize_upload_row(
-                &req.ctx.db,
-                req.upload_id,
-                req.user_id,
-                STATUS_COMPLETING,
-                COMPLETE_DB_FAILED_REASON,
-                false,
-            )
-            .await;
-            return Err(db_err_into(&e));
-        }
-    };
+    complete_stored_multipart(&req, &upload, &parts, s3_client, &s3_upload_id).await?;
+    let verified = verify_uploaded_object(&req, &mut upload, s3_client).await?;
+    let final_key = final_storage_key(verified.file_id, &verified.authoritative_hash);
+    copy_completed_object(&req, &upload, s3_client, &final_key).await?;
+    let txn = begin_completion_txn(&req, s3_client, &upload, &final_key).await?;
 
     match insert_file_row(
         &txn,
         &upload,
-        file_id,
+        verified.file_id,
         req.user_id,
-        detected_mime,
-        streamed_hashes.fast_hash.clone(),
+        verified.detected_mime,
+        verified.fast_hash.clone(),
         &final_key,
     )
     .await
     {
         Ok(TryInsertResult::Inserted(_)) => {
-            complete_upload_inserted(
-                req, txn, upload, file_id, key, s3_client, &final_key,
-            )
-            .await
+            complete_upload_inserted(req, txn, upload, key, s3_client, &final_key).await
         }
         Ok(TryInsertResult::Conflicted | TryInsertResult::Empty) => {
             complete_upload_dedup(
@@ -456,7 +203,7 @@ async fn complete_upload_after_lock(
                 key,
                 s3_client,
                 &final_key,
-                &authoritative_hash,
+                &verified.authoritative_hash,
             )
             .await
         }
@@ -484,17 +231,397 @@ async fn complete_upload_after_lock(
     }
 }
 
+async fn complete_stored_multipart(
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    parts: &[file_upload_parts::Model],
+    s3_client: &SharedS3Client,
+    s3_upload_id: &str,
+) -> loco_rs::Result<()> {
+    if let Err(err) = complete_multipart_upload(
+        s3_client,
+        &upload.bucket,
+        &upload.temp_key,
+        s3_upload_id,
+        parts,
+    )
+    .await
+    {
+        best_effort_terminalize_upload_row(
+            &req.ctx.db,
+            req.upload_id,
+            req.user_id,
+            STATUS_COMPLETING,
+            COMPLETE_RETRYABLE_STATUS_REASON,
+            false,
+        )
+        .await;
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+async fn verify_uploaded_object(
+    req: &CompleteUploadRequest<'_>,
+    upload: &mut file_uploads::Model,
+    s3_client: &SharedS3Client,
+) -> loco_rs::Result<VerifiedUploadObject> {
+    let streamed_hashes = read_uploaded_object(req, upload, s3_client).await?;
+    ensure_upload_size(req, upload, s3_client, &streamed_hashes).await?;
+    let authoritative_hash =
+        ensure_authoritative_hash(req, upload, s3_client, &streamed_hashes).await?;
+    ensure_fast_hash(req, upload, s3_client, &streamed_hashes).await?;
+    let detected_mime =
+        ensure_allowed_mime(req, upload, s3_client, &streamed_hashes).await?;
+
+    Ok(VerifiedUploadObject {
+        authoritative_hash,
+        detected_mime,
+        fast_hash: streamed_hashes.fast_hash,
+        file_id: upload.id,
+    })
+}
+
+async fn read_uploaded_object(
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+) -> loco_rs::Result<StreamedHashes> {
+    match stream_object_hashes(
+        s3_client,
+        &upload.bucket,
+        &upload.temp_key,
+        upload.expected_size,
+    )
+    .await
+    {
+        Ok(result) => Ok(result),
+        Err(err) => {
+            cleanup_complete_failure(
+                s3_client,
+                &upload.bucket,
+                upload.id,
+                &upload.temp_key,
+                None,
+            )
+            .await;
+            best_effort_terminalize_upload_row(
+                &req.ctx.db,
+                req.upload_id,
+                req.user_id,
+                STATUS_ABORTED,
+                COMPLETE_OBJECT_READ_FAILED_REASON,
+                true,
+            )
+            .await;
+            Err(err)
+        }
+    }
+}
+
+async fn ensure_upload_size(
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+    streamed_hashes: &StreamedHashes,
+) -> loco_rs::Result<()> {
+    if streamed_hashes.actual_size == upload.expected_size as u64 {
+        return Ok(());
+    }
+
+    tracing::warn!(
+        upload_id = %upload.id,
+        expected_size = upload.expected_size,
+        actual_size = streamed_hashes.actual_size,
+        "uploaded object size mismatch"
+    );
+    cleanup_complete_failure(
+        s3_client,
+        &upload.bucket,
+        upload.id,
+        &upload.temp_key,
+        None,
+    )
+    .await;
+    best_effort_terminalize_upload_row(
+        &req.ctx.db,
+        req.upload_id,
+        req.user_id,
+        STATUS_ABORTED,
+        SIZE_MISMATCH_STATUS_REASON,
+        true,
+    )
+    .await;
+    Err(crate::views::errors::err_custom(
+        StatusCode::PRECONDITION_FAILED,
+        SIZE_MISMATCH_STATUS_REASON,
+        "uploaded object size does not match expectedSize",
+    ))
+}
+
+async fn ensure_authoritative_hash(
+    req: &CompleteUploadRequest<'_>,
+    upload: &mut file_uploads::Model,
+    s3_client: &SharedS3Client,
+    streamed_hashes: &StreamedHashes,
+) -> loco_rs::Result<String> {
+    if let Some(declared_hash) = upload.expected_hash.as_deref() {
+        if streamed_hashes.full_hash == declared_hash {
+            return Ok(declared_hash.to_string());
+        }
+
+        cleanup_complete_failure(
+            s3_client,
+            &upload.bucket,
+            upload.id,
+            &upload.temp_key,
+            None,
+        )
+        .await;
+        best_effort_terminalize_upload_row(
+            &req.ctx.db,
+            req.upload_id,
+            req.user_id,
+            STATUS_ABORTED,
+            HASH_MISMATCH_STATUS_REASON,
+            true,
+        )
+        .await;
+        return Err(crate::views::errors::err_custom(
+            StatusCode::PRECONDITION_FAILED,
+            "hash_mismatch",
+            "server-side BLAKE3 verification failed",
+        ));
+    }
+
+    persist_authoritative_hash(req, upload, s3_client, &streamed_hashes.full_hash).await
+}
+
+async fn persist_authoritative_hash(
+    req: &CompleteUploadRequest<'_>,
+    upload: &mut file_uploads::Model,
+    s3_client: &SharedS3Client,
+    full_hash: &str,
+) -> loco_rs::Result<String> {
+    upload.expected_hash = Some(full_hash.to_string());
+    if let Err(err) = file_uploads::Entity::update_many()
+        .col_expr(file_uploads::Column::ExpectedHash, Expr::value(full_hash))
+        .col_expr(file_uploads::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_uploads::Column::Id.eq(upload.id))
+        .exec(&req.ctx.db)
+        .await
+    {
+        tracing::error!(error = ?err, upload_id = %upload.id, "failed to persist streamed expected_hash");
+        cleanup_complete_failure(
+            s3_client,
+            &upload.bucket,
+            upload.id,
+            &upload.temp_key,
+            None,
+        )
+        .await;
+        best_effort_terminalize_upload_row(
+            &req.ctx.db,
+            req.upload_id,
+            req.user_id,
+            STATUS_ABORTED,
+            COMPLETE_DB_FAILED_REASON,
+            true,
+        )
+        .await;
+        return Err(db_err_into(&err));
+    }
+
+    Ok(full_hash.to_string())
+}
+
+async fn ensure_fast_hash(
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+    streamed_hashes: &StreamedHashes,
+) -> loco_rs::Result<()> {
+    if let Some(expected_hash_fast) = upload.expected_hash_fast.as_deref() {
+        if streamed_hashes.fast_hash.as_deref() == Some(expected_hash_fast) {
+            return Ok(());
+        }
+
+        cleanup_complete_failure(
+            s3_client,
+            &upload.bucket,
+            upload.id,
+            &upload.temp_key,
+            None,
+        )
+        .await;
+        best_effort_terminalize_upload_row(
+            &req.ctx.db,
+            req.upload_id,
+            req.user_id,
+            STATUS_ABORTED,
+            FAST_HASH_MISMATCH_STATUS_REASON,
+            true,
+        )
+        .await;
+        return Err(crate::views::errors::err_custom(
+            StatusCode::PRECONDITION_FAILED,
+            FAST_HASH_MISMATCH_STATUS_REASON,
+            "server-side fast hash verification failed",
+        ));
+    }
+
+    if upload.expected_size >= FAST_HASH_THRESHOLD as i64 {
+        tracing::warn!(upload_id = %upload.id, "legacy upload completed without expected_hash_fast");
+    }
+
+    Ok(())
+}
+
+async fn ensure_allowed_mime(
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+    streamed_hashes: &StreamedHashes,
+) -> loco_rs::Result<&'static str> {
+    let detected_mime = detect_mime(&streamed_hashes.mime_sample);
+    if !is_blacklisted(detected_mime) {
+        return Ok(detected_mime);
+    }
+
+    cleanup_complete_failure(
+        s3_client,
+        &upload.bucket,
+        upload.id,
+        &upload.temp_key,
+        None,
+    )
+    .await;
+    best_effort_terminalize_upload_row(
+        &req.ctx.db,
+        req.upload_id,
+        req.user_id,
+        STATUS_ABORTED,
+        MIME_BLACKLIST_STATUS_REASON,
+        true,
+    )
+    .await;
+    Err(crate::views::errors::err_custom(
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "unsupported_media_type",
+        "detected MIME type is blocked for upload",
+    ))
+}
+
+async fn copy_completed_object(
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+    final_key: &str,
+) -> loco_rs::Result<()> {
+    let copy_source = format!("{}/{}", upload.bucket, upload.temp_key);
+    if s3_client
+        .copy_object()
+        .bucket(upload.bucket.clone())
+        .key(final_key.to_string())
+        .copy_source(copy_source)
+        .send()
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+
+    tracing::error!(upload_id = %upload.id, final_key, "failed to copy temp object to final key");
+    cleanup_complete_failure(
+        s3_client,
+        &upload.bucket,
+        upload.id,
+        &upload.temp_key,
+        Some(final_key),
+    )
+    .await;
+    best_effort_terminalize_upload_row(
+        &req.ctx.db,
+        req.upload_id,
+        req.user_id,
+        STATUS_ABORTED,
+        COMPLETE_COPY_FAILED_REASON,
+        true,
+    )
+    .await;
+    Err(crate::views::errors::err_custom(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "storage_unavailable",
+        "failed to copy completed upload to final key",
+    ))
+}
+
+async fn begin_completion_txn(
+    req: &CompleteUploadRequest<'_>,
+    s3_client: &SharedS3Client,
+    upload: &file_uploads::Model,
+    final_key: &str,
+) -> loco_rs::Result<DatabaseTransaction> {
+    match req.ctx.db.begin().await {
+        Ok(txn) => Ok(txn),
+        Err(err) => {
+            cleanup_complete_failure(
+                s3_client,
+                &upload.bucket,
+                upload.id,
+                &upload.temp_key,
+                Some(final_key),
+            )
+            .await;
+            best_effort_terminalize_upload_row(
+                &req.ctx.db,
+                req.upload_id,
+                req.user_id,
+                STATUS_COMPLETING,
+                COMPLETE_DB_FAILED_REASON,
+                false,
+            )
+            .await;
+            Err(db_err_into(&err))
+        }
+    }
+}
+
 async fn complete_upload_inserted(
     req: CompleteUploadRequest<'_>,
     txn: DatabaseTransaction,
     upload: file_uploads::Model,
-    file_id: Uuid,
     key: &str,
     s3_client: &SharedS3Client,
     final_key: &str,
 ) -> loco_rs::Result<JsonEndpointResponse> {
-    let inserted_file = match fetch_completed_file(&txn, file_id).await {
-        Ok(file) => file,
+    let (txn, inserted_file) =
+        load_inserted_file(txn, &req, &upload, s3_client, final_key).await?;
+    let (txn, response) = cache_inserted_completion(
+        txn,
+        &req,
+        &upload,
+        s3_client,
+        final_key,
+        key,
+        inserted_file,
+    )
+    .await?;
+    let txn =
+        attach_inserted_completion(txn, &req, &upload, s3_client, final_key).await?;
+    commit_inserted_completion(txn, &req, &upload, s3_client, final_key, response).await
+}
+
+async fn load_inserted_file(
+    txn: DatabaseTransaction,
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+    final_key: &str,
+) -> loco_rs::Result<(DatabaseTransaction, files::Model)> {
+    match fetch_completed_file(&txn, upload.id).await {
+        Ok(file) => Ok((txn, file)),
         Err(err) => {
             let _ = txn.rollback().await;
             cleanup_complete_failure(
@@ -514,12 +641,22 @@ async fn complete_upload_inserted(
                 false,
             )
             .await;
-            return Err(err);
+            Err(err)
         }
-    };
+    }
+}
 
+async fn cache_inserted_completion(
+    txn: DatabaseTransaction,
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+    final_key: &str,
+    key: &str,
+    inserted_file: files::Model,
+) -> loco_rs::Result<(DatabaseTransaction, JsonEndpointResponse)> {
     if let Err(err) =
-        finalize_inserted_file(&txn, &upload, &inserted_file, req.user_id, req.audit_ctx)
+        finalize_inserted_file(&txn, upload, &inserted_file, req.user_id, req.audit_ctx)
             .await
     {
         let _ = txn.rollback().await;
@@ -569,9 +706,19 @@ async fn complete_upload_inserted(
         return Err(err);
     }
 
+    Ok((txn, response))
+}
+
+async fn attach_inserted_completion(
+    txn: DatabaseTransaction,
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+    final_key: &str,
+) -> loco_rs::Result<DatabaseTransaction> {
     if let Some(req_attach) = req.attach.as_deref() {
         let req_attach = file_reference_service::AttachRequest {
-            file_id: inserted_file.id,
+            file_id: upload.id,
             ..req_attach.clone()
         };
         if let Err(err) =
@@ -599,6 +746,17 @@ async fn complete_upload_inserted(
         }
     }
 
+    Ok(txn)
+}
+
+async fn commit_inserted_completion(
+    txn: DatabaseTransaction,
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+    final_key: &str,
+    response: JsonEndpointResponse,
+) -> loco_rs::Result<JsonEndpointResponse> {
     if let Err(err) = txn.commit().await {
         cleanup_complete_failure(
             s3_client,
@@ -644,7 +802,21 @@ async fn complete_upload_dedup(
     )
     .await;
 
-    let candidate = file_repo::find_any_by_hash_and_size(
+    let candidate = find_dedup_candidate(&req, &upload, authoritative_hash).await?;
+    let winner = revive_dedup_winner(&req, candidate).await?;
+    let reuse_txn = begin_dedup_reuse_txn(&req).await?;
+    let (reuse_txn, response) =
+        persist_dedup_reuse(reuse_txn, &req, &upload, key, winner).await?;
+    let reuse_txn = attach_dedup_completion(reuse_txn, &req, &upload, s3_client).await?;
+    commit_dedup_completion(reuse_txn, &req, &upload, s3_client, response).await
+}
+
+async fn find_dedup_candidate(
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    authoritative_hash: &str,
+) -> loco_rs::Result<files::Model> {
+    file_repo::find_any_by_hash_and_size(
         &req.ctx.db,
         upload.tenant_id,
         authoritative_hash,
@@ -659,9 +831,14 @@ async fn complete_upload_dedup(
                 "dedup winner missing after conflict",
             ),
         )
-    })?;
+    })
+}
 
-    let (winner, _revived) = match file_service::revive_or_use_winner(
+async fn revive_dedup_winner(
+    req: &CompleteUploadRequest<'_>,
+    candidate: files::Model,
+) -> loco_rs::Result<files::Model> {
+    match file_service::revive_or_use_winner(
         &req.ctx.db,
         candidate,
         req.user_id,
@@ -669,7 +846,7 @@ async fn complete_upload_dedup(
     )
     .await
     {
-        Ok(pair) => pair,
+        Ok((winner, _revived)) => Ok(winner),
         Err(err) => {
             best_effort_terminalize_upload_row(
                 &req.ctx.db,
@@ -680,11 +857,24 @@ async fn complete_upload_dedup(
                 true,
             )
             .await;
-            return Err(err);
+            Err(err)
         }
-    };
+    }
+}
 
-    let reuse_txn = req.ctx.db.begin().await.db_err()?;
+async fn begin_dedup_reuse_txn(
+    req: &CompleteUploadRequest<'_>,
+) -> loco_rs::Result<DatabaseTransaction> {
+    req.ctx.db.begin().await.db_err()
+}
+
+async fn persist_dedup_reuse(
+    reuse_txn: DatabaseTransaction,
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    key: &str,
+    winner: files::Model,
+) -> loco_rs::Result<(DatabaseTransaction, JsonEndpointResponse)> {
     file_uploads::Entity::update_many()
         .col_expr(file_uploads::Column::Status, Expr::value(STATUS_COMPLETED))
         .col_expr(
@@ -706,7 +896,7 @@ async fn complete_upload_dedup(
         .await
         .db_err()?;
 
-    let upload_snapshot = FileUploadAuditSnapshot::from(&upload);
+    let upload_snapshot = FileUploadAuditSnapshot::from(upload);
     let file_snapshot = FileAuditSnapshot::from(&winner);
     if let Err(err) = audit_service::log(
         &reuse_txn,
@@ -750,9 +940,18 @@ async fn complete_upload_dedup(
         return Err(err);
     }
 
+    Ok((reuse_txn, response))
+}
+
+async fn attach_dedup_completion(
+    reuse_txn: DatabaseTransaction,
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+) -> loco_rs::Result<DatabaseTransaction> {
     if let Some(req_attach) = req.attach.as_deref() {
         let req_attach = file_reference_service::AttachRequest {
-            file_id: winner.id,
+            file_id: upload.id,
             ..req_attach.clone()
         };
         if let Err(err) =
@@ -769,10 +968,28 @@ async fn complete_upload_dedup(
                 true,
             )
             .await;
+            cleanup_complete_failure(
+                s3_client,
+                &upload.bucket,
+                upload.id,
+                &upload.temp_key,
+                None,
+            )
+            .await;
             return Err(err);
         }
     }
 
+    Ok(reuse_txn)
+}
+
+async fn commit_dedup_completion(
+    reuse_txn: DatabaseTransaction,
+    req: &CompleteUploadRequest<'_>,
+    upload: &file_uploads::Model,
+    s3_client: &SharedS3Client,
+    response: JsonEndpointResponse,
+) -> loco_rs::Result<JsonEndpointResponse> {
     if let Err(err) = reuse_txn.commit().await {
         best_effort_terminalize_upload_row(
             &req.ctx.db,

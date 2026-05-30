@@ -12,6 +12,7 @@ use axum::{
 };
 use casbin::{CoreApi, Enforcer, MgmtApi, RbacApi};
 use futures_util::future::BoxFuture;
+use loco_rs::auth::jwt::UserClaims;
 use loco_rs::cache;
 use sea_orm::DatabaseConnection;
 use tokio::sync::RwLock;
@@ -25,6 +26,16 @@ use crate::views::errors::{err_forbidden, err_internal, err_unauthorized};
 const WHITELIST_PATHS: &[&str] = &["/api/auth/current", "/api/users/me/menus"];
 
 const SUPER_ADMIN_ROLE: &str = "SUPER_ADMIN";
+
+// ── Shared context to avoid passing individual fields everywhere ───────────
+
+struct AuthzCtx {
+    enforcer: Arc<RwLock<Enforcer>>,
+    db: DatabaseConnection,
+    cache: Arc<cache::Cache>,
+}
+
+// ── Layer / Middleware structs (unchanged) ──────────────────────────────────
 
 #[derive(Clone)]
 pub struct CasbinAuthzLayer {
@@ -73,6 +84,8 @@ pub struct CasbinAuthzMiddleware<S> {
     cache: Arc<cache::Cache>,
 }
 
+// ── Service impl: call only dispatches ─────────────────────────────────────
+
 impl<S> Service<Request<Body>> for CasbinAuthzMiddleware<S>
 where
     S: Service<Request<Body>, Response = Response, Error = Infallible>
@@ -91,22 +104,15 @@ where
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
-        let enforcer = self.enforcer.clone();
-        let db = self.db.clone();
+        let ctx = AuthzCtx {
+            enforcer: self.enforcer.clone(),
+            db: self.db.clone(),
+            cache: self.cache.clone(),
+        };
         let jwt_secret = self.jwt_secret.clone();
-        let cache = self.cache.clone();
 
         Box::pin(async move {
-            let raw_path = req
-                .extensions()
-                .get::<MatchedPath>()
-                .map_or_else(|| req.uri().path(), MatchedPath::as_str)
-                .to_string();
-            let matched_path = if raw_path.len() > 1 && raw_path.ends_with('/') {
-                raw_path[..raw_path.len() - 1].to_string()
-            } else {
-                raw_path
-            };
+            let matched_path = extract_matched_path(&req);
 
             if WHITELIST_PATHS.contains(&matched_path.as_str()) {
                 return inner.call(req).await;
@@ -120,207 +126,280 @@ where
                 );
             };
 
+            // Try JWT first, fall back to API Key
             if let Ok(claims) = loco_rs::auth::jwt::JWT::new(&jwt_secret).validate(&token)
             {
-                let Ok(user_id) = Uuid::parse_str(&claims.claims.pid) else {
-                    return Ok(err_unauthorized("authz.invalid_token", "认证令牌无效")
-                        .into_response());
-                };
-
-                let token_pwd_iat = claims
-                    .claims
-                    .claims
-                    .get("password_iat")
-                    .and_then(serde_json::Value::as_i64)
-                    .unwrap_or(0);
-
-                let Ok(db_pwd_iat) =
-                    auth_cache::get_password_iat(&cache, &db, user_id).await
-                else {
-                    return Ok(err_unauthorized(
-                        "authz.token_validation_failed",
-                        "令牌验证失败",
-                    )
-                    .into_response());
-                };
-
-                if token_pwd_iat < db_pwd_iat {
-                    return Ok(err_unauthorized(
-                        "authz.password_changed",
-                        "密码已修改，请重新登录",
-                    )
-                    .into_response());
-                }
-
-                let Ok(user_profile) =
-                    auth_cache::get_user_profile(&cache, &db, user_id).await
-                else {
-                    return Ok(err_unauthorized(
-                        "authz.user_load_failed",
-                        "用户信息加载失败",
-                    )
-                    .into_response());
-                };
-                if user_profile.status == "disabled" {
-                    return Ok(err_forbidden("authz.account_disabled", "账号已被禁用")
-                        .into_response());
-                }
-
-                let tenant_code = match claims
-                    .claims
-                    .claims
-                    .get("tenant_code")
-                    .and_then(|value| value.as_str())
-                {
-                    Some(tenant_code) => tenant_code.to_string(),
-                    None => {
-                        return Ok(err_unauthorized(
-                            "authz.no_tenant_in_token",
-                            "令牌中缺少租户信息",
-                        )
-                        .into_response())
-                    }
-                };
-
-                let Ok(tenant) = tenants::Model::find_by_code(&db, &tenant_code).await
-                else {
-                    return Ok(err_unauthorized(
-                        "authz.tenant_not_found",
-                        "令牌中租户不存在",
-                    )
-                    .into_response());
-                };
-
-                let tenant_id = tenant.id;
-
-                let role_codes = match roles::Model::find_user_role_codes(
-                    &db, user_id, tenant_id,
+                return handle_jwt_authz(
+                    claims.claims,
+                    req,
+                    &mut inner,
+                    &ctx,
+                    &matched_path,
+                    &method,
                 )
+                .await;
+            }
+
+            handle_api_key_authz(token, req, &mut inner, &ctx, &matched_path, &method)
                 .await
-                {
-                    Ok(role_codes) => role_codes,
-                    Err(err) => {
-                        tracing::error!(error = %err, user_id = %user_id, tenant_id = %tenant_id, "failed to load user roles for authorization");
-                        return Ok(err_internal(
-                            "authz.roles_load_failed",
-                            "用户角色加载失败",
-                        )
-                        .into_response());
-                    }
-                };
-
-                let is_super_admin =
-                    role_codes.iter().any(|code| code == SUPER_ADMIN_ROLE);
-                if is_super_admin {
-                    return inner.call(req).await;
-                }
-
-                let user_id_str = user_id.to_string();
-                let tenant_id_str = tenant_id.to_string();
-
-                let allowed = {
-                    let enforcer = enforcer.read().await;
-
-                    let roles_for_user =
-                        enforcer.get_roles_for_user(&user_id_str, Some(&tenant_id_str));
-                    let policies_for_roles: Vec<Vec<String>> = roles_for_user
-                        .iter()
-                        .flat_map(|role: &String| {
-                            enforcer.get_filtered_policy(0, vec![role.clone()])
-                        })
-                        .collect();
-
-                    tracing::debug!(
-                        user_id = %user_id_str,
-                        tenant_id = %tenant_id_str,
-                        path = %matched_path,
-                        method = %method,
-                        roles = ?roles_for_user,
-                        policy_count = policies_for_roles.len(),
-                        "casbin enforce input"
-                    );
-
-                    let result = enforcer
-                        .enforce((
-                            user_id_str.as_str(),
-                            tenant_id_str.as_str(),
-                            matched_path.as_str(),
-                            method.as_str(),
-                        ))
-                        .unwrap_or(false);
-                    drop(enforcer);
-
-                    if !result {
-                        tracing::warn!(
-                            user_id = %user_id_str,
-                            tenant_id = %tenant_id_str,
-                            path = %matched_path,
-                            method = %method,
-                            roles = ?roles_for_user,
-                            policies = ?policies_for_roles,
-                            "casbin DENIED access"
-                        );
-                    }
-
-                    result
-                };
-
-                if !allowed {
-                    return Ok(err_forbidden(
-                        "authz.access_denied",
-                        format!(
-                            "无权访问 {method} {matched_path}，请联系管理员分配对应权限"
-                        ),
-                    )
-                    .into_response());
-                }
-
-                return inner.call(req).await;
-            }
-
-            let Ok(api_key_identity) = ApiKeyIdentity::authenticate(&db, &token).await
-            else {
-                return Ok(
-                    err_unauthorized("authz.api_key_invalid", "API Key 认证失败")
-                        .into_response(),
-                );
-            };
-
-            let subject = format!("apikey:{}", api_key_identity.api_key_id);
-            let tenant_id_str = api_key_identity.tenant_id.to_string();
-
-            let allowed = {
-                let enforcer = enforcer.read().await;
-                enforcer
-                    .enforce((
-                        subject.as_str(),
-                        tenant_id_str.as_str(),
-                        matched_path.as_str(),
-                        method.as_str(),
-                    ))
-                    .unwrap_or(false)
-            };
-
-            if !allowed {
-                return Ok(err_forbidden(
-                    "authz.api_key_access_denied",
-                    format!("API Key 无权访问 {method} {matched_path}"),
-                )
-                .into_response());
-            }
-
-            tracing::Span::current().record(
-                "api_key_id",
-                tracing::field::display(api_key_identity.api_key_id),
-            );
-            tracing::Span::current()
-                .record("auth_type", tracing::field::display("api_key"));
-
-            let mut req = req;
-            req.extensions_mut().insert(api_key_identity);
-
-            inner.call(req).await
         })
+    }
+}
+
+// ── JWT authentication + authorization ─────────────────────────────────────
+
+async fn handle_jwt_authz<S>(
+    claims: UserClaims,
+    req: Request<Body>,
+    inner: &mut S,
+    ctx: &AuthzCtx,
+    matched_path: &str,
+    method: &str,
+) -> Result<Response, Infallible>
+where
+    S: Service<Request<Body>, Response = Response, Error = Infallible> + Send,
+    S::Future: Send,
+{
+    let Ok(user_id) = Uuid::parse_str(&claims.pid) else {
+        return Ok(
+            err_unauthorized("authz.invalid_token", "认证令牌无效").into_response()
+        );
+    };
+
+    if let Err(resp) = verify_password_freshness(&claims, ctx, user_id).await {
+        return Ok(resp);
+    }
+
+    if let Err(resp) = verify_user_active(ctx, user_id).await {
+        return Ok(resp);
+    }
+
+    let tenant_id = match resolve_tenant(&claims, &ctx.db).await {
+        Ok(id) => id,
+        Err(resp) => return Ok(resp),
+    };
+
+    let role_codes =
+        match roles::Model::find_user_role_codes(&ctx.db, user_id, tenant_id).await {
+            Ok(codes) => codes,
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    user_id = %user_id,
+                    tenant_id = %tenant_id,
+                    "failed to load user roles for authorization"
+                );
+                return Ok(err_internal("authz.roles_load_failed", "用户角色加载失败")
+                    .into_response());
+            }
+        };
+
+    if role_codes.iter().any(|code| code == SUPER_ADMIN_ROLE) {
+        return inner.call(req).await;
+    }
+
+    let user_id_str = user_id.to_string();
+    let tenant_id_str = tenant_id.to_string();
+
+    if !casbin_enforce(
+        &ctx.enforcer,
+        &user_id_str,
+        &tenant_id_str,
+        matched_path,
+        method,
+    )
+    .await
+    {
+        return Ok(err_forbidden(
+            "authz.access_denied",
+            format!("无权访问 {method} {matched_path}，请联系管理员分配对应权限"),
+        )
+        .into_response());
+    }
+
+    inner.call(req).await
+}
+
+// ── API Key authentication + authorization ─────────────────────────────────
+
+async fn handle_api_key_authz<S>(
+    token: String,
+    mut req: Request<Body>,
+    inner: &mut S,
+    ctx: &AuthzCtx,
+    matched_path: &str,
+    method: &str,
+) -> Result<Response, Infallible>
+where
+    S: Service<Request<Body>, Response = Response, Error = Infallible> + Send,
+    S::Future: Send,
+{
+    let Ok(api_key_identity) = ApiKeyIdentity::authenticate(&ctx.db, &token).await else {
+        return Ok(
+            err_unauthorized("authz.api_key_invalid", "API Key 认证失败").into_response(),
+        );
+    };
+
+    let subject = format!("apikey:{}", api_key_identity.api_key_id);
+    let tenant_id_str = api_key_identity.tenant_id.to_string();
+
+    if !casbin_enforce(
+        &ctx.enforcer,
+        &subject,
+        &tenant_id_str,
+        matched_path,
+        method,
+    )
+    .await
+    {
+        return Ok(err_forbidden(
+            "authz.api_key_access_denied",
+            format!("API Key 无权访问 {method} {matched_path}"),
+        )
+        .into_response());
+    }
+
+    tracing::Span::current().record(
+        "api_key_id",
+        tracing::field::display(api_key_identity.api_key_id),
+    );
+    tracing::Span::current().record("auth_type", tracing::field::display("api_key"));
+
+    req.extensions_mut().insert(api_key_identity);
+    inner.call(req).await
+}
+
+// ── Fine-grained helpers ───────────────────────────────────────────────────
+
+/// Verify token `password_iat` is not older than DB record.
+async fn verify_password_freshness(
+    claims: &UserClaims,
+    ctx: &AuthzCtx,
+    user_id: Uuid,
+) -> Result<(), Response> {
+    let token_pwd_iat = claims
+        .claims
+        .get("password_iat")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
+
+    let db_pwd_iat = auth_cache::get_password_iat(&ctx.cache, &ctx.db, user_id)
+        .await
+        .map_err(|_| {
+            err_unauthorized("authz.token_validation_failed", "令牌验证失败")
+                .into_response()
+        })?;
+
+    if token_pwd_iat < db_pwd_iat {
+        return Err(
+            err_unauthorized("authz.password_changed", "密码已修改，请重新登录")
+                .into_response(),
+        );
+    }
+
+    Ok(())
+}
+
+/// Verify user account is not disabled.
+async fn verify_user_active(ctx: &AuthzCtx, user_id: Uuid) -> Result<(), Response> {
+    let profile = auth_cache::get_user_profile(&ctx.cache, &ctx.db, user_id)
+        .await
+        .map_err(|_| {
+            err_unauthorized("authz.user_load_failed", "用户信息加载失败").into_response()
+        })?;
+
+    if profile.status == "disabled" {
+        return Err(
+            err_forbidden("authz.account_disabled", "账号已被禁用").into_response()
+        );
+    }
+
+    Ok(())
+}
+
+/// Parse `tenant_code` from claims and look up `tenant_id`.
+async fn resolve_tenant(
+    claims: &UserClaims,
+    db: &DatabaseConnection,
+) -> Result<Uuid, Response> {
+    let tenant_code = claims
+        .claims
+        .get("tenant_code")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| {
+            err_unauthorized("authz.no_tenant_in_token", "令牌中缺少租户信息")
+                .into_response()
+        })?
+        .to_string();
+
+    let tenant = tenants::Model::find_by_code(db, &tenant_code)
+        .await
+        .map_err(|_| {
+            err_unauthorized("authz.tenant_not_found", "令牌中租户不存在").into_response()
+        })?;
+
+    Ok(tenant.id)
+}
+
+/// Call Casbin enforcer and emit debug/warn logs.
+async fn casbin_enforce(
+    enforcer: &Arc<RwLock<Enforcer>>,
+    subject: &str,
+    tenant_id: &str,
+    path: &str,
+    method: &str,
+) -> bool {
+    let enforcer = enforcer.read().await;
+
+    let roles_for_user = enforcer.get_roles_for_user(subject, Some(tenant_id));
+    let policies_for_roles: Vec<Vec<String>> = roles_for_user
+        .iter()
+        .flat_map(|role: &String| enforcer.get_filtered_policy(0, vec![role.clone()]))
+        .collect();
+
+    tracing::debug!(
+        subject = %subject,
+        tenant_id = %tenant_id,
+        path = %path,
+        method = %method,
+        roles = ?roles_for_user,
+        policy_count = policies_for_roles.len(),
+        "casbin enforce input"
+    );
+
+    let result = enforcer
+        .enforce((subject, tenant_id, path, method))
+        .unwrap_or(false);
+
+    if !result {
+        tracing::warn!(
+            subject = %subject,
+            tenant_id = %tenant_id,
+            path = %path,
+            method = %method,
+            roles = ?roles_for_user,
+            policies = ?policies_for_roles,
+            "casbin DENIED access"
+        );
+    }
+
+    drop(enforcer);
+    result
+}
+
+// ── Path / token extraction utilities ──────────────────────────────────────
+
+fn extract_matched_path(req: &Request<Body>) -> String {
+    let raw = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map_or_else(|| req.uri().path(), MatchedPath::as_str)
+        .to_string();
+
+    if raw.len() > 1 && raw.ends_with('/') {
+        raw[..raw.len() - 1].to_string()
+    } else {
+        raw
     }
 }
 
