@@ -6,6 +6,7 @@ use crate::views::errors::err_bad_request;
 const B3_PREFIX: &str = "b3:";
 const B3_HEX_LEN: usize = 64;
 
+#[must_use]
 pub fn format_b3_hash(hash: &blake3::Hash) -> String {
     format!("{B3_PREFIX}{}", hash.to_hex())
 }

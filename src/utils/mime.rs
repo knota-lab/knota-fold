@@ -5,6 +5,7 @@ pub const MIME_BLACKLIST: &[&str] = &[
     "application/x-elf",
 ];
 
+#[must_use]
 pub fn detect_mime(bytes: &[u8]) -> &'static str {
     tree_magic_mini::from_u8(bytes)
 }
@@ -14,7 +15,7 @@ pub fn detect_mime(bytes: &[u8]) -> &'static str {
 /// Wave 2a R2: pulled out of `file_service::small_upload` as a pure
 /// function so the blacklist enforcement logic can be unit-tested
 /// independently of `detect_mime` (whose detection coverage on synthetic
-/// payloads is limited under tree_magic_mini v3 — see `tests/requests/files.rs`).
+/// payloads is limited under `tree_magic_mini` v3 — see `tests/requests/files.rs`).
 #[must_use]
 pub fn is_blacklisted(mime: &str) -> bool {
     MIME_BLACKLIST.contains(&mime)

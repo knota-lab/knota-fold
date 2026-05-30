@@ -11,7 +11,7 @@ use crate::views::permissions::{
     PermissionResponse, SyncPermissionsRequest, UpdatePermissionRequest,
 };
 
-/// Cached OpenAPI spec used by metadata-enriched permission endpoints.
+/// Cached `OpenAPI` spec used by metadata-enriched permission endpoints.
 ///
 /// At **runtime** the loco-openapi initializer stores the merged spec in a
 /// global `OPENAPI_SPEC`; we read it via `get_openapi_spec()`.
@@ -59,9 +59,10 @@ fn register_all_controller_routes() {
     let _ = controllers::role_templates::routes();
 }
 
-/// Public accessor for the cached OpenAPI spec.
-/// Used by other controllers (e.g. roles::assignable_permissions) to get
+/// Public accessor for the cached `OpenAPI` spec.
+/// Used by other controllers (e.g. `roles::assignable_permissions`) to get
 /// the spec for building metadata-enriched permission responses.
+#[must_use]
 pub fn get_openapi_spec_ref() -> &'static utoipa::openapi::OpenApi {
     init_openapi_spec()
 }

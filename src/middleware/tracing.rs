@@ -16,23 +16,23 @@ use tower::{Layer, Service};
 use tracing::Instrument;
 use uuid::Uuid;
 
-/// Newtype for trace_id stored in request extensions.
+/// Newtype for `trace_id` stored in request extensions.
 ///
 /// Set by [`TracingLayer`] before controllers run.
 /// Read by [`crate::extractors::request_meta::RequestMeta`].
 #[derive(Clone, Debug)]
 pub struct TraceId(pub String);
 
-/// Newtype for request_id stored in request extensions.
+/// Newtype for `request_id` stored in request extensions.
 ///
 /// Set by [`TracingLayer`] before controllers run.
 /// Read by [`crate::extractors::request_meta::RequestMeta`].
 #[derive(Clone, Debug)]
 pub struct RequestId(pub String);
 
-/// Extract user_id (pid) and tenant_code from a JWT token without signature
+/// Extract `user_id` (pid) and `tenant_code` from a JWT token without signature
 /// verification. For logging purposes only — security enforcement happens in
-/// CasbinAuthzLayer.
+/// `CasbinAuthzLayer`.
 fn extract_jwt_claims(token: &str) -> Option<(String, String)> {
     use base64::Engine;
     let parts: Vec<&str> = token.split('.').collect();
@@ -65,7 +65,7 @@ fn extract_jwt_claims(token: &str) -> Option<(String, String)> {
 ///
 /// Priority:
 /// 1. `X-Forwarded-For` first entry (reverse proxy)
-/// 2. `X-Real-IP` (nginx/proxy_protocol)
+/// 2. `X-Real-IP` (`nginx/proxy_protocol`)
 /// 3. `ConnectInfo<SocketAddr>` (direct connection)
 fn extract_ip(req: &Request<Body>) -> Option<String> {
     // Try header-based extraction first (behind reverse proxy).
@@ -88,8 +88,8 @@ fn extract_ip(req: &Request<Body>) -> Option<String> {
 /// Tower layer that injects distributed tracing context into every request.
 ///
 /// Responsibilities:
-/// - Reads `X-Trace-Id` header (validated) or generates a fresh UUIDv4
-/// - Generates a new UUIDv7 as `request_id`
+/// - Reads `X-Trace-Id` header (validated) or generates a fresh `UUIDv4`
+/// - Generates a new `UUIDv7` as `request_id`
 /// - Stores both as typed extensions on the request
 /// - Creates the root `http.request` tracing span with `trace_id` and `request_id` fields
 /// - Echoes `X-Trace-Id` back in the response header

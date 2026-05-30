@@ -45,13 +45,15 @@ const fn default_max_body() -> usize {
 
 impl AppLogsConfig {
     /// Read from `settings.appLogs` section of loco config.
+    #[must_use]
     pub fn from_settings(settings: &serde_json::Value) -> Option<Self> {
         settings
             .get("appLogs")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
 
-    /// Convert capture_level string to tracing LevelFilter.
+    /// Convert `capture_level` string to tracing `LevelFilter`.
+    #[must_use]
     pub fn level_filter(&self) -> tracing::Level {
         match self.capture_level.as_str() {
             "debug" => tracing::Level::DEBUG,

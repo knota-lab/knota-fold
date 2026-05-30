@@ -69,7 +69,7 @@ pub async fn list_sessions(
         .db_err()
 }
 
-/// Delete a session, all its messages, and associated chat_memory vectors.
+/// Delete a session, all its messages, and associated `chat_memory` vectors.
 #[tracing::instrument(skip(db, memory_store))]
 pub async fn delete_session(
     db: &DatabaseConnection,

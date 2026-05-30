@@ -17,7 +17,7 @@ pub struct LogEntry {
 
 #[derive(Debug)]
 pub enum EntryPayload {
-    /// Sent by TracingLayer on request completion → request_logs table.
+    /// Sent by `TracingLayer` on request completion → `request_logs` table.
     RequestSummary {
         request_id: String,
         method: String,
@@ -30,7 +30,7 @@ pub enum EntryPayload {
         ip_address: Option<String>,
         error: Option<String>,
     },
-    /// Sent on span close → trace_spans table.
+    /// Sent on span close → `trace_spans` table.
     SpanClose {
         span_id: String,
         parent_span_id: Option<String>,
@@ -40,7 +40,7 @@ pub enum EntryPayload {
         duration_ms: i64,
         fields_json: Option<String>,
     },
-    /// Sent on tracing event → log_entries table.
+    /// Sent on tracing event → `log_entries` table.
     LogLine {
         span_id: Option<String>,
         level: String,
@@ -84,6 +84,7 @@ impl LogEntry {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn span_close(
         trace_id: String,
         span_id: String,
@@ -109,6 +110,7 @@ impl LogEntry {
         }
     }
 
+    #[must_use]
     pub fn log_line(
         trace_id: String,
         span_id: Option<String>,
@@ -162,7 +164,7 @@ struct ActiveSpan {
     fields_json: Option<String>,
 }
 
-/// Extension stored in each span so child spans/events can find trace_id O(1).
+/// Extension stored in each span so child spans/events can find `trace_id` O(1).
 #[derive(Clone)]
 pub struct TracedId(pub String);
 
@@ -170,15 +172,16 @@ pub struct TracedId(pub String);
 
 pub struct SqliteTracingLayer {
     sender: LogSender,
-    /// Active spans: tracing internal Id → ActiveSpan metadata.
+    /// Active spans: tracing internal Id → `ActiveSpan` metadata.
     active_spans: Mutex<HashMap<u64, ActiveSpan>>,
-    /// Minimum log level to capture for LogLine entries.
+    /// Minimum log level to capture for `LogLine` entries.
     capture_level: tracing::Level,
-    /// Whether to capture LogLine entries at all.
+    /// Whether to capture `LogLine` entries at all.
     capture_log_entries: bool,
 }
 
 impl SqliteTracingLayer {
+    #[must_use]
     pub fn new(
         sender: LogSender,
         capture_level: tracing::Level,
@@ -360,7 +363,7 @@ where
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-/// Walk the span chain upward to find a TracedId extension.
+/// Walk the span chain upward to find a `TracedId` extension.
 fn extract_trace_id_from_context<S>(ctx: &Context<'_, S>, id: &Id) -> String
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
@@ -397,7 +400,7 @@ struct SpanFieldExtractor {
     parent_span_id: Option<String>,
     api_key_id: Option<String>,
     auth_type: Option<String>,
-    /// All other fields collected as key-value pairs for fields_json persistence.
+    /// All other fields collected as key-value pairs for `fields_json` persistence.
     extra: serde_json::Map<String, serde_json::Value>,
 }
 

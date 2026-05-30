@@ -224,6 +224,7 @@ pub mod authz {
     }
 
     /// 403 — 仅超级管理员可操作（service/helper 层，返回 Error）
+    #[must_use]
     pub fn err_super_admin_required() -> Error {
         err_forbidden("authz.super_admin_required", "仅超级管理员可操作")
     }
@@ -244,6 +245,7 @@ pub mod role {
     }
 
     /// 403 — 分配超出自身范围的权限（service 层）
+    #[must_use]
     pub fn err_out_of_scope_permissions() -> Error {
         err_forbidden(
             "role.out_of_scope_permissions",
@@ -252,6 +254,7 @@ pub mod role {
     }
 
     /// 403 — 分配超出自身范围的菜单（service 层）
+    #[must_use]
     pub fn err_out_of_scope_menus() -> Error {
         err_forbidden("role.out_of_scope_menus", "不能分配超出自身范围的菜单")
     }
@@ -292,11 +295,13 @@ pub mod dict {
     use super::{err_forbidden, Error};
 
     /// 403 — 无权操作此字典类型
+    #[must_use]
     pub fn err_type_forbidden() -> Error {
         err_forbidden("dict.type_forbidden", "无权操作此字典类型")
     }
 
     /// 403 — 无权操作此字典项
+    #[must_use]
     pub fn err_item_forbidden() -> Error {
         err_forbidden("dict.item_forbidden", "无权操作此字典项")
     }
@@ -307,16 +312,19 @@ pub mod api_key {
     use super::{err_unauthorized, Error};
 
     /// 401 — API 密钥无效或已失效
+    #[must_use]
     pub fn err_invalid() -> Error {
         err_unauthorized("api_key.invalid", "API密钥无效或已失效")
     }
 
     /// 401 — API 密钥所属租户已停用
+    #[must_use]
     pub fn err_tenant_inactive() -> Error {
         err_unauthorized("api_key.tenant_inactive", "API密钥所属租户已停用")
     }
 
     /// 401 — 超级管理员角色不允许使用 API 密钥
+    #[must_use]
     pub fn err_super_admin_not_allowed() -> Error {
         err_unauthorized(
             "api_key.super_admin_not_allowed",
@@ -338,6 +346,7 @@ pub mod sys_config {
     }
 
     /// 403 — 仅超级管理员可管理其他租户的配置（service/helper 层）
+    #[must_use]
     pub fn err_super_admin_required() -> Error {
         err_forbidden(
             "sys_config.super_admin_required",
@@ -364,41 +373,49 @@ pub mod auth {
     use super::{err_unauthorized, Error};
 
     /// 401 — 无效的认证令牌
+    #[must_use]
     pub fn err_invalid_token() -> Error {
         err_unauthorized("auth.invalid_token", "无效的认证令牌")
     }
 
     /// 401 — 令牌中的用户ID无效
+    #[must_use]
     pub fn err_invalid_user_id() -> Error {
         err_unauthorized("auth.invalid_user_id", "令牌中的用户ID无效")
     }
 
     /// 401 — 密码已修改，请重新登录
+    #[must_use]
     pub fn err_password_changed() -> Error {
         err_unauthorized("auth.password_changed", "密码已修改，请重新登录")
     }
 
     /// 401 — 令牌中缺少租户编码
+    #[must_use]
     pub fn err_missing_tenant_code() -> Error {
         err_unauthorized("auth.missing_tenant_code", "令牌中缺少租户编码")
     }
 
     /// 401 — 租户不存在
+    #[must_use]
     pub fn err_tenant_not_found(code: &str) -> Error {
         err_unauthorized("auth.tenant_not_found", format!("租户不存在: {code}"))
     }
 
     /// 401 — 租户已停用
+    #[must_use]
     pub fn err_tenant_inactive(code: &str) -> Error {
         err_unauthorized("auth.tenant_inactive", format!("租户已停用: {code}"))
     }
 
     /// 401 — 缺少认证请求头
+    #[must_use]
     pub fn err_missing_auth_header() -> Error {
         err_unauthorized("auth.missing_auth_header", "缺少认证请求头")
     }
 
     /// 401 — 认证请求头格式无效
+    #[must_use]
     pub fn err_invalid_auth_header() -> Error {
         err_unauthorized("auth.invalid_auth_header", "认证请求头格式无效")
     }

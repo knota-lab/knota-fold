@@ -17,6 +17,7 @@ pub struct RoleTemplateResponse {
 }
 
 impl RoleTemplateResponse {
+    #[must_use]
     pub fn from_model(m: &sys_role_templates::Model) -> Self {
         Self {
             id: m.id.to_string(),

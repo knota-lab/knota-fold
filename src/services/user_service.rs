@@ -396,7 +396,7 @@ pub async fn create_tenant_admin(
     Ok(user)
 }
 
-/// Count active users who hold the SUPER_ADMIN role (across all tenants).
+/// Count active users who hold the `SUPER_ADMIN` role (across all tenants).
 async fn count_active_super_admins(db: &DatabaseConnection) -> loco_rs::Result<u64> {
     // Find all role IDs with code SUPER_ADMIN
     let super_admin_roles = roles::Entity::find()
@@ -451,7 +451,7 @@ async fn load_tenant_info(
         .collect())
 }
 
-/// Create a super admin user in the DEFAULT tenant with SUPER_ADMIN role.
+/// Create a super admin user in the DEFAULT tenant with `SUPER_ADMIN` role.
 #[tracing::instrument(skip_all)]
 pub async fn create_super_admin(
     db: &DatabaseConnection,

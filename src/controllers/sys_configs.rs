@@ -204,7 +204,7 @@ pub(crate) async fn delete_current_tenant_override(
 
 // ── Super-admin cross-tenant override management (by tenant_code) ────────────
 
-/// Resolve a tenant_code to UUID, requiring super-admin privileges.
+/// Resolve a `tenant_code` to UUID, requiring super-admin privileges.
 async fn require_super_admin_and_resolve_tenant(
     tc: &TenantContext,
     ctx: &AppContext,
@@ -418,7 +418,7 @@ pub fn tenant_routes() -> Routes {
         )
 }
 
-/// Super-admin cross-tenant override routes (target tenant via path tenant_code).
+/// Super-admin cross-tenant override routes (target tenant via path `tenant_code`).
 pub fn super_admin_routes() -> Routes {
     Routes::new()
         .prefix("/api/sys/tenants")

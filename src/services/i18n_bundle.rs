@@ -1,4 +1,4 @@
-//! Bundle resolution, ETag computation, cache management, and revision bookkeeping.
+//! Bundle resolution, `ETag` computation, cache management, and revision bookkeeping.
 //!
 //! ## Resolution model
 //!
@@ -10,7 +10,7 @@
 //! 2. Tenant overrides (`scope='tenant'`, `tenant_id=$1`) — win on conflict
 //! 3. Base-locale fallback (`zh-CN`) — fills gaps when target locale is missing
 //!
-//! ## ETag formula
+//! ## `ETag` formula
 //!
 //! `ETag = "{global_revision}-{tenant_revision}"`
 //!
@@ -24,7 +24,7 @@
 //! Any GLOBAL write to `(locale, namespace)` increments:
 //! - that GLOBAL revision row, AND
 //! - **every existing TENANT revision row for the same (locale, namespace)**
-//!   so cached tenant ETags also invalidate.
+//!   so cached tenant `ETags` also invalidate.
 //!
 //! TENANT writes only bump the tenant revision row.
 
@@ -189,7 +189,7 @@ fn etag_for_bundle(b: &BundleResponse) -> String {
     format!("\"v{BUNDLE_SHAPE_VERSION}-{}\"", b.revision)
 }
 
-/// Cheap pre-flight ETag (no bundle materialization). Used for `If-None-Match`.
+/// Cheap pre-flight `ETag` (no bundle materialization). Used for `If-None-Match`.
 #[tracing::instrument(skip_all)]
 pub async fn compute_etag(
     ctx: &AppContext,
@@ -213,7 +213,7 @@ pub async fn compute_etag(
 // ── Bundle resolution ───────────────────────────────────────────────────────
 
 /// Resolve a bundle for `(locale, namespace, tenant_id)`. Returns the bundle
-/// AND the ETag string (so callers can set the response header).
+/// AND the `ETag` string (so callers can set the response header).
 #[tracing::instrument(skip_all)]
 pub async fn resolve_bundle(
     ctx: &AppContext,

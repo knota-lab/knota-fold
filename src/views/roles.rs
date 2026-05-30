@@ -20,6 +20,7 @@ pub struct RoleResponse {
 }
 
 impl RoleResponse {
+    #[must_use]
     pub fn from_model(m: &roles::Model, tenant_code: &str, tenant_name: &str) -> Self {
         Self {
             id: m.id.to_string(),
@@ -93,7 +94,7 @@ pub struct ToggleRoleStatusRequest {
     pub status: String,
 }
 
-/// Query parameters for GET /api/roles with optional tenant_code filter
+/// Query parameters for GET /api/roles with optional `tenant_code` filter
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleListParams {

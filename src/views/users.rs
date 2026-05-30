@@ -25,6 +25,7 @@ pub struct UserResponse {
 }
 
 impl UserResponse {
+    #[must_use]
     pub fn from_model(m: &users::Model, tenant_code: &str, tenant_name: &str) -> Self {
         Self {
             id: m.id.to_string(),
@@ -45,6 +46,7 @@ impl UserResponse {
     /// login-guard cache. Only `unlock_at_epoch.is_some()` implies an
     /// actually-active lock; the field is `None` for non-locked accounts
     /// so the JSON is small (camelCase `unlockAtEpoch` is `null`).
+    #[must_use]
     pub fn from_model_with_lock(
         m: &users::Model,
         tenant_code: &str,

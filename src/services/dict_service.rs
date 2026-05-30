@@ -824,8 +824,8 @@ fn flip_status(current: &str) -> String {
     }
 }
 
-/// Resolve a type_code to the base dict_type_id for item queries.
-/// System types take precedence; falls back to tenant_only type.
+/// Resolve a `type_code` to the base `dict_type_id` for item queries.
+/// System types take precedence; falls back to `tenant_only` type.
 async fn resolve_type_id_by_code(
     db: &DatabaseConnection,
     tenant_id: Option<Uuid>,
@@ -860,7 +860,7 @@ async fn resolve_type_id_by_code(
     ))
 }
 
-/// Resolve a type_id to base type_id (follow source_type_id if override type).
+/// Resolve a `type_id` to base `type_id` (follow `source_type_id` if override type).
 async fn resolve_base_type_id(
     db: &DatabaseConnection,
     type_id: Uuid,
@@ -939,7 +939,7 @@ async fn create_type_override(
         .model_err()
 }
 
-/// Create a type override with explicit status (bypasses create_dict_type which forces "active").
+/// Create a type override with explicit status (bypasses `create_dict_type` which forces "active").
 /// Used when tenant toggles a system type to disabled — needs override row with disabled status.
 async fn create_type_override_with_status(
     db: &DatabaseConnection,
@@ -1046,7 +1046,7 @@ async fn create_item_override(
         .model_err()
 }
 
-/// Create item override with explicit status (bypasses create_dict_item which forces "active").
+/// Create item override with explicit status (bypasses `create_dict_item` which forces "active").
 /// Used when tenant toggles a system item to disabled.
 async fn create_item_override_with_status(
     db: &DatabaseConnection,
@@ -1079,7 +1079,7 @@ async fn create_item_override_with_status(
 // ══════════════════════════════════════════════
 
 /// Build tree from plain models (super admin view — system items only).
-/// Sorted by sort_order in memory.
+/// Sorted by `sort_order` in memory.
 fn build_model_tree(
     all_items: &[dict_items::Model],
     parent_id: Option<Uuid>,
@@ -1100,8 +1100,8 @@ fn build_model_tree(
 }
 
 /// Build tree from effective items (tenant view).
-/// Uses base_item_id for parent-child matching: parent_id references the system item id,
-/// and base_item_id = COALESCE(source_item_id, id) normalizes identities.
+/// Uses `base_item_id` for parent-child matching: `parent_id` references the system item id,
+/// and `base_item_id` = `COALESCE(source_item_id`, id) normalizes identities.
 fn build_effective_tree(
     all_items: &[EffectiveDictItem],
     parent_base_id: Option<Uuid>,

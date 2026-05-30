@@ -1,7 +1,7 @@
-//! SQLite WAL mode initializer.
+//! `SQLite` WAL mode initializer.
 //!
 //! Enables Write-Ahead Logging on the main database so that concurrent readers
-//! do not block writers and vice-versa. Without WAL, SQLite uses exclusive
+//! do not block writers and vice-versa. Without WAL, `SQLite` uses exclusive
 //! write locks that cause "database is locked" errors when the QA pipeline
 //! holds a long-lived connection while the frontend executor calls a write
 //! endpoint (e.g. `POST /api/users`).

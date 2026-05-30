@@ -1,7 +1,9 @@
 //! Manifest ingestion service — receives the extractor output and reconciles
-//! `i18n_entries` + `i18n_entry_locations` accordingly. Always force-syncs the
-//! zh-CN baseline translation from inline source defaults
-//! (`t('Ns.key', '中文')`) — the frontend source code is the source of truth.
+//! `i18n_entries` + `i18n_entry_locations` accordingly.
+//!
+//! Always force-syncs the zh-CN baseline translation from inline source
+//! defaults (`t('Ns.key', '中文')`) — the frontend source code is the source
+//! of truth.
 //!
 //! Behavior contract (per `system-design/国际化.md` §13):
 //!

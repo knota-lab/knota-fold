@@ -23,6 +23,7 @@ pub struct AuditContext {
 }
 
 impl AuditContext {
+    #[must_use]
     pub fn from_request(tc: &TenantContext, meta: &RequestMeta) -> Self {
         Self {
             trace_id: Some(meta.trace_id.clone()),
@@ -56,6 +57,7 @@ pub enum AuditAction {
 }
 
 impl AuditAction {
+    #[must_use]
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Create => "create",
@@ -449,6 +451,7 @@ pub struct DiffEntry {
 }
 
 impl AuditLogResponse {
+    #[must_use]
     pub fn from_model(m: &audit_logs::Model) -> Self {
         let diff = compute_diff(m.before_state.as_ref(), m.after_state.as_ref());
 
@@ -473,7 +476,7 @@ impl AuditLogResponse {
     }
 }
 
-/// Compute field-level diff between before_state and after_state JSON objects.
+/// Compute field-level diff between `before_state` and `after_state` JSON objects.
 fn compute_diff(
     before: Option<&serde_json::Value>,
     after: Option<&serde_json::Value>,

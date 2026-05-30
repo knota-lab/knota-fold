@@ -58,6 +58,7 @@ pub async fn hybrid_search(
 }
 
 /// Convert search results to citations.
+#[must_use]
 pub fn results_to_citations(results: &[SearchResult]) -> Vec<Citation> {
     results
         .iter()

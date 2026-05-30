@@ -12,9 +12,10 @@ use crate::views::i18n::{
     KeyEntryResponse, KeyListResponse, KeyLocaleValue, NamespaceSummaryResponse,
 };
 
-/// List namespaces with per-namespace key/locale counts. Powers the matrix
-/// admin UI which renders one parent row per namespace, then lazy-loads the
-/// `(key × locale)` grid via [`list_global_keys`] /
+/// List namespaces with per-namespace key/locale counts.
+///
+/// Powers the matrix admin UI which renders one parent row per namespace,
+/// then lazy-loads the `(key × locale)` grid via [`list_global_keys`] /
 /// [`list_tenant_keys`] when expanded.
 ///
 /// Filtering rule:

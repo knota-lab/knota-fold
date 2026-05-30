@@ -131,7 +131,7 @@ pub struct IndexMessageParams {
 /// Index (vectorize + upsert) a chat message into the `chat_memory` Qdrant collection.
 ///
 /// This should be called asynchronously (fire-and-forget via `tokio::spawn`)
-/// after persisting the message to SQLite.
+/// after persisting the message to `SQLite`.
 #[tracing::instrument(skip(embedding_client, memory_provider, params))]
 pub async fn index_message(
     embedding_client: &rig::providers::openai::Client,
@@ -194,7 +194,7 @@ struct VectorRecallParams<'a> {
     top_k: usize,
 }
 
-/// Core vector recall: hybrid search (dense + sparse + RRF) on chat_memory collection.
+/// Core vector recall: hybrid search (dense + sparse + RRF) on `chat_memory` collection.
 async fn vector_recall(
     embedding_client: &rig::providers::openai::Client,
     memory_provider: &qdrant_client::Qdrant,
@@ -324,8 +324,8 @@ pub struct RecallHistoryParams<'a> {
 /// Recall relevant history messages based on intent-driven strategy (§19.7.5).
 ///
 /// Dispatches to the appropriate retrieval method based on `HistoryStrategy`.
-/// The DB messages are passed in for strategies that read directly from SQLite
-/// (ReadOriginalMaterial, Hybrid recent_turns).
+/// The DB messages are passed in for strategies that read directly from `SQLite`
+/// (`ReadOriginalMaterial`, Hybrid `recent_turns`).
 #[tracing::instrument(skip(
     embedding_client,
     memory_provider,
@@ -524,7 +524,8 @@ pub async fn delete_by_session(
 }
 
 /// Format recalled context into a text block for injection into the LLM prompt.
-/// Handles all three context types: relevant_messages, recent_turns, original_material_messages.
+/// Handles all three context types: `relevant_messages`, `recent_turns`, `original_material_messages`.
+#[must_use]
 pub fn format_recalled_context(ctx: &RecalledContext) -> String {
     let mut parts = Vec::new();
 

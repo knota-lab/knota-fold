@@ -4,6 +4,7 @@ use loco_rs::{
     environment::Environment,
 };
 
+#[must_use]
 pub fn openapi_initializer(ctx: &AppContext) -> Option<Box<dyn Initializer>> {
     if ctx.environment == Environment::Test {
         return None;

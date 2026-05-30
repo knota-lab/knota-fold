@@ -77,14 +77,17 @@ fn truncate_preview(content: &str) -> String {
 }
 
 impl MaterialRegistry {
+    #[must_use]
     pub fn get_document(&self, id: &Uuid) -> Option<&DocumentContent> {
         self.documents.get(id)
     }
 
+    #[must_use]
     pub fn get_inline(&self, id: &str) -> Option<&InlineText> {
         self.inline_texts.iter().find(|t| t.id == id)
     }
 
+    #[must_use]
     pub fn all_materials(&self) -> Vec<MaterialSummary> {
         self.registration_order
             .iter()
@@ -115,6 +118,7 @@ impl MaterialRegistry {
             .collect()
     }
 
+    #[must_use]
     pub fn registration_order_ids(&self) -> Vec<String> {
         self.registration_order
             .iter()

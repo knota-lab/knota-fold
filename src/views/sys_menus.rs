@@ -21,6 +21,7 @@ pub struct SysMenuResponse {
 }
 
 impl SysMenuResponse {
+    #[must_use]
     pub fn from_model(m: &crate::models::_entities::sys_menus::Model) -> Self {
         Self {
             id: m.id.to_string(),
@@ -61,6 +62,7 @@ pub struct SysMenuTreeResponse {
 }
 
 impl SysMenuTreeResponse {
+    #[must_use]
     pub fn from_model(
         m: &crate::models::_entities::sys_menus::Model,
         children: Vec<Self>,

@@ -12,7 +12,7 @@ use super::{
 /// How long a resolved entry is retained for idempotent duplicate detection.
 const RESOLVED_TTL: Duration = Duration::from_secs(60);
 
-/// Internal entry stored in the DashMap.
+/// Internal entry stored in the `DashMap`.
 enum BrokerEntry {
     /// Waiting for the frontend to POST the result.
     Pending(oneshot::Sender<Result<ToolResult, super::ReceiverError>>),
@@ -39,6 +39,7 @@ impl Default for InProcessBroker {
 }
 
 impl InProcessBroker {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             map: DashMap::new(),

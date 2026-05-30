@@ -21,7 +21,7 @@ pub struct S3Config {
     pub bucket: String,
     pub access_key: String,
     pub secret_key: String,
-    /// Required for MinIO and most S3-compatible backends. Production AWS S3
+    /// Required for `MinIO` and most S3-compatible backends. Production AWS S3
     /// can set this to `false` for virtual-hosted style URLs.
     #[serde(default = "default_force_path_style")]
     pub force_path_style: bool,

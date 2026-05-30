@@ -31,11 +31,11 @@ pub type SharedParserChain = Arc<Vec<Box<dyn DocumentParser>>>;
 pub type SessionLockMap = Arc<Mutex<HashMap<Uuid, Arc<Mutex<()>>>>>;
 
 /// Tracks in-progress compaction tasks to prevent duplicate runs for the same session.
-/// Key: session_id, Value: `true` while a compaction task is running.
+/// Key: `session_id`, Value: `true` while a compaction task is running.
 pub type CompactionGuard = Arc<DashMap<Uuid, bool>>;
 
-/// Wrapper holding the raw Qdrant client and collection name for the chat_memory collection.
-/// The memory_service uses this directly because its payload schema differs from kb_chunks.
+/// Wrapper holding the raw Qdrant client and collection name for the `chat_memory` collection.
+/// The `memory_service` uses this directly because its payload schema differs from `kb_chunks`.
 pub struct ChatMemoryStore {
     pub client: qdrant_client::Qdrant,
     pub collection_name: String,

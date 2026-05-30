@@ -25,6 +25,7 @@ pub struct WorkerDefinitionResponse {
 }
 
 impl WorkerDefinitionResponse {
+    #[must_use]
     pub fn from_model(m: &scheduled_worker_definitions::Model) -> Self {
         Self {
             id: m.id.to_string(),
@@ -87,6 +88,7 @@ pub struct WorkerGrantResponse {
 }
 
 impl WorkerGrantResponse {
+    #[must_use]
     pub fn from_model(m: &scheduled_worker_tenant_grants::Model) -> Self {
         Self {
             id: m.id.to_string(),
@@ -133,6 +135,7 @@ pub struct WorkerScheduleResponse {
 }
 
 impl WorkerScheduleResponse {
+    #[must_use]
     pub fn from_model(m: &scheduled_worker_schedules::Model) -> Self {
         Self {
             id: m.id.to_string(),
@@ -209,6 +212,7 @@ pub struct WorkerExecutionResponse {
 }
 
 impl WorkerExecutionResponse {
+    #[must_use]
     pub fn from_model(m: &scheduled_worker_executions::Model) -> Self {
         Self {
             id: m.id.to_string(),

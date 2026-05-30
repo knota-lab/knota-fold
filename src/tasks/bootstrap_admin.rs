@@ -1,6 +1,6 @@
 //! Bootstrap super-admin user task.
 //!
-//! Creates a single admin user and assigns the SUPER_ADMIN role.
+//! Creates a single admin user and assigns the `SUPER_ADMIN` role.
 //! Idempotent — if the email already exists the task exits silently.
 //!
 //! # Usage

@@ -65,10 +65,11 @@ const MAX_PROXY_DOWNLOAD_BYTES: i64 = 100 * 1024 * 1024; // 100 MiB
 const PROBE_BELOW_THRESHOLD_MESSAGE: &str = "Probe requires fileSize >= 32 MiB. Use /api/files (small <=5MiB) or /api/file-uploads (multipart >5MiB) directly.";
 const DOWNLOAD_URL_TTL_SECONDS: u64 = 3600;
 pub const GRACE_PERIOD_HOURS: i64 = 24;
-/// Second grace window applied to file_references detachments. A file is
-/// only purgeable when ALL its references have been detached for at least
-/// this many hours, so a quick detach-then-reattach by the business layer
-/// still finds the underlying object intact.
+/// Second grace window applied to `file_references` detachments.
+///
+/// A file is only purgeable when ALL its references have been detached for
+/// at least this many hours, so a quick detach-then-reattach by the business
+/// layer still finds the underlying object intact.
 pub const REFERENCE_DETACH_GRACE_HOURS: i64 = 24;
 const DEDUP_REVIVE_REASON: &str = "dedup_revive";
 
@@ -96,9 +97,10 @@ fn require_shared_s3_config(ctx: &AppContext) -> loco_rs::Result<SharedS3Config>
 }
 
 /// Disposition kind controls whether browsers render the response inline
-/// (preview, e.g. images / PDFs) or force a download dialog. Used both for
-/// the proxy-stream `Content-Disposition` header and the presigned
-/// `response-content-disposition` query parameter.
+/// (preview, e.g. images / PDFs) or force a download dialog.
+///
+/// Used both for the proxy-stream `Content-Disposition` header and the
+/// presigned `response-content-disposition` query parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disposition {
     Attachment,
@@ -1331,8 +1333,8 @@ pub async fn find_any_by_hash(
 ///
 /// - If the winner is already active, returned as-is with `revived = false`.
 /// - If soft-deleted and still within the grace window, the row is restored
-///   in its own transaction (status, deleted_at, purge_at, deleted_by,
-///   status_reason cleared; updated_at/by stamped) and an `AuditAction::Restore`
+///   in its own transaction (status, `deleted_at`, `purge_at`, `deleted_by`,
+///   `status_reason` cleared; `updated_at/by` stamped) and an `AuditAction::Restore`
 ///   entry is written. Returned with `revived = true`.
 /// - If soft-deleted and grace has expired, returns a `gone` error so the
 ///   caller can fall back to a fresh upload.

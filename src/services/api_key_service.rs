@@ -18,10 +18,12 @@ pub struct GeneratedKey {
 }
 
 impl GeneratedKey {
+    #[must_use]
     pub fn generate(env_prefix: &str) -> Self {
         Self::generate_with_prefix(env_prefix, 32)
     }
 
+    #[must_use]
     pub fn hash_key(plain: &str) -> String {
         let digest = Sha256::digest(plain.as_bytes());
         digest.iter().fold(String::new(), |mut acc, b| {
@@ -31,6 +33,7 @@ impl GeneratedKey {
         })
     }
 
+    #[must_use]
     pub fn generate_with_bytes(env_prefix: &str, secret_bytes: usize) -> Self {
         Self::generate_with_prefix(env_prefix, secret_bytes)
     }
@@ -97,6 +100,7 @@ impl ApiKeyIdentity {
     }
 }
 
+#[must_use]
 pub fn generate_exchange_token() -> GeneratedKey {
     GeneratedKey::generate_with_prefix(EXCHANGE_TOKEN_PREFIX, 32)
 }

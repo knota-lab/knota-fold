@@ -54,7 +54,7 @@ const MERGE_SUMMARY_PROMPT: &str = "\
 
 /// Format older messages for LLM summarization.
 ///
-/// For assistant messages with tool_calls: show `result_preview` preferentially,
+/// For assistant messages with `tool_calls`: show `result_preview` preferentially,
 /// text content truncated to 200 chars.
 /// For normal messages: truncate to 800 chars.
 /// Labels: 用户 / 助手 / 系统.
@@ -206,13 +206,13 @@ pub struct CompactHistoryParams {
 
 /// Token-based trigger + iterative summary merge.
 ///
-/// 1. Token-based trigger: total estimated tokens > (max_context_tokens - compaction_reserve_tokens)
-///    AND history.len() > compaction_threshold (safety net).
+/// 1. Token-based trigger: total estimated tokens > (`max_context_tokens` - `compaction_reserve_tokens`)
+///    AND `history.len()` > `compaction_threshold` (safety net).
 /// 2. Fixed recent window: keep last `recent_turns` messages intact.
-/// 3. Cache check: if cached summary exists and new messages < MIN_MESSAGES_FOR_RECOMPACT, return cache.
+/// 3. Cache check: if cached summary exists and new messages < `MIN_MESSAGES_FOR_RECOMPACT`, return cache.
 /// 4. Iterative merge:
-///    - Cached summary exists → format only NEW messages, merge with MERGE_SUMMARY_PROMPT.
-///    - No cache → format ALL older messages, use INITIAL_SUMMARY_PROMPT.
+///    - Cached summary exists → format only NEW messages, merge with `MERGE_SUMMARY_PROMPT`.
+///    - No cache → format ALL older messages, use `INITIAL_SUMMARY_PROMPT`.
 /// 5. Non-streaming LLM call via rig Prompt trait.
 /// 6. Cache the result.
 #[tracing::instrument(skip(db, qa_client, history, params))]

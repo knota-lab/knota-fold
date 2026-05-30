@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::_entities::permissions;
 
-/// Single route metadata entry from OpenAPI
+/// Single route metadata entry from `OpenAPI`
 #[derive(Debug, Serialize, Clone)]
 pub struct RouteMetadataItem {
     pub path: String,
@@ -38,6 +38,7 @@ pub struct PermissionResponse {
 }
 
 impl PermissionResponse {
+    #[must_use]
     pub fn from_model(m: &permissions::Model) -> Self {
         Self {
             id: m.id.to_string(),
@@ -77,7 +78,7 @@ pub struct UpdatePermissionRequest {
     pub version: i32,
 }
 
-/// Permission with route metadata (tag + description from OpenAPI spec)
+/// Permission with route metadata (tag + description from `OpenAPI` spec)
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionWithMetadataResponse {
@@ -95,6 +96,7 @@ pub struct PermissionWithMetadataResponse {
 }
 
 impl PermissionWithMetadataResponse {
+    #[must_use]
     pub fn from_model(m: &permissions::Model, tag: String, description: String) -> Self {
         Self {
             id: m.id.to_string(),
@@ -120,8 +122,8 @@ pub struct AssignablePermissionsResponse {
 }
 
 /// Response for GET /api/permissions/with-metadata
-/// Returns all permissions enriched with OpenAPI metadata,
-/// plus any OpenAPI routes that have no matching permission yet.
+/// Returns all permissions enriched with `OpenAPI` metadata,
+/// plus any `OpenAPI` routes that have no matching permission yet.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionsWithMetadataResponse {

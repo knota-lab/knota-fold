@@ -96,10 +96,11 @@ pub struct SoftDeleteRequest {
     pub reason: Option<String>,
 }
 
-/// `?disposition=inline|attachment` for `/files/{id}/download-url` (and the
-/// sys mirror). Default `attachment` keeps backward-compat with the old
-/// download button; UI surfaces that need in-browser preview (image / PDF
-/// viewers) should pass `inline`.
+/// `?disposition=inline|attachment` for `/files/{id}/download-url` (and the sys mirror).
+///
+/// Default `attachment` keeps backward-compat with the old download button;
+/// UI surfaces that need in-browser preview (image / PDF viewers) should
+/// pass `inline`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadUrlQuery {

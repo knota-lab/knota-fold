@@ -24,6 +24,7 @@ pub struct TenantContext {
 }
 
 impl TenantContext {
+    #[must_use]
     pub const fn tenant_filter(&self) -> Option<Uuid> {
         if self.is_super_admin {
             None

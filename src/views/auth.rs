@@ -103,9 +103,11 @@ pub struct ChangePasswordRequest {
     pub new_password: String,
 }
 
-/// `POST /api/admin/auth/unlock` request body. Identifies the account to
-/// be unlocked by primary email (matches `users.email`, normalised to
-/// lowercase server-side to align with `login_guard`'s cache keys).
+/// `POST /api/admin/auth/unlock` request body.
+///
+/// Identifies the account to be unlocked by primary email (matches
+/// `users.email`, normalised to lowercase server-side to align with
+/// `login_guard`'s cache keys).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnlockAccountRequest {
@@ -161,6 +163,7 @@ pub struct LoginErrorResponse {
 }
 
 impl LoginErrorResponse {
+    #[must_use]
     pub fn invalid_credentials(require_captcha: bool) -> Self {
         Self {
             code: "INVALID_CREDENTIALS".to_string(),
@@ -170,6 +173,7 @@ impl LoginErrorResponse {
         }
     }
 
+    #[must_use]
     pub fn captcha_required() -> Self {
         Self {
             code: "CAPTCHA_REQUIRED".to_string(),
@@ -179,6 +183,7 @@ impl LoginErrorResponse {
         }
     }
 
+    #[must_use]
     pub fn captcha_invalid() -> Self {
         Self {
             code: "CAPTCHA_INVALID".to_string(),
@@ -188,6 +193,7 @@ impl LoginErrorResponse {
         }
     }
 
+    #[must_use]
     pub fn account_disabled() -> Self {
         Self {
             code: "ACCOUNT_DISABLED".to_string(),
@@ -197,6 +203,7 @@ impl LoginErrorResponse {
         }
     }
 
+    #[must_use]
     pub fn account_locked(unlock_at_epoch: i64) -> Self {
         Self {
             code: "ACCOUNT_LOCKED".to_string(),

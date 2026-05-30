@@ -9,12 +9,12 @@ use super::layer::{EntryPayload, LogEntry};
 
 static LOG_DB: OnceLock<SqlitePool> = OnceLock::new();
 
-/// Get the app-logs SQLite pool. Returns None if module is disabled.
+/// Get the app-logs `SQLite` pool. Returns None if module is disabled.
 pub fn log_db() -> Option<&'static SqlitePool> {
     LOG_DB.get()
 }
 
-/// Create data directory, connect to SQLite, set WAL pragmas, create tables.
+/// Create data directory, connect to `SQLite`, set WAL pragmas, create tables.
 pub async fn init_db(
     db_path: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

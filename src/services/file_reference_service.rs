@@ -11,7 +11,7 @@
 //! 1. **Idempotent attach.** Calling `attach` twice with the same
 //!    `(tenant, file, resource_type, resource_id, field_name)` returns
 //!    the same active row. The DB enforces this via the partial unique
-//!    index `uq_file_refs_active` (WHERE deleted_at IS NULL).
+//!    index `uq_file_refs_active` (WHERE `deleted_at` IS NULL).
 //!
 //! 2. **Revive on collision.** If a soft-deleted row exists for the
 //!    same key, attach clears `deleted_at` and refreshes `created_by`
@@ -82,10 +82,11 @@ pub struct AttachRequest {
     pub display_name: Option<String>,
 }
 
-/// Sentinel value for [`AttachRequest::resource_id`] meaning "use the
-/// new row's own primary key". Resolved inside the service before the
-/// existing-row lookup so the caller never has to round-trip through
-/// the DB to learn an id it just wants to assign.
+/// Sentinel value for [`AttachRequest::resource_id`] meaning "use the new row's own primary key".
+///
+/// Resolved inside the service before the existing-row lookup so the caller
+/// never has to round-trip through the DB to learn an id it just wants to
+/// assign.
 ///
 /// Currently only used by the standalone-upload flow under
 /// [`ResourceType::SystemAttachment`]: each upload event needs its own
@@ -107,6 +108,7 @@ pub const SELF_RESOURCE_ID_SENTINEL: &str = "$self";
 /// own primary key (see [`SELF_RESOURCE_ID_SENTINEL`]). `file_id` is a
 /// placeholder; the upload service overwrites it after the file row
 /// is materialized.
+#[must_use]
 pub fn default_self_attach() -> AttachRequest {
     AttachRequest {
         file_id: Uuid::nil(),
@@ -405,7 +407,7 @@ pub async fn detach(
 /// in so the detach + business soft-delete commit atomically. Generic
 /// over [`ConnectionTrait`] for exactly that reason.
 ///
-/// Already-deleted rows are skipped (the WHERE deleted_at IS NULL
+/// Already-deleted rows are skipped (the WHERE `deleted_at` IS NULL
 /// filter is part of the update predicate).
 ///
 /// # Errors
@@ -510,10 +512,11 @@ pub async fn list_by_resource<C: ConnectionTrait>(
         .db_err()
 }
 
-/// Tenant-wide paginated list of active file references, joined with
-/// the underlying `files` row for UI consumers (admin attachments
-/// page). Optional `resource_type_filter` narrows to a single business
-/// kind; `None` returns all kinds.
+/// Tenant-wide paginated list of active file references, joined with the
+/// underlying `files` row for UI consumers (admin attachments page).
+///
+/// Optional `resource_type_filter` narrows to a single business kind;
+/// `None` returns all kinds.
 ///
 /// Two queries: paginate `file_references` first, then bulk-load all
 /// referenced `files` for the page in one `WHERE id IN (..)` call. We
@@ -617,7 +620,7 @@ async fn find_by_key<C: ConnectionTrait>(
     Ok(rows.into_iter().next())
 }
 
-/// Detect a unique-constraint violation across PG / SQLite / MySQL
+/// Detect a unique-constraint violation across PG / `SQLite` / `MySQL`
 /// without coupling to one driver's error code. The caller treats this
 /// as "race on the partial unique index, retry the read".
 fn is_unique_violation(e: &DbErr) -> bool {

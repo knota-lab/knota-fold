@@ -58,7 +58,7 @@ const fn default_output_max_bytes() -> i64 {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiKeyConfig {
-    /// Environment prefix for generated keys, e.g. "sk_live_" or "sk_test_".
+    /// Environment prefix for generated keys, e.g. "`sk_live`_" or "`sk_test`_".
     #[serde(default = "default_env_prefix")]
     pub env_prefix: String,
     /// Number of random bytes for key generation (default 32 → 256-bit).
@@ -74,7 +74,7 @@ pub struct ApiKeyConfig {
     #[serde(default = "default_max_exchange_tokens_per_tenant")]
     pub max_exchange_tokens_per_tenant: i32,
     /// Base URL for the exchange page (frontend). Used to construct exchange URLs.
-    /// e.g. "https://admin.example.com/api-keys/exchange"
+    /// e.g. "<https://admin.example.com/api-keys/exchange>"
     #[serde(default)]
     pub exchange_base_url: Option<String>,
 }
@@ -131,7 +131,7 @@ pub struct KnowledgeBaseConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddingConfig {
-    /// Provider name. Phase 1 ignores this — always uses openai::Client.
+    /// Provider name. Phase 1 ignores this — always uses `openai::Client`.
     #[serde(default = "default_embedding_provider")]
     pub provider: String,
 
@@ -290,7 +290,7 @@ pub struct QaConfig {
     pub model: String,
 
     /// LLM provider: "ollama" (default) or "deepseek".
-    /// Controls provider-specific params (e.g. num_ctx for Ollama).
+    /// Controls provider-specific params (e.g. `num_ctx` for Ollama).
     #[serde(default = "default_qa_provider")]
     pub provider: String,
 
@@ -482,6 +482,7 @@ impl AppSettings {
     }
 
     /// Helper: max concurrent executions per tenant (with sensible default).
+    #[must_use]
     pub fn max_concurrent_per_tenant(&self) -> i32 {
         self.worker_scheduler
             .as_ref()
@@ -493,6 +494,7 @@ impl AppSettings {
     }
 
     /// Helper: output truncation ceiling in bytes.
+    #[must_use]
     pub fn output_max_bytes(&self) -> usize {
         self.worker_scheduler
             .as_ref()
@@ -502,6 +504,7 @@ impl AppSettings {
     }
 
     /// Helper: whether the scheduler tick should run.
+    #[must_use]
     pub fn scheduler_enabled(&self) -> bool {
         self.worker_scheduler.as_ref().is_none_or(|s| s.enabled)
     }

@@ -19,7 +19,7 @@ use tower::{Layer, Service};
 /// field and rewrites them to `CodedErrorResponse` shape:
 /// `{"error":"<status text>","code":"<original error value>","description":"<msg>"}`.
 ///
-/// It also rewrites 500 "internal_server_error" responses from the
+/// It also rewrites 500 "`internal_server_error`" responses from the
 /// catch-all branch to include a generic `common.internal` code.
 #[derive(Clone, Default)]
 pub struct ErrorHandlerLayer;

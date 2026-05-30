@@ -127,7 +127,7 @@ pub trait ToolResultBroker: Send + Sync + 'static {
     /// Resolve a pending tool call.
     ///
     /// Returns [`ResolveOutcome`] so callers can distinguish between a fresh
-    /// resolve, an idempotent duplicate, and an unknown call_id.
+    /// resolve, an idempotent duplicate, and an unknown `call_id`.
     async fn resolve(&self, call_id: &str, result: ToolResult) -> ResolveOutcome;
 
     /// Remove a pending call without resolving it (e.g. on timeout).

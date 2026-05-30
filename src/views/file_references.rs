@@ -1,7 +1,7 @@
 //! File reference DTOs.
 //!
 //! `file_references` rows tie a file to a row in some business table
-//! (e.g. a dict_item). The wire shape mirrors what UI consumers need:
+//! (e.g. a `dict_item`). The wire shape mirrors what UI consumers need:
 //! the reference identity (`id`), the linked file (`fileId`), the
 //! resource it is attached to, the optional `fieldName` discriminator
 //! when the same file is reused across columns of the same row, and
@@ -75,10 +75,12 @@ impl From<file_references::Model> for FileReferenceResponse {
     }
 }
 
-/// Joined response: a `file_references` row plus the underlying `files`
-/// row inlined under `file`. Powers the admin "all attachments" view
-/// where the primary entity is the business attachment (one row per
-/// attach event), and `file.*` is metadata about the physical bytes.
+/// Joined response: a `file_references` row plus the underlying `files` row
+/// inlined under `file`.
+///
+/// Powers the admin "all attachments" view where the primary entity is the
+/// business attachment (one row per attach event), and `file.*` is metadata
+/// about the physical bytes.
 ///
 /// `file` is `Option` because the cleanup task may have hard-purged
 /// the underlying file row while a soft-deleted reference lingers

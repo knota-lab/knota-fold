@@ -13,7 +13,7 @@ use crate::models::tenants;
 use crate::utils::error::IntoAppError;
 use crate::views::errors::err_bad_request;
 
-/// Namespace: PascalCase or `Tenant.<sub>`, 1-64 chars, alnum + `.`.
+/// Namespace: `PascalCase` or `Tenant.<sub>`, 1-64 chars, alnum + `.`.
 pub(crate) fn validate_namespace(ns: &str) -> loco_rs::Result<()> {
     if ns.is_empty() || ns.len() > 64 {
         return Err(err_bad_request(

@@ -86,10 +86,11 @@ fn load_config(ctx: &AppContext) -> Result<&'static CaptchaConfig> {
     Ok(CONFIG_CACHE.get().expect("CONFIG_CACHE just set"))
 }
 
-/// Generate a fresh captcha. Returns `(image_data_url, signed_token)` where
-/// `image_data_url` is a `data:image/jpeg;base64,...` string ready for an
-/// `<img src>` and `signed_token` is the opaque JWT to be echoed back on
-/// login.
+/// Generate a fresh captcha.
+///
+/// Returns `(image_data_url, signed_token)` where `image_data_url` is a
+/// `data:image/jpeg;base64,...` string ready for an `<img src>` and
+/// `signed_token` is the opaque JWT to be echoed back on login.
 pub fn generate(ctx: &AppContext) -> Result<(String, String)> {
     let cfg = load_config(ctx)?;
 
@@ -106,10 +107,12 @@ pub fn generate(ctx: &AppContext) -> Result<(String, String)> {
         .ok_or_else(|| Error::Message("failed to sign captcha token".to_string()))
 }
 
-/// Verify a (token, user_solution) pair. Returns `Ok(true)` on success;
-/// `Ok(false)` for any verification failure (wrong answer / expired /
-/// tampered token / missing input) — the caller surfaces a single
-/// "captcha invalid" error to the client without leaking which case it was.
+/// Verify a (token, `user_solution`) pair.
+///
+/// Returns `Ok(true)` on success; `Ok(false)` for any verification failure
+/// (wrong answer / expired / tampered token / missing input) — the caller
+/// surfaces a single "captcha invalid" error to the client without leaking
+/// which case it was.
 pub fn verify(ctx: &AppContext, token: &str, solution: &str) -> Result<bool> {
     if token.is_empty() || solution.is_empty() {
         return Ok(false);

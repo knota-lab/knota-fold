@@ -34,7 +34,7 @@ impl std::error::Error for ReadConversationTurnError {}
 pub struct ReadConversationTurnArgs {
     /// 起始轮次号（从 1 开始）
     pub start_turn: u32,
-    /// 结束轮次号（含，与 start_turn 相同时只读一轮）— 默认等于 start_turn
+    /// 结束轮次号（含，与 `start_turn` 相同时只读一轮）— 默认等于 `start_turn`
     pub end_turn: Option<u32>,
 }
 

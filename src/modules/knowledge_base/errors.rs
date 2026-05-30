@@ -48,6 +48,7 @@ impl KnowledgeBaseError {
     /// Delegates to `from_info()` / `from_info_with_desc()` for unified location
     /// tracking via `#[track_caller]`.
     #[track_caller]
+    #[must_use]
     pub fn to_err(&self) -> loco_rs::Error {
         use crate::modules::knowledge_base::error_info as ei;
         match self {

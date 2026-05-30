@@ -18,6 +18,7 @@ pub struct RawChunk {
 /// * `split_by_heading` – whether to start a new chunk at qualifying headings
 /// * `min_heading_level` / `max_heading_level` – inclusive range of heading levels that
 ///   trigger a split (1 = H1 … 6 = H6)
+#[must_use]
 pub fn chunk_markdown(
     markdown: &str,
     max_tokens: i32,
@@ -256,7 +257,7 @@ fn byte_to_char(text: &str, byte_offset: usize) -> usize {
     text[..boundary].chars().count()
 }
 
-/// Count tokens using the cl100k_base tokenizer.
+/// Count tokens using the `cl100k_base` tokenizer.
 fn count_tokens(text: &str) -> i32 {
     let bpe = cl100k_base_singleton();
     let locked = bpe.lock();

@@ -1,11 +1,11 @@
 //! Tenant-scoped i18n endpoints — tenant override CRUD.
 //!
 //! Current-tenant routes (tenant-admin or super-admin): operate on caller's
-//! tenant via JWT-derived tenant_id.
+//! tenant via JWT-derived `tenant_id`.
 //!
 //! All routes mounted under Casbin authz; permissions auto-sync from URL paths.
 //! Tenant cross-checks are also enforced inside the service (see
-//! `delete_tenant_override_by_id`, which returns NotFound across tenants).
+//! `delete_tenant_override_by_id`, which returns `NotFound` across tenants).
 
 use loco_openapi::prelude::*;
 use loco_rs::prelude::*;

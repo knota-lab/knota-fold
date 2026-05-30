@@ -3,7 +3,7 @@
 //! Both endpoints are JWT-gated but **whitelisted** in
 //! [`crate::middleware::casbin_authz`] because every authenticated user
 //! needs them on every page render. Per-tenant scoping is enforced
-//! inside the services (which read tenant_id from `TenantContext`).
+//! inside the services (which read `tenant_id` from `TenantContext`).
 //!
 //! Endpoints:
 //!
@@ -86,11 +86,11 @@ pub(crate) async fn get_bundle(
     Ok(resp)
 }
 
-/// Match an `If-None-Match` header value against our generated ETag.
+/// Match an `If-None-Match` header value against our generated `ETag`.
 ///
 /// Spec-compliant clients send `If-None-Match: "abc"` (quoted), possibly
 /// comma-separated for multiple tags, and may include the `W/` weak prefix.
-/// Our ETags are strong and quoted, so we tolerate both forms.
+/// Our `ETags` are strong and quoted, so we tolerate both forms.
 fn etag_matches(if_none_match: &str, our_etag: &str) -> bool {
     if if_none_match.trim() == "*" {
         return true;
@@ -171,7 +171,7 @@ pub fn public_routes() -> Routes {
         )
 }
 
-/// Routes that require **JWT authentication** (TenantContext) but no Casbin.
+/// Routes that require **JWT authentication** (`TenantContext`) but no Casbin.
 /// Every logged-in user needs bundles + locale preferences to render any page.
 pub fn user_routes() -> Routes {
     Routes::new()

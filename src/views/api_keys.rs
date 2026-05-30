@@ -21,6 +21,7 @@ pub struct ApiKeyResponse {
 }
 
 impl ApiKeyResponse {
+    #[must_use]
     pub fn from_model(model: &api_keys::Model, role_name: String) -> Self {
         Self {
             id: model.id.to_string(),

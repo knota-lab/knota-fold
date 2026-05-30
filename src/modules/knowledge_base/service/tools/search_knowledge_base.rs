@@ -60,7 +60,7 @@ impl fmt::Debug for SearchKnowledgeBaseTool {
             .field("embedding_model_name", &self.embedding_model_name)
             .field("tenant_id", &self.tenant_id)
             .field("user_id", &self.user_id)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

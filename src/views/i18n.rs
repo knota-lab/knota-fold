@@ -43,7 +43,7 @@ pub struct BundleResponse {
     pub locale: String,
     pub namespace: String,
     pub revision: String,
-    /// `BTreeMap` to keep deterministic ordering for ETag stability.
+    /// `BTreeMap` to keep deterministic ordering for `ETag` stability.
     pub entries: BTreeMap<String, String>,
 }
 
@@ -253,10 +253,11 @@ pub struct KeyLocaleValue {
     pub inherited_value: Option<String>,
 }
 
-/// One row of `GET /api/admin/i18n/keys` — represents a single
-/// `(namespace, key)` pair plus all of its locale translations bundled
-/// together so the admin UI can render a "key with N expandable locale
-/// children" tree without N+1 round-trips.
+/// One row of `GET /api/admin/i18n/keys` — represents a single `(namespace, key)` pair.
+///
+/// All of its locale translations are bundled together so the admin UI can
+/// render a "key with N expandable locale children" tree without N+1
+/// round-trips.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyEntryResponse {

@@ -1,6 +1,6 @@
 //! Login throttling & lock-out for `/api/auth/login`.
 //!
-//! Tracks per-account login failures in the loco cache (InMem in dev →
+//! Tracks per-account login failures in the loco cache (`InMem` in dev →
 //! Redis in prod, transparent to this module). Two cache keys per account:
 //!
 //!   * `auth:login:fail:{email}` → `i64` running failure counter (TTL =
@@ -182,10 +182,11 @@ pub async fn pre_login_check(
 
 // ── Post-attempt mutators ───────────────────────────────────────────────
 
-/// Increment the per-account failure counter. If the new count crosses the
-/// lock threshold, set the lock key for `lock_duration_seconds`. Returns
-/// the new failure count and whether captcha is now required for the next
-/// attempt.
+/// Increment the per-account failure counter.
+///
+/// If the new count crosses the lock threshold, set the lock key for
+/// `lock_duration_seconds`. Returns the new failure count and whether captcha
+/// is now required for the next attempt.
 pub async fn record_failure(
     ctx: &AppContext,
     email: &str,
@@ -229,11 +230,12 @@ pub async fn record_success(ctx: &AppContext, email: &str) {
     let _ = ctx.cache.remove(&lock_key(email)).await;
 }
 
-/// Administratively clear the lock and the sliding-window failure counter
-/// for `email`. Functionally identical to [`record_success`] but exposed
-/// under a name that conveys intent at the call-site (admin-driven unlock
-/// vs. self-driven login success). Idempotent — calling it on a
-/// not-locked account is a harmless no-op.
+/// Administratively clear the lock and the sliding-window failure counter for `email`.
+///
+/// Functionally identical to [`record_success`] but exposed under a name
+/// that conveys intent at the call-site (admin-driven unlock vs. self-driven
+/// login success). Idempotent — calling it on a not-locked account is a
+/// harmless no-op.
 pub async fn unlock(ctx: &AppContext, email: &str) {
     record_success(ctx, email).await;
 }

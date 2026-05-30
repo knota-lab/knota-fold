@@ -11,7 +11,7 @@ pub use crate::models::_entities::notification_recipients::{
     self, ActiveModel, Entity, Model,
 };
 
-/// Joined inbox item: notification_recipients JOIN notifications + users + tenants.
+/// Joined inbox item: `notification_recipients` JOIN notifications + users + tenants.
 #[derive(Debug, FromQueryResult, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxItem {

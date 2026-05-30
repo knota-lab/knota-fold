@@ -20,6 +20,7 @@ pub struct ExchangeTokenResponse {
 }
 
 impl ExchangeTokenResponse {
+    #[must_use]
     pub fn from_model(model: &api_key_exchange_tokens::Model, role_name: String) -> Self {
         Self {
             id: model.id.to_string(),

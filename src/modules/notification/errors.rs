@@ -9,13 +9,13 @@ use loco_rs::prelude::*;
 pub enum NotificationError {
     /// Notification not found.
     NotFound,
-    /// Only super_admin can send platform notifications.
+    /// Only `super_admin` can send platform notifications.
     PlatformRequiresSuperAdmin,
     /// Cannot notify yourself.
     CannotNotifySelf,
     /// Notification already revoked.
     AlreadyRevoked,
-    /// No roles selected for tenant_role notification.
+    /// No roles selected for `tenant_role` notification.
     NoRolesSelected,
     /// Unsupported notification type.
     UnsupportedType,
@@ -46,6 +46,7 @@ impl NotificationError {
     ///
     /// Delegates to `from_info()` for unified location tracking via `#[track_caller]`.
     #[track_caller]
+    #[must_use]
     pub fn to_err(&self) -> loco_rs::Error {
         use crate::modules::notification::error_info as ei;
         let info = match self {

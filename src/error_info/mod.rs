@@ -19,6 +19,7 @@ pub enum ErrorInfo {
 }
 
 impl ErrorInfo {
+    #[must_use]
     pub const fn status(&self) -> StatusCode {
         match self {
             Self::Unauthorized(_, _) => StatusCode::UNAUTHORIZED,
@@ -30,6 +31,7 @@ impl ErrorInfo {
         }
     }
 
+    #[must_use]
     pub const fn code(&self) -> &'static str {
         match self {
             Self::Unauthorized(c, _)
@@ -41,6 +43,7 @@ impl ErrorInfo {
         }
     }
 
+    #[must_use]
     pub const fn description(&self) -> &'static str {
         match self {
             Self::Unauthorized(_, d)

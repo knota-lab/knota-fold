@@ -9,11 +9,11 @@ use crate::models::_entities::notifications;
 pub struct CreateNotificationRequest {
     pub title: String,
     pub content: String,
-    /// platform | tenant_all | tenant_role
+    /// platform | `tenant_all` | `tenant_role`
     pub notification_type: String,
     /// normal | high, defaults to normal.
     pub priority: Option<String>,
-    /// Required when notification_type = tenant_role.
+    /// Required when `notification_type` = `tenant_role`.
     pub target_role_codes: Option<Vec<String>>,
 }
 
@@ -41,6 +41,7 @@ pub struct NotificationResponse {
 }
 
 impl NotificationResponse {
+    #[must_use]
     pub fn from_model(m: &notifications::Model) -> Self {
         Self {
             id: m.id.to_string(),
@@ -61,7 +62,7 @@ impl NotificationResponse {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxItemResponse {
-    /// notification_recipients.id
+    /// `notification_recipients.id`
     pub id: String,
     pub notification_id: String,
     pub title: String,

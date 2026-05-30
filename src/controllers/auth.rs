@@ -679,7 +679,7 @@ pub fn routes() -> Routes {
 /// not-locked account is a 200 no-op so the UI button can be enabled
 /// without first re-checking lock state.
 ///
-/// Permission: SUPER_ADMIN only. Tenant admins are intentionally NOT
+/// Permission: `SUPER_ADMIN` only. Tenant admins are intentionally NOT
 /// allowed (per product decision) — locking is a security primitive that
 /// platform operators own.
 #[utoipa::path(
@@ -721,7 +721,7 @@ pub(crate) async fn unlock_account(
 }
 
 /// Super-admin-only auth routes. Mounted under `/api/admin/auth/*` so the
-/// casbin layer can apply the SUPER_ADMIN policy via the URL prefix.
+/// casbin layer can apply the `SUPER_ADMIN` policy via the URL prefix.
 pub fn super_admin_routes() -> Routes {
     Routes::new().prefix("/api/admin/auth").add(
         "/unlock",

@@ -24,7 +24,7 @@ pub struct CreateDocumentParams {
     pub created_by: Uuid,
 }
 
-/// Create a new kb_documents record with status='pending'.
+/// Create a new `kb_documents` record with status='pending'.
 /// Returns the created model.
 #[tracing::instrument(skip(db))]
 pub async fn create_document(
@@ -88,7 +88,7 @@ pub async fn update_status(
     Ok(())
 }
 
-/// Update full_text and set status to 'indexing'.
+/// Update `full_text` and set status to 'indexing'.
 #[tracing::instrument(skip(db, full_text))]
 pub async fn set_full_text(
     db: &DatabaseConnection,
@@ -109,7 +109,7 @@ pub async fn set_full_text(
     Ok(())
 }
 
-/// Update chunk_count and total_tokens, set status to 'ready'.
+/// Update `chunk_count` and `total_tokens`, set status to 'ready'.
 #[tracing::instrument(skip(db))]
 pub async fn mark_ready(
     db: &DatabaseConnection,
@@ -132,7 +132,7 @@ pub async fn mark_ready(
     Ok(())
 }
 
-/// Get document by ID, verifying tenant_id ownership.
+/// Get document by ID, verifying `tenant_id` ownership.
 #[tracing::instrument(skip(db))]
 pub async fn get_document(
     db: &DatabaseConnection,
@@ -147,7 +147,7 @@ pub async fn get_document(
         .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())
 }
 
-/// Batch insert kb_chunks records.
+/// Batch insert `kb_chunks` records.
 #[tracing::instrument(skip(db, chunks))]
 pub async fn insert_chunks(
     db: &DatabaseConnection,
@@ -163,7 +163,7 @@ pub async fn insert_chunks(
     Ok(())
 }
 
-/// Batch insert document_lines records.
+/// Batch insert `document_lines` records.
 #[tracing::instrument(skip(db, lines))]
 pub async fn insert_lines(
     db: &DatabaseConnection,

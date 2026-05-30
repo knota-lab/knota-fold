@@ -48,7 +48,7 @@ fn parse_strategy(s: Option<&str>) -> loco_rs::Result<ImportStrategy> {
     }
 }
 
-/// Validate batch shape; returns BadRequest on first violation.
+/// Validate batch shape; returns `BadRequest` on first violation.
 /// All entries must pass before any DB write happens.
 fn validate_import_entries(entries: &[ImportEntry]) -> loco_rs::Result<()> {
     if entries.is_empty() {

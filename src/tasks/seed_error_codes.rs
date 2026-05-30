@@ -1,4 +1,4 @@
-//! Seed backend error codes into the i18n system (CommonError namespace).
+//! Seed backend error codes into the i18n system (`CommonError` namespace).
 //!
 //! Automatically extracts all error codes from source by scanning `src/**/*.rs`
 //! for error-construction calls like `err_bad_request("module.detail", "desc")`,

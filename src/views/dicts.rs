@@ -38,6 +38,7 @@ pub struct DictTypeResponse {
 }
 
 impl DictTypeResponse {
+    #[must_use]
     pub fn from_model(m: &dict_types::Model) -> Self {
         let scope = compute_type_scope(m.tenant_id, m.source_type_id);
         Self {
@@ -53,6 +54,7 @@ impl DictTypeResponse {
         }
     }
 
+    #[must_use]
     pub fn from_effective(e: &EffectiveDictType) -> Self {
         Self {
             id: e.id.to_string(),
@@ -87,6 +89,7 @@ pub struct DictItemResponse {
 }
 
 impl DictItemResponse {
+    #[must_use]
     pub fn from_model(m: &dict_items::Model) -> Self {
         let scope = compute_item_scope(m.tenant_id, m.source_item_id);
         Self {
@@ -106,6 +109,7 @@ impl DictItemResponse {
         }
     }
 
+    #[must_use]
     pub fn from_effective(e: &EffectiveDictItem) -> Self {
         Self {
             id: e.id.to_string(),
@@ -145,6 +149,7 @@ pub struct DictItemTreeResponse {
 }
 
 impl DictItemTreeResponse {
+    #[must_use]
     pub fn from_model(m: &dict_items::Model, children: Vec<Self>) -> Self {
         let scope = compute_item_scope(m.tenant_id, m.source_item_id);
         Self {
@@ -165,6 +170,7 @@ impl DictItemTreeResponse {
         }
     }
 
+    #[must_use]
     pub fn from_effective(e: &EffectiveDictItem, children: Vec<Self>) -> Self {
         Self {
             id: e.id.to_string(),

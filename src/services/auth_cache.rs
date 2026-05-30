@@ -24,7 +24,7 @@ use crate::utils::error::OptionErrInto;
 
 // ── TTLs ────────────────────────────────────────────────────────────────
 
-/// How long a password_changed_at timestamp stays cached before re-fetch.
+/// How long a `password_changed_at` timestamp stays cached before re-fetch.
 const PWD_IAT_TTL: Duration = Duration::from_secs(60);
 
 /// How long a full user profile stays cached.
@@ -55,6 +55,7 @@ pub struct CachedUserProfile {
 }
 
 impl CachedUserProfile {
+    #[must_use]
     pub fn from_model(m: &users::Model) -> Self {
         Self {
             id: m.id,

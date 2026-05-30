@@ -6,7 +6,7 @@ use loco_rs::{
 };
 
 /// Demo loco Task for CLI testing. Scheduled worker execution lives
-/// in workers/test_job_worker.rs.
+/// in `workers/test_job_worker.rs`.
 pub struct TestJob;
 
 #[async_trait]

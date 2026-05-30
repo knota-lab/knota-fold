@@ -13,7 +13,7 @@ use crate::models::{
 };
 use crate::views::errors::err_custom;
 
-/// Main tick function called every minute by scheduler_dispatch task.
+/// Main tick function called every minute by `scheduler_dispatch` task.
 pub async fn tick(ctx: &AppContext) -> Result<()> {
     if !is_scheduler_enabled(ctx) {
         tracing::debug!("task scheduler disabled; skipping tick");

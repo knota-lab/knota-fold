@@ -45,7 +45,7 @@ pub struct UpdateGlobalConfigRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpsertTenantConfigRequest {
-    /// Only the value is mutable; value_type is inherited from the global config.
+    /// Only the value is mutable; `value_type` is inherited from the global config.
     pub value: String,
 }
 
@@ -89,6 +89,7 @@ impl From<&sys_configs::Model> for SysConfigResponse {
 }
 
 impl SysConfigResponse {
+    #[must_use]
     pub fn from_model(m: &sys_configs::Model) -> Self {
         m.into()
     }

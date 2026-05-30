@@ -1,7 +1,7 @@
 //! Admin-only i18n endpoints — global locales + global translations CRUD.
 //!
 //! All routes mounted under Casbin authz; permissions auto-sync from URL paths.
-//! Only super-admins ("SUPER_ADMIN" role) should be granted these in seed data.
+//! Only super-admins ("`SUPER_ADMIN`" role) should be granted these in seed data.
 //!
 //! Endpoints:
 //!

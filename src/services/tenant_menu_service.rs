@@ -115,7 +115,7 @@ fn merge_menus(
         .collect()
 }
 
-/// Merge sys_menus with tenant_menu_overrides in memory — implements §1.4 SQL logic
+/// Merge `sys_menus` with `tenant_menu_overrides` in memory — implements §1.4 SQL logic
 #[tracing::instrument(skip_all)]
 pub async fn get_merged_menu_tree(
     db: &DatabaseConnection,

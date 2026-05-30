@@ -1,17 +1,13 @@
 //! knota-fold — knowledge management platform backend.
 //!
 //! Selective allows for pedantic/nursery lints that are either:
-//! - Documentation boilerplate (missing_errors_doc, doc_markdown, must_use_candidate)
+//! - Documentation boilerplate (`missing_errors_doc`, `doc_markdown`, `must_use_candidate`)
 //! - Stylistic preferences that don't affect correctness
 //! - Unavoidable due to DB column types (i32/i64 vs usize/u64)
 
 // ── Documentation / doc-comment lints ──────────────────────────────
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
-#![allow(clippy::doc_markdown)]
-#![allow(clippy::must_use_candidate)]
-#![allow(clippy::too_long_first_doc_paragraph)]
-#![allow(clippy::missing_fields_in_debug)]
 // ── Attribute / struct style lints ─────────────────────────────────
 // ── Cast lints — DB column types (i32/i64) vs Rust (usize/u64) ─────
 #![allow(clippy::cast_possible_truncation)]

@@ -15,6 +15,7 @@ pub struct TenantResponse {
 }
 
 impl TenantResponse {
+    #[must_use]
     pub fn from_model(m: &tenants::Model) -> Self {
         Self {
             id: m.id.to_string(),

@@ -5,7 +5,7 @@ use sea_orm::{DbErr, RuntimeErr};
 
 // ─── Macro: DRY error logging with status-based level selection ────
 
-/// Emit a tracing event with the caller's file:line.
+/// Emit a tracing event with the caller's <file:line>.
 ///
 /// Level selection: 5xx → `error!` (actionable, needs human attention),
 /// 4xx → `warn!` (normal gatekeeping, worth monitoring for trends).

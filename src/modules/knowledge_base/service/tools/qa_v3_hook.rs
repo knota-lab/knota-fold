@@ -75,7 +75,7 @@ pub enum ContentPart {
     },
 }
 
-/// Pending call data stored between on_tool_call and on_tool_result.
+/// Pending call data stored between `on_tool_call` and `on_tool_result`.
 #[derive(Debug, Clone)]
 struct PendingCall {
     tool_call_id: String,
@@ -93,7 +93,7 @@ pub struct ToolRound {
     pub round: u32,
     /// Tool name requested by the LLM.
     pub tool_name: String,
-    /// Call ID from the LLM's tool_call response.
+    /// Call ID from the LLM's `tool_call` response.
     pub tool_call_id: String,
     /// Arguments the LLM passed to the tool.
     pub arguments: serde_json::Value,
@@ -114,22 +114,23 @@ pub struct QaV3Hook {
     tool_records: Arc<Mutex<Vec<ToolCallRecord>>>,
     /// Pending call data: `internal_call_id -> (tool_call_id, arguments)`.
     pending_calls: Arc<Mutex<HashMap<String, PendingCall>>>,
-    /// Citations extracted from search_knowledge_base tool results.
+    /// Citations extracted from `search_knowledge_base` tool results.
     citations: Arc<Mutex<Vec<Citation>>>,
     /// Ordered content parts tracking the true interleaving of text and tool calls.
     content_parts: Arc<Mutex<Vec<ContentPart>>>,
     /// Text accumulated since the last tool call (or since the beginning).
-    /// Flushed into content_parts as a Text part whenever a tool call starts/ends.
+    /// Flushed into `content_parts` as a Text part whenever a tool call starts/ends.
     pending_text: Arc<Mutex<String>>,
     /// Debug context snapshot captured before the streaming loop begins.
     debug_context: Arc<Mutex<Option<serde_json::Value>>>,
     /// Ordered tool rounds for debug export (each round = one tool call + result).
     tool_rounds: Arc<Mutex<Vec<ToolRound>>>,
-    /// Monotonically increasing round counter for tool_rounds.
+    /// Monotonically increasing round counter for `tool_rounds`.
     tool_round_counter: Arc<Mutex<u32>>,
 }
 
 impl QaV3Hook {
+    #[must_use]
     pub fn new(tx: mpsc::Sender<String>) -> Self {
         Self {
             tx,
@@ -194,6 +195,7 @@ impl QaV3Hook {
     }
 
     /// Take the debug context snapshot, clearing the internal buffer.
+    #[must_use]
     pub fn take_debug_context(&self) -> Option<serde_json::Value> {
         self.debug_context
             .lock()
@@ -211,7 +213,7 @@ impl QaV3Hook {
         )
     }
 
-    /// Flush pending text into content_parts as a Text part (if non-empty).
+    /// Flush pending text into `content_parts` as a Text part (if non-empty).
     fn flush_pending_text(parts: &mut Vec<ContentPart>, pending_text: &mut String) {
         if !pending_text.is_empty() {
             parts.push(ContentPart::Text {
@@ -406,7 +408,7 @@ where
         HookAction::cont()
     }
 
-    /// Track text deltas for content_parts ordering.
+    /// Track text deltas for `content_parts` ordering.
     async fn on_text_delta(
         &self,
         text_delta: &str,
@@ -456,7 +458,7 @@ fn truncate_str(s: &str, max: usize) -> &str {
 ///
 /// The tool outputs lines like:
 ///   `1. [heading] (分数: 0.85, 文档ID: uuid, 分块ID: uuid)`
-/// We extract document_id, chunk_id, content preview, and score.
+/// We extract `document_id`, `chunk_id`, content preview, and score.
 fn extract_citations_from_result(result: &str, citations: &Arc<Mutex<Vec<Citation>>>) {
     if let Ok(mut list) = citations.lock() {
         for line in result.lines() {

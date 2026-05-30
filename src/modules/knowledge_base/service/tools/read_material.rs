@@ -34,7 +34,7 @@ pub struct ReadMaterialArgs {
     pub material_id: String,
     /// 1-indexed start line (defaults to 1).
     pub start_line: Option<u32>,
-    /// 1-indexed end line (defaults to start_line + 500, capped at total).
+    /// 1-indexed end line (defaults to `start_line` + 500, capped at total).
     pub end_line: Option<u32>,
 }
 

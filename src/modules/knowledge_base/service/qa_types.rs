@@ -27,7 +27,7 @@ pub struct QaRequest {
     #[serde(default)]
     pub material: MaterialInput,
     /// Session ID — first request omits this (server creates a new session).
-    /// Subsequent requests within the same conversation pass the session_id.
+    /// Subsequent requests within the same conversation pass the `session_id`.
     pub session_id: Option<uuid::Uuid>,
     /// Frontend-generated tool schemas (page tools).
     #[serde(default)]

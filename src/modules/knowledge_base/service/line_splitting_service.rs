@@ -9,6 +9,7 @@ pub struct RawLine {
 ///
 /// Lines are 1-indexed. `cumulative_chars` is the sum of all `line_chars`
 /// from line 1 through the current line (inclusive).
+#[must_use]
 pub fn split_lines(text: &str) -> Vec<RawLine> {
     let mut lines = Vec::new();
     let mut cumulative: i64 = 0;

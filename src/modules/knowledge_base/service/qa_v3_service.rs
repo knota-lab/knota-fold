@@ -122,7 +122,7 @@ struct SpawnIndexParams {
     turn_index: i32,
 }
 
-/// Async fire-and-forget message indexing to Qdrant chat_memory.
+/// Async fire-and-forget message indexing to Qdrant `chat_memory`.
 /// Call after both user and assistant message persistence.
 fn spawn_index_message(
     memory_store: &SharedMemoryStore,
@@ -440,7 +440,7 @@ pub struct QaStreamParams {
 /// 0. Session management
 /// 1. Material registration
 /// 2. Tool construction
-/// 3. Agent building (with PromptHook)
+/// 3. Agent building (with `PromptHook`)
 /// 4. Streaming loop
 /// 5. Persistence
 /// 6. Complete

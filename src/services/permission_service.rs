@@ -186,7 +186,8 @@ pub async fn sync_permissions(
     Ok(created)
 }
 
-/// Build a lookup map from OpenAPI spec: (path, METHOD) → (tag, description)
+/// Build a lookup map from `OpenAPI` spec: (path, METHOD) → (tag, description)
+#[must_use]
 pub fn build_route_metadata_map(
     openapi: &utoipa::openapi::OpenApi,
 ) -> HashMap<(String, String), (String, String)> {
@@ -224,7 +225,7 @@ pub fn build_route_metadata_map(
     map
 }
 
-/// Get all active permissions with OpenAPI metadata merged.
+/// Get all active permissions with `OpenAPI` metadata merged.
 pub async fn get_permissions_with_metadata(
     db: &DatabaseConnection,
     openapi: &utoipa::openapi::OpenApi,
@@ -246,8 +247,8 @@ pub async fn get_permissions_with_metadata(
     Ok(results)
 }
 
-/// Get all permissions with metadata PLUS any OpenAPI routes that have no
-/// matching permission in the database.  Used by the ApiScope management page.
+/// Get all permissions with metadata PLUS any `OpenAPI` routes that have no
+/// matching permission in the database.  Used by the `ApiScope` management page.
 pub async fn get_permissions_with_metadata_and_unmatched(
     db: &DatabaseConnection,
     openapi: &utoipa::openapi::OpenApi,
@@ -287,8 +288,10 @@ pub async fn get_permissions_with_metadata_and_unmatched(
 }
 
 /// Get all permissions with metadata + the specified role's currently assigned
-/// permission IDs. Used by the role permission assignment dialog.
-/// When `is_super_admin` is false, filters permissions to only those the actor holds.
+/// permission IDs.
+///
+/// Used by the role permission assignment dialog. When `is_super_admin` is
+/// false, filters permissions to only those the actor holds.
 pub async fn get_assignable_permissions(
     db: &DatabaseConnection,
     openapi: &utoipa::openapi::OpenApi,

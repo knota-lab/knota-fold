@@ -8,7 +8,7 @@ pub struct DownloadWorker {
 #[derive(Deserialize, Debug, Serialize)]
 pub struct DownloadWorkerArgs {
     pub user_guid: String,
-    /// Propagated trace_id from the enqueuing request for cross-process tracing.
+    /// Propagated `trace_id` from the enqueuing request for cross-process tracing.
     pub trace_id: String,
     /// Parent span ID from the enqueuing context (optional, for span linking).
     pub parent_span_id: Option<String>,
