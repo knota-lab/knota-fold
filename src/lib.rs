@@ -14,9 +14,6 @@
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::significant_drop_tightening)]
-#![allow(clippy::large_futures)]
-#![allow(clippy::large_stack_arrays)]
-#![allow(clippy::large_stack_frames)]
 
 pub mod app;
 pub mod app_logs;
