@@ -151,8 +151,10 @@ fn flush_chunk(
     byte_start: usize,
     heading_map: &[(usize, u8, String)],
 ) {
-    let char_start = byte_to_char(markdown, byte_start) as i32;
-    let char_end = char_start + content.chars().count() as i32;
+    let char_start =
+        i32::try_from(byte_to_char(markdown, byte_start)).unwrap_or(i32::MAX);
+    let content_chars = i32::try_from(content.chars().count()).unwrap_or(i32::MAX);
+    let char_end = char_start.saturating_add(content_chars);
     let token_count = count_tokens(content);
     let heading_path = resolve_heading_path(byte_start, heading_map);
 
@@ -261,7 +263,7 @@ fn byte_to_char(text: &str, byte_offset: usize) -> usize {
 fn count_tokens(text: &str) -> i32 {
     let bpe = cl100k_base_singleton();
     let locked = bpe.lock();
-    locked.encode_with_special_tokens(text).len() as i32
+    i32::try_from(locked.encode_with_special_tokens(text).len()).unwrap_or(i32::MAX)
 }
 
 /// Render a start tag back to Markdown-ish source text.

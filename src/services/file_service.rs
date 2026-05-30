@@ -298,7 +298,10 @@ pub async fn probe(
 
     if matches.is_empty() {
         let policy = partition_policy::load_policy_config(&ctx.db, tenant.id).await?;
-        let upload_hint = partition_policy::compute(req.file_size as u64, &policy)?;
+        let upload_hint = partition_policy::compute(
+            req.file_size.try_into().unwrap_or_default(),
+            &policy,
+        )?;
         return Ok(ProbeResponse::Miss(ProbeMissResponse { upload_hint }));
     }
 
@@ -1091,7 +1094,9 @@ pub async fn get_download_url(
         url: presigned_request.uri().to_string(),
         // Wave 2a: 1-hour TTL per plan §3 contract.
         expires_at: (Utc::now()
-            + ChronoDuration::seconds(DOWNLOAD_URL_TTL_SECONDS as i64))
+            + ChronoDuration::seconds(
+                i64::try_from(DOWNLOAD_URL_TTL_SECONDS).unwrap_or(i64::MAX),
+            ))
         .fixed_offset(),
     })
 }
@@ -1136,7 +1141,9 @@ pub async fn sys_get_download_url(
     Ok(DownloadUrlResponse {
         url: presigned_request.uri().to_string(),
         expires_at: (Utc::now()
-            + ChronoDuration::seconds(DOWNLOAD_URL_TTL_SECONDS as i64))
+            + ChronoDuration::seconds(
+                i64::try_from(DOWNLOAD_URL_TTL_SECONDS).unwrap_or(i64::MAX),
+            ))
         .fixed_offset(),
     })
 }
@@ -1668,7 +1675,10 @@ pub async fn instant_upload(
     else {
         // Miss: client must fall back to multipart upload.
         let policy = partition_policy::load_policy_config(&ctx.db, tenant_id).await?;
-        let upload_hint = partition_policy::compute(req.expected_size as u64, &policy)?;
+        let upload_hint = partition_policy::compute(
+            req.expected_size.try_into().unwrap_or_default(),
+            &policy,
+        )?;
         return Ok(InstantUploadResponse::Miss(InstantUploadMiss {
             upload_hint,
         }));

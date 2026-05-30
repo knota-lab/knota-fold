@@ -174,11 +174,14 @@ fn scan_dir(dir: &Path, re: &Regex, codes: &mut BTreeMap<String, Vec<Occurrence>
                 let code = cap[1].to_string();
                 let desc = cap[2].to_string();
                 let byte_offset = cap.get(1).unwrap().start();
-                let line = content[..byte_offset]
-                    .chars()
-                    .filter(|&c| c == '\n')
-                    .count() as i32
-                    + 1;
+                let line = i32::try_from(
+                    content[..byte_offset]
+                        .chars()
+                        .filter(|&c| c == '\n')
+                        .count(),
+                )
+                .unwrap_or(i32::MAX)
+                .saturating_add(1);
                 codes.entry(code).or_default().push(Occurrence {
                     description: desc,
                     file_path: relative.clone(),

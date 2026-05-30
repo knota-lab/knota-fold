@@ -15,11 +15,11 @@ pub fn split_lines(text: &str) -> Vec<RawLine> {
     let mut cumulative: i64 = 0;
 
     for (idx, line) in text.split('\n').enumerate() {
-        let line_chars = line.chars().count() as i32;
+        let line_chars = i32::try_from(line.chars().count()).unwrap_or(i32::MAX);
         cumulative += i64::from(line_chars);
 
         lines.push(RawLine {
-            line_number: (idx + 1) as i32,
+            line_number: i32::try_from(idx.saturating_add(1)).unwrap_or(i32::MAX),
             line_text: line.to_string(),
             line_chars,
             cumulative_chars: cumulative,

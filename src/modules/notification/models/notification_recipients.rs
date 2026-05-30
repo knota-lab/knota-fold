@@ -42,7 +42,7 @@ impl Model {
             .filter(n::Column::Status.eq("active"))
             .count(db)
             .await
-            .map(|c| c as i64)?)
+            .map(|c| i64::try_from(c).unwrap_or(i64::MAX))?)
     }
 
     /// Check if a user has any unread forced (high-priority) notifications.

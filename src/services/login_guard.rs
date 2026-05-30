@@ -141,7 +141,7 @@ pub async fn get_lock_until(cache: &Arc<cache::Cache>, email: &str) -> Option<i6
 fn now_epoch() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
+        .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or(0)
 }
 
@@ -201,7 +201,13 @@ pub async fn record_failure(
         .insert_with_expiry(
             &key,
             &new_count,
-            Duration::from_secs(thresholds.failure_window_seconds.max(1) as u64),
+            Duration::from_secs(
+                thresholds
+                    .failure_window_seconds
+                    .max(1)
+                    .try_into()
+                    .unwrap_or(1),
+            ),
         )
         .await;
 
@@ -212,7 +218,13 @@ pub async fn record_failure(
             .insert_with_expiry(
                 &lock_key(email),
                 &until,
-                Duration::from_secs(thresholds.lock_duration_seconds.max(1) as u64),
+                Duration::from_secs(
+                    thresholds
+                        .lock_duration_seconds
+                        .max(1)
+                        .try_into()
+                        .unwrap_or(1),
+                ),
             )
             .await;
         Some(until)

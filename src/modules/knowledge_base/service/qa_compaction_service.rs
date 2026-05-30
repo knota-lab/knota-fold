@@ -226,7 +226,8 @@ pub async fn compact_history(
 ) -> Result<String, KnowledgeBaseError> {
     // ── 1. Token-based trigger ────────────────────────────────────
     let history_tokens: usize = history.iter().map(estimate_message_tokens).sum();
-    let token_threshold = (params.max_context_tokens as usize)
+    let token_threshold = usize::try_from(params.max_context_tokens)
+        .unwrap_or_default()
         .saturating_sub(params.compaction_reserve_tokens);
     let needs_compaction =
         history_tokens > token_threshold && history.len() > compaction_threshold;

@@ -77,7 +77,8 @@ async fn process_schedule(
     let tenant_running =
         scheduled_worker_executions::Model::count_running_for_tenant(db, tenant_id)
             .await?;
-    if tenant_running >= max_concurrent as u64 {
+    let max_concurrent_u64 = u64::try_from(max_concurrent).unwrap_or_default();
+    if tenant_running >= max_concurrent_u64 {
         tracing::warn!(tenant_id = %tenant_id, limit = max_concurrent, "skipping: tenant concurrent limit reached");
         return Ok(());
     }

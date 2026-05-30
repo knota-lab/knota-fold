@@ -85,7 +85,7 @@ where
     )
     .await?;
 
-    let timeout_secs = worker_def.timeout_secs.max(1) as u64;
+    let timeout_secs = worker_def.timeout_secs.max(1).try_into().unwrap_or(1);
     let max_retries = worker_def.max_retries;
 
     let result = tokio::select! {

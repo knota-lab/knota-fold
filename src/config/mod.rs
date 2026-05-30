@@ -498,7 +498,7 @@ impl AppSettings {
     pub fn output_max_bytes(&self) -> usize {
         self.worker_scheduler
             .as_ref()
-            .map(|s| s.output_max_bytes as usize)
+            .and_then(|s| usize::try_from(s.output_max_bytes).ok())
             .filter(|&v| v > 0)
             .unwrap_or(65_536)
     }

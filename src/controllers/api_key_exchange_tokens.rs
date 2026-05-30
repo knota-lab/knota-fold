@@ -68,7 +68,9 @@ pub(crate) async fn create(
     let current =
         api_key_exchange_tokens::Model::count_valid_by_tenant(&ctx.db, tc.tenant_id)
             .await?;
-    if current >= settings.max_exchange_tokens_per_tenant as u64 {
+    let max_exchange_tokens =
+        u64::try_from(settings.max_exchange_tokens_per_tenant).unwrap_or_default();
+    if current >= max_exchange_tokens {
         tracing::warn!(%current, max_exchange_tokens_per_tenant=settings.max_exchange_tokens_per_tenant, "exchange token limit exceeded");
         return Err(err_bad_request(
             "api_key.exchange_token_limit_exceeded",
@@ -79,17 +81,17 @@ pub(crate) async fn create(
     let role_id = parse_uuid(params.role_id)?;
     let role = load_role(&ctx.db, role_id, tc.tenant_id).await?;
     let generated = generate_exchange_token();
-    let expires_at = match params.expires_at {
-        Some(value) => chrono::DateTime::parse_from_rfc3339(&value).map_err(|e| {
+    let expires_at = if let Some(value) = params.expires_at {
+        chrono::DateTime::parse_from_rfc3339(&value).map_err(|e| {
             err_bad_request(
                 "api_key.expires_at_invalid",
                 format!("无效的 expiresAt: {e}"),
             )
-        })?,
-        None => {
-            Utc::now().fixed_offset()
-                + Duration::hours(settings.default_exchange_ttl_hours.unwrap_or(24) as i64)
-        }
+        })?
+    } else {
+        let ttl_hours = i64::try_from(settings.default_exchange_ttl_hours.unwrap_or(24))
+            .unwrap_or(i64::MAX);
+        Utc::now().fixed_offset() + Duration::hours(ttl_hours)
     };
 
     let api_key_expires_at = match params.api_key_expires_at {
@@ -225,7 +227,8 @@ pub(crate) async fn exchange_key(
     let settings = api_key_settings(&ctx)?;
     let active_keys =
         api_keys::Model::count_active_by_tenant(&ctx.db, token.tenant_id).await?;
-    if active_keys >= settings.max_keys_per_tenant as u64 {
+    let max_keys = u64::try_from(settings.max_keys_per_tenant).unwrap_or_default();
+    if active_keys >= max_keys {
         return Err(err_bad_request(
             "api_key.api_key_limit_exceeded",
             "API Key 数量已达上限",

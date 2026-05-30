@@ -170,7 +170,7 @@ fn build_chunk_points_and_models(
         chunk_points.push(ChunkPoint {
             chunk_id,
             document_id: p.document_id,
-            chunk_index: i as i32,
+            chunk_index: i32::try_from(i).unwrap_or(i32::MAX),
             content: chunk.content.clone(),
             heading_path: chunk.heading_path.clone(),
             page_number: None,
@@ -186,7 +186,7 @@ fn build_chunk_points_and_models(
             id: ActiveValue::Set(chunk_id),
             document_id: ActiveValue::Set(p.document_id),
             tenant_id: ActiveValue::Set(p.tenant_id),
-            chunk_index: ActiveValue::Set(i as i32),
+            chunk_index: ActiveValue::Set(i32::try_from(i).unwrap_or(i32::MAX)),
             content: ActiveValue::Set(chunk.content.clone()),
             heading_path: ActiveValue::Set(chunk.heading_path.clone()),
             page_number: ActiveValue::Set(None),
@@ -277,8 +277,13 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
         .map_err(|e| Error::Message(format!("Qdrant upsert failed: {e}")))?;
 
     // 11. Mark document as ready
-    document_service::mark_ready(db, p.document_id, chunks.len() as i32, total_tokens)
-        .await?;
+    document_service::mark_ready(
+        db,
+        p.document_id,
+        i32::try_from(chunks.len()).unwrap_or(i32::MAX),
+        total_tokens,
+    )
+    .await?;
 
     tracing::info!(
         document_id = %p.document_id,

@@ -239,7 +239,8 @@ fn presigned_expiry() -> loco_rs::Result<PresigningConfig> {
 }
 
 fn utc_plus_seconds(seconds: u64) -> DateTime<FixedOffset> {
-    (Utc::now() + ChronoDuration::seconds(seconds as i64)).fixed_offset()
+    (Utc::now() + ChronoDuration::seconds(i64::try_from(seconds).unwrap_or(i64::MAX)))
+        .fixed_offset()
 }
 
 fn upload_expiry() -> DateTime<FixedOffset> {
@@ -368,7 +369,7 @@ async fn stream_object_hashes(
     let mut reader = response.body.into_async_read();
     let mut full_hasher = blake3::Hasher::new();
     let mut fast_hasher = blake3::Hasher::new();
-    let ranges = fast_hash_sample_ranges(size as u64);
+    let ranges = fast_hash_sample_ranges(size.try_into().unwrap_or_default());
     let mut range_index = 0usize;
     let mut offset = 0u64;
     let mut mime_sample = Vec::with_capacity(MIME_SNIFF_BYTES);
@@ -720,7 +721,7 @@ fn ensure_parts_continuity(
     upload: &file_uploads::Model,
     parts: &[file_upload_parts::Model],
 ) -> loco_rs::Result<()> {
-    if parts.len() != upload.parts_total as usize {
+    if parts.len() != usize::try_from(upload.parts_total).unwrap_or_default() {
         return Err(crate::views::errors::err_custom(
             StatusCode::UNPROCESSABLE_ENTITY,
             "missing_parts",
@@ -1055,7 +1056,10 @@ pub async fn initiate_upload(
 
     validate_initiate_request(params)?;
     let policy = partition_policy::load_policy_config(&ctx.db, tenant_id).await?;
-    let upload_hint = partition_policy::compute(params.expected_size as u64, &policy)?;
+    let upload_hint = partition_policy::compute(
+        params.expected_size.try_into().unwrap_or_default(),
+        &policy,
+    )?;
     let part_size = i64::try_from(upload_hint.part_size).map_err(|_| {
         Error::CustomError(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1442,7 +1446,7 @@ async fn upsert_part_and_finalize(
 
     let payload = RegisterPartResponse {
         upload_id: args.upload_id,
-        part_number: args.part_number_i32 as u32,
+        part_number: args.part_number_i32.try_into().unwrap_or_default(),
         parts_received,
         status: next_status.to_string(),
     };

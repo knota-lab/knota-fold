@@ -355,9 +355,10 @@ fn build_chat_history_with_budget(
     response_reserve_tokens: i32,
     system_prompt_tokens: usize,
 ) -> Vec<rig::completion::message::Message> {
-    let budget = (max_context_tokens as usize)
+    let budget = usize::try_from(max_context_tokens)
+        .unwrap_or_default()
         .saturating_sub(system_prompt_tokens)
-        .saturating_sub(response_reserve_tokens as usize)
+        .saturating_sub(usize::try_from(response_reserve_tokens).unwrap_or_default())
         .saturating_sub(TOOL_OVERHEAD_TOKENS);
 
     // Guard against zero budget (system prompt too large, nothing left for history)
@@ -870,7 +871,7 @@ async fn save_user_turn(
             role: "user".to_string(),
             content: ctx.request.instruction.clone(),
             has_material,
-            turn_index: (history.len() as i32 + 1) / 2,
+            turn_index: (i32::try_from(history.len()).unwrap_or(i32::MAX) + 1) / 2,
         },
     );
     Ok(())
@@ -923,8 +924,9 @@ async fn prepare_compaction(
     let compaction_span = tracing::info_span!("qa.compaction");
     let compaction_span_guard = compaction_span.enter();
     let history_tokens: usize = history.iter().map(estimate_message_tokens).sum();
-    let token_threshold =
-        ctx.config.max_context_tokens as usize - ctx.config.compaction_reserve_tokens;
+    let token_threshold = usize::try_from(ctx.config.max_context_tokens)
+        .unwrap_or_default()
+        .saturating_sub(ctx.config.compaction_reserve_tokens);
     let needs_compaction = history_tokens > token_threshold
         && history.len() > ctx.config.compaction_threshold;
     let recent_start = if needs_compaction {
@@ -1610,7 +1612,10 @@ async fn persist_successful_turn(
             role: "assistant".to_string(),
             content: turn_result.final_answer.clone(),
             has_material: false,
-            turn_index: ((session_prep.history.len() + 1) as i32 + 1) / 2,
+            turn_index: i32::try_from(session_prep.history.len().saturating_add(1))
+                .unwrap_or(i32::MAX)
+                .saturating_add(1)
+                / 2,
         },
     );
 

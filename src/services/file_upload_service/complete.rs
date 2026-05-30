@@ -326,7 +326,9 @@ async fn ensure_upload_size(
     s3_client: &SharedS3Client,
     streamed_hashes: &StreamedHashes,
 ) -> loco_rs::Result<()> {
-    if streamed_hashes.actual_size == upload.expected_size as u64 {
+    if streamed_hashes.actual_size
+        == u64::try_from(upload.expected_size).unwrap_or_default()
+    {
         return Ok(());
     }
 
@@ -471,7 +473,7 @@ async fn ensure_fast_hash(
         ));
     }
 
-    if upload.expected_size >= FAST_HASH_THRESHOLD as i64 {
+    if upload.expected_size >= i64::try_from(FAST_HASH_THRESHOLD).unwrap_or(i64::MAX) {
         tracing::warn!(upload_id = %upload.id, "legacy upload completed without expected_hash_fast");
     }
 

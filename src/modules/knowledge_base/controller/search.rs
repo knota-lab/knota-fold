@@ -69,9 +69,9 @@ pub(crate) async fn search(
         .as_ref()
         .ok_or_else(|| Error::Message("knowledge base not configured".into()))?;
 
-    let limit = params
-        .limit
-        .unwrap_or(kb_config.search.default_limit as usize);
+    let limit = params.limit.unwrap_or_else(|| {
+        usize::try_from(kb_config.search.default_limit).unwrap_or_default()
+    });
 
     let results = service::search_service::hybrid_search(
         &embedding_client,
