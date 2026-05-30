@@ -34,13 +34,15 @@ async fn can_create_platform_notification() {
     let notification =
         knota_fold::modules::notification::service::create::create_notification(
             db,
-            None,
-            user_id,
-            "Platform Notice",
-            "Hello everyone",
-            "platform",
-            "high",
-            None,
+            &knota_fold::modules::notification::service::create::CreateNotificationParams {
+                tenant_id: None,
+                created_by: user_id,
+                title: "Platform Notice",
+                content: "Hello everyone",
+                notification_type: "platform",
+                priority: "high",
+                target_role_codes: None,
+            },
         )
         .await
         .expect("Failed to create platform notification");
@@ -68,13 +70,15 @@ async fn can_create_tenant_all_notification() {
     let notification =
         knota_fold::modules::notification::service::create::create_notification(
             db,
-            Some(tenant_id),
-            user_id,
-            "Tenant Notice",
-            "All users",
-            "tenant_all",
-            "normal",
-            None,
+            &knota_fold::modules::notification::service::create::CreateNotificationParams {
+                tenant_id: Some(tenant_id),
+                created_by: user_id,
+                title: "Tenant Notice",
+                content: "All users",
+                notification_type: "tenant_all",
+                priority: "normal",
+                target_role_codes: None,
+            },
         )
         .await
         .expect("Failed to create tenant_all notification");
@@ -100,13 +104,15 @@ async fn can_create_tenant_role_notification() {
     let notification =
         knota_fold::modules::notification::service::create::create_notification(
             db,
-            Some(tenant_id),
-            user_id,
-            "Role Notice",
-            "Admins only",
-            "tenant_role",
-            "normal",
-            Some(&role_codes),
+            &knota_fold::modules::notification::service::create::CreateNotificationParams {
+                tenant_id: Some(tenant_id),
+                created_by: user_id,
+                title: "Role Notice",
+                content: "Admins only",
+                notification_type: "tenant_role",
+                priority: "normal",
+                target_role_codes: Some(role_codes.as_slice()),
+            },
         )
         .await
         .expect("Failed to create tenant_role notification");
@@ -132,13 +138,15 @@ async fn can_revoke_notification() {
     let notification =
         knota_fold::modules::notification::service::create::create_notification(
             db,
-            None,
-            user_id,
-            "To Revoke",
-            "Will be revoked",
-            "platform",
-            "normal",
-            None,
+            &knota_fold::modules::notification::service::create::CreateNotificationParams {
+                tenant_id: None,
+                created_by: user_id,
+                title: "To Revoke",
+                content: "Will be revoked",
+                notification_type: "platform",
+                priority: "normal",
+                target_role_codes: None,
+            },
         )
         .await
         .expect("Failed to create notification");
@@ -168,13 +176,15 @@ async fn revoke_already_revoked_fails() {
     let notification =
         knota_fold::modules::notification::service::create::create_notification(
             db,
-            None,
-            user_id,
-            "Double Revoke",
-            "Should fail",
-            "platform",
-            "normal",
-            None,
+            &knota_fold::modules::notification::service::create::CreateNotificationParams {
+                tenant_id: None,
+                created_by: user_id,
+                title: "Double Revoke",
+                content: "Should fail",
+                notification_type: "platform",
+                priority: "normal",
+                target_role_codes: None,
+            },
         )
         .await
         .expect("Failed to create notification");
