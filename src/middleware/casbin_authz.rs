@@ -131,7 +131,7 @@ where
                     .claims
                     .claims
                     .get("password_iat")
-                    .and_then(|v| v.as_i64())
+                    .and_then(serde_json::Value::as_i64)
                     .unwrap_or(0);
 
                 let Ok(db_pwd_iat) =

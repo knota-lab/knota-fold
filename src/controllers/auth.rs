@@ -194,7 +194,7 @@ pub(crate) async fn captcha(State(ctx): State<AppContext>) -> Result<Response> {
         .as_ref()
         .and_then(|v| v.get("captcha"))
         .and_then(|v| v.get("ttlSeconds"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(300);
     format::json(CaptchaResponse {
         image,

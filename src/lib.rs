@@ -13,9 +13,7 @@
 #![allow(clippy::too_long_first_doc_paragraph)]
 #![allow(clippy::missing_fields_in_debug)]
 // ── Attribute / struct style lints ─────────────────────────────────
-#![allow(clippy::return_self_not_must_use)]
 #![allow(clippy::missing_const_for_fn)]
-#![allow(clippy::items_after_statements)]
 // ── Cast lints — DB column types (i32/i64) vs Rust (usize/u64) ─────
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_possible_wrap)]
@@ -23,8 +21,6 @@
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::cast_precision_loss)]
 // ── Import / closure / format style lints ──────────────────────────
-#![allow(clippy::redundant_closure_for_method_calls)]
-#![allow(clippy::format_push_string)]
 // ── Other style lints ──────────────────────────────────────────────
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::significant_drop_tightening)]

@@ -243,6 +243,8 @@ pub(crate) async fn reindex(
     State(ctx): State<AppContext>,
     Path(id): Path<String>,
 ) -> Result<Response> {
+    use crate::modules::knowledge_base::models::kb_documents as kd_models;
+    use sea_orm::{ActiveModelTrait, ActiveValue};
     let doc_id = parse_uuid(id)?;
 
     // Verify document exists and belongs to tenant
@@ -292,8 +294,6 @@ pub(crate) async fn reindex(
 
     // Reset status: we need to go back to 'pending' regardless of current state.
     // document_service::update_status only allows valid transitions, so we do a direct update.
-    use crate::modules::knowledge_base::models::kb_documents as kd_models;
-    use sea_orm::{ActiveModelTrait, ActiveValue};
     let doc = kb_documents::Entity::find_by_id(doc_id)
         .one(&ctx.db)
         .await

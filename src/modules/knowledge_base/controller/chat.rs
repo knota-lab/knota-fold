@@ -197,6 +197,7 @@ fn format_session_markdown(
     session: &chat_sessions::Model,
     messages: &[chat_messages::Model],
 ) -> String {
+    use std::fmt::Write;
     let title = session.title.as_deref().unwrap_or("未命名会话");
     let timestamp = chrono::Utc::now().naive_utc().format("%Y-%m-%d %H:%M:%S");
 
@@ -215,7 +216,7 @@ fn format_session_markdown(
         match msg.role.as_str() {
             "user" => {
                 round += 1;
-                md.push_str(&format!("## 用户\n\n{}\n", msg.content));
+                let _ = writeln!(md, "## 用户\n\n{}", msg.content);
 
                 if let Some(ref refs) = msg.material_refs {
                     let mut material_lines = Vec::new();
@@ -252,10 +253,11 @@ fn format_session_markdown(
                         material_lines.push("- 文件".to_string());
                     }
                     if !material_lines.is_empty() {
-                        md.push_str(&format!(
-                            "\n**附加材料:**\n{}\n",
+                        let _ = writeln!(
+                            md,
+                            "\n**附加材料:**\n{}",
                             material_lines.join("\n")
-                        ));
+                        );
                     }
                 }
 
@@ -285,9 +287,10 @@ fn format_session_markdown(
                                     if !content.is_empty() {
                                         if is_error {
                                             for line in content.lines() {
-                                                md.push_str(&format!(
-                                                    "> \u{26a0}\u{fe0f} {line}\n"
-                                                ));
+                                                let _ = writeln!(
+                                                    md,
+                                                    "> \u{26a0}\u{fe0f} {line}"
+                                                );
                                             }
                                         } else {
                                             md.push_str(content);
@@ -303,7 +306,7 @@ fn format_session_markdown(
                                     .unwrap_or("unknown");
                                 let duration = part
                                     .get("durationMs")
-                                    .and_then(|v| v.as_u64())
+                                    .and_then(serde_json::Value::as_u64)
                                     .unwrap_or(0);
                                 let preview = part
                                     .get("resultPreview")
@@ -321,21 +324,20 @@ fn format_session_markdown(
                                 } else {
                                     ""
                                 };
-                                md.push_str(&format!(
-                                    "\n> **🔍 {name}** ({time_str})\n> `{truncated_preview}{ellipsis}`"
-                                ));
+                                let _ = write!(md, "\n> **🔍 {name}** ({time_str})\n> `{truncated_preview}{ellipsis}`");
                                 // 完整工具调用参数
                                 if let Some(args) = part.get("arguments") {
                                     let args_str = serde_json::to_string_pretty(args)
                                         .unwrap_or_default();
-                                    md.push_str(&format!(
+                                    let _ = write!(
+                                        md,
                                         "\n> **参数:**\n> ```json\n{}\n> ```",
                                         args_str
                                             .lines()
                                             .map(|l| format!("> {l}"))
                                             .collect::<Vec<_>>()
                                             .join("\n")
-                                    ));
+                                    );
                                 }
                                 md.push_str("\n\n");
                             }
@@ -374,14 +376,15 @@ fn format_session_markdown(
                             if let Some(args) = call.get("arguments") {
                                 let args_str = serde_json::to_string_pretty(args)
                                     .unwrap_or_default();
-                                line.push_str(&format!(
+                                let _ = write!(
+                                    line,
                                     "\n  参数:\n  ```json\n{}\n  ```",
                                     args_str
                                         .lines()
                                         .map(|l| format!("  {l}"))
                                         .collect::<Vec<_>>()
                                         .join("\n")
-                                ));
+                                );
                             }
                             lines.push(line);
                         }
@@ -393,19 +396,20 @@ fn format_session_markdown(
                     }
                     if is_error {
                         for line in msg.content.lines() {
-                            md.push_str(&format!("> \u{26a0}\u{fe0f} {line}\n"));
+                            let _ = writeln!(md, "> \u{26a0}\u{fe0f} {line}");
                         }
                     } else {
-                        md.push_str(&format!("{}\n", msg.content));
+                        let _ = writeln!(md, "{}", msg.content);
                     }
                 }
 
                 // Token 用量统计
                 if msg.total_tokens > 0 {
-                    md.push_str(&format!(
-                        "\n*Token 用量: prompt={}, completion={}, total={}\n",
+                    let _ = writeln!(
+                        md,
+                        "\n*Token 用量: prompt={}, completion={}, total={}",
                         msg.prompt_tokens, msg.completion_tokens, msg.total_tokens
-                    ));
+                    );
                 }
 
                 md.push_str("\n---\n\n");
@@ -414,7 +418,7 @@ fn format_session_markdown(
         }
     }
 
-    md.push_str(&format!("> 对话结束 — 共 {round} 轮\n"));
+    let _ = writeln!(md, "> 对话结束 — 共 {round} 轮");
     md
 }
 
@@ -466,6 +470,7 @@ fn format_debug_html(
     session: &chat_sessions::Model,
     messages: &[chat_messages::Model],
 ) -> String {
+    use std::fmt::Write;
     let title = session.title.as_deref().unwrap_or("未命名会话");
     let timestamp = chrono::Utc::now().naive_utc().format("%Y-%m-%d %H:%M:%S");
 
@@ -555,11 +560,12 @@ fn format_debug_html(
 "#);
 
     // ---- Header ----
-    html.push_str(&format!("<h1>调试导出: {}</h1>\n", html_escape(title)));
-    html.push_str(&format!(
-        "<div class=\"meta\">导出时间: {} &nbsp;|&nbsp; 会话 ID: <code>{}</code></div>\n",
+    let _ = writeln!(html, "<h1>调试导出: {}</h1>", html_escape(title));
+    let _ = writeln!(
+        html,
+        "<div class=\"meta\">导出时间: {} &nbsp;|&nbsp; 会话 ID: <code>{}</code></div>",
         timestamp, session.id
-    ));
+    );
     html.push_str(
         "<div class=\"warning\">⚠️ 本文档包含 LLM 调试数据，仅供开发者参考</div>\n",
     );
@@ -586,10 +592,8 @@ fn format_debug_html(
                 "<details class=\"toc\" open><summary>📋 对话目录</summary>\n<nav>\n",
             );
             for (r, preview) in &toc_entries {
-                html.push_str(&format!(
-                    "<a class=\"toc-link\" href=\"#round-{}\"><span class=\"toc-round\">第 {} 轮</span> {}</a>\n",
-                    r, r, html_escape(preview)
-                ));
+                let _ = writeln!(html, "<a class=\"toc-link\" href=\"#round-{}\"><span class=\"toc-round\">第 {} 轮</span> {}</a>",
+                    r, r, html_escape(preview));
             }
             html.push_str("</nav>\n</details>\n");
         }
@@ -603,35 +607,28 @@ fn format_debug_html(
             "user" => {
                 round += 1;
                 html.push_str("<div class=\"msg-card\">\n");
-                html.push_str(&format!(
-                    "<h2 id=\"round-{round}\"><span class=\"badge badge-user\">User</span> 消息 #{msg_num}</h2>\n"
-                ));
-                html.push_str(&format!(
-                    "<div class=\"answer-block\">{}</div>\n",
+                let _ = writeln!(html, "<h2 id=\"round-{round}\"><span class=\"badge badge-user\">User</span> 消息 #{msg_num}</h2>");
+                let _ = writeln!(
+                    html,
+                    "<div class=\"answer-block\">{}</div>",
                     html_escape(&msg.content)
-                ));
+                );
                 if let Some(ref refs) = msg.material_refs {
                     let refs_str = serde_json::to_string_pretty(refs).unwrap_or_default();
                     html.push_str("<div class=\"section-title\">附加材料</div>\n");
-                    html.push_str(&format!(
-                        "<details><summary>material_refs JSON</summary><pre><code>{}</code></pre></details>\n",
-                        html_escape(&refs_str)
-                    ));
+                    let _ = writeln!(html, "<details><summary>material_refs JSON</summary><pre><code>{}</code></pre></details>",
+                        html_escape(&refs_str));
                 }
                 html.push_str("</div>\n");
             }
             "assistant" => {
                 html.push_str("<div class=\"msg-card\">\n");
-                html.push_str(&format!(
-                    "<h2><span class=\"badge badge-assistant\">Assistant</span> 消息 #{msg_num}</h2>\n"
-                ));
+                let _ = writeln!(html, "<h2><span class=\"badge badge-assistant\">Assistant</span> 消息 #{msg_num}</h2>");
 
                 // Token usage
                 if msg.total_tokens > 0 {
-                    html.push_str(&format!(
-                        "<div class=\"meta\">Token: prompt=<code>{}</code> completion=<code>{}</code> total=<code>{}</code></div>\n",
-                        msg.prompt_tokens, msg.completion_tokens, msg.total_tokens
-                    ));
+                    let _ = writeln!(html, "<div class=\"meta\">Token: prompt=<code>{}</code> completion=<code>{}</code> total=<code>{}</code></div>",
+                        msg.prompt_tokens, msg.completion_tokens, msg.total_tokens);
                 }
 
                 // Debug context
@@ -643,29 +640,23 @@ fn format_debug_html(
 
                     // System Prompt
                     if let Some(sp) = dc.get("system_prompt").and_then(|v| v.as_str()) {
-                        html.push_str(&format!(
-                            "<details><summary>System Prompt ({} 字符)</summary><pre>{}</pre></details>\n",
+                        let _ = writeln!(html, "<details><summary>System Prompt ({} 字符)</summary><pre>{}</pre></details>",
                             sp.chars().count(),
-                            html_escape(sp)
-                        ));
+                            html_escape(sp));
                     }
 
                     // User Prompt
                     if let Some(up) = dc.get("user_prompt").and_then(|v| v.as_str()) {
-                        html.push_str(&format!(
-                            "<details><summary>User Prompt ({} 字符)</summary><pre>{}</pre></details>\n",
+                        let _ = writeln!(html, "<details><summary>User Prompt ({} 字符)</summary><pre>{}</pre></details>",
                             up.chars().count(),
-                            html_escape(up)
-                        ));
+                            html_escape(up));
                     }
 
                     // Config Snapshot
                     if let Some(cs) = dc.get("config_snapshot") {
                         let cs_str = serde_json::to_string_pretty(cs).unwrap_or_default();
-                        html.push_str(&format!(
-                            "<details><summary>配置快照</summary><pre><code>{}</code></pre></details>\n",
-                            html_escape(&cs_str)
-                        ));
+                        let _ = writeln!(html, "<details><summary>配置快照</summary><pre><code>{}</code></pre></details>",
+                            html_escape(&cs_str));
                     }
 
                     // Compaction
@@ -689,11 +680,12 @@ fn format_debug_html(
                             ("history_tokens", "历史估算 tokens"),
                             ("recent_start", "recent_start"),
                         ] {
-                            html.push_str(&format!(
+                            let _ = write!(
+                                html,
                                 "<tr><td>{}</td><td>{}</td></tr>",
                                 label,
                                 kv(k)
-                            ));
+                            );
                         }
                         html.push_str("</table></details>\n");
                     }
@@ -704,22 +696,20 @@ fn format_debug_html(
                             sr.get("strategy").and_then(|v| v.as_str()).unwrap_or("—");
                         let ctx_len = sr
                             .get("context_length")
-                            .and_then(|v| v.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                             .map_or_else(|| "—".to_string(), |v| v.to_string());
                         let has_recall = sr
                             .get("has_recall")
-                            .and_then(|v| v.as_bool())
+                            .and_then(serde_json::Value::as_bool)
                             .map_or_else(|| "—".to_string(), |b| b.to_string());
                         html.push_str("<details><summary>语义检索</summary>\n<table class=\"kv-table\">");
-                        html.push_str(&format!(
-                            "<tr><td>策略</td><td>{strategy}</td></tr>"
-                        ));
-                        html.push_str(&format!(
+                        let _ = write!(html, "<tr><td>策略</td><td>{strategy}</td></tr>");
+                        let _ = write!(
+                            html,
                             "<tr><td>上下文长度</td><td>{ctx_len}</td></tr>"
-                        ));
-                        html.push_str(&format!(
-                            "<tr><td>有召回</td><td>{has_recall}</td></tr>"
-                        ));
+                        );
+                        let _ =
+                            write!(html, "<tr><td>有召回</td><td>{has_recall}</td></tr>");
                         html.push_str("</table></details>\n");
                     }
 
@@ -727,11 +717,9 @@ fn format_debug_html(
                     if let Some(chs) = dc.get("chat_history_summary") {
                         let mc = chs
                             .get("message_count")
-                            .and_then(|v| v.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                             .unwrap_or(0);
-                        html.push_str(&format!(
-                            "<details><summary>Chat History ({mc} 条消息)</summary>\n<table class=\"kv-table\"><tr><td>#</td><td>角色</td><td>内容/文本数</td><td>工具调用</td></tr>"
-                        ));
+                        let _ = write!(html, "<details><summary>Chat History ({mc} 条消息)</summary>\n<table class=\"kv-table\"><tr><td>#</td><td>角色</td><td>内容/文本数</td><td>工具调用</td></tr>");
                         if let Some(msgs) = chs.get("messages").and_then(|v| v.as_array())
                         {
                             for (i, entry) in msgs.iter().enumerate() {
@@ -742,16 +730,14 @@ fn format_debug_html(
                                 let content_len = entry
                                     .get("content_count")
                                     .or_else(|| entry.get("text_items"))
-                                    .and_then(|v| v.as_u64())
+                                    .and_then(serde_json::Value::as_u64)
                                     .unwrap_or(0);
                                 let has_tools = entry
                                     .get("has_tool_calls")
-                                    .and_then(|v| v.as_bool())
+                                    .and_then(serde_json::Value::as_bool)
                                     .unwrap_or(false);
-                                html.push_str(&format!(
-                                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-                                    i + 1, role, content_len, if has_tools { "✓" } else { "—" }
-                                ));
+                                let _ = write!(html, "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                                    i + 1, role, content_len, if has_tools { "✓" } else { "—" });
                             }
                         }
                         html.push_str("</table></details>\n");
@@ -774,10 +760,11 @@ fn format_debug_html(
                                 html.push_str(
                                     "<div class=\"timeline-label\">📥 用户输入</div>\n",
                                 );
-                                html.push_str(&format!(
-                                    "<pre class=\"timeline-content\">{}</pre>\n",
+                                let _ = writeln!(
+                                    html,
+                                    "<pre class=\"timeline-content\">{}</pre>",
                                     html_escape(up)
-                                ));
+                                );
                                 html.push_str("</div>\n");
                             }
 
@@ -785,7 +772,7 @@ fn format_debug_html(
                             for round in rounds {
                                 let round_num = round
                                     .get("round")
-                                    .and_then(|v| v.as_u64())
+                                    .and_then(serde_json::Value::as_u64)
                                     .unwrap_or(0);
                                 let tool_name = round
                                     .get("toolName")
@@ -793,7 +780,7 @@ fn format_debug_html(
                                     .unwrap_or("unknown");
                                 let duration_ms = round
                                     .get("durationMs")
-                                    .and_then(|v| v.as_u64())
+                                    .and_then(serde_json::Value::as_u64)
                                     .unwrap_or(0);
                                 let result_full = round
                                     .get("resultFull")
@@ -810,9 +797,7 @@ fn format_debug_html(
                                 html.push_str(
                                     "<div class=\"timeline-entry tool-entry\">\n",
                                 );
-                                html.push_str(&format!(
-                                    "<div class=\"timeline-label\">🔧 工具调用 #{round_num} — {tool_name} ({duration_ms}ms)</div>\n"
-                                ));
+                                let _ = writeln!(html, "<div class=\"timeline-label\">🔧 工具调用 #{round_num} — {tool_name} ({duration_ms}ms)</div>");
 
                                 // Arguments
                                 if !args.is_empty() {
@@ -826,10 +811,11 @@ fn format_debug_html(
                                 // Result
                                 html.push_str("<details><summary>完整返回结果");
                                 if !result_full.is_empty() {
-                                    html.push_str(&format!(
+                                    let _ = write!(
+                                        html,
                                         " ({} 字符)",
                                         result_full.chars().count()
-                                    ));
+                                    );
                                 }
                                 html.push_str("</summary><pre>");
                                 html.push_str(&html_escape(result_full));
@@ -877,8 +863,10 @@ fn format_debug_html(
                             .get("toolName")
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown");
-                        let duration =
-                            part.get("durationMs").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let duration = part
+                            .get("durationMs")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(0);
                         let time_str = if duration < 1000 {
                             format!("{duration}ms")
                         } else {
@@ -886,16 +874,14 @@ fn format_debug_html(
                         };
 
                         html.push_str("<div class=\"tool-call\">");
-                        html.push_str(&format!("<span class=\"tool-name\">🔍 {}</span><span class=\"tool-duration\">{}</span>\n", html_escape(name), time_str));
+                        let _ = writeln!(html, "<span class=\"tool-name\">🔍 {}</span><span class=\"tool-duration\">{}</span>", html_escape(name), time_str);
 
                         // Arguments
                         if let Some(args) = part.get("arguments") {
                             let args_str =
                                 serde_json::to_string_pretty(args).unwrap_or_default();
-                            html.push_str(&format!(
-                                "<details><summary>参数</summary><pre><code>{}</code></pre></details>\n",
-                                html_escape(&args_str)
-                            ));
+                            let _ = writeln!(html, "<details><summary>参数</summary><pre><code>{}</code></pre></details>",
+                                html_escape(&args_str));
                         }
 
                         // Result
@@ -906,11 +892,9 @@ fn format_debug_html(
                                 part.get("resultPreview").and_then(|v| v.as_str())
                             })
                             .unwrap_or("");
-                        html.push_str(&format!(
-                            "<details><summary>完整结果 ({} 字符)</summary><pre>{}</pre></details>\n",
+                        let _ = writeln!(html, "<details><summary>完整结果 ({} 字符)</summary><pre>{}</pre></details>",
                             result_text.chars().count(),
-                            html_escape(result_text)
-                        ));
+                            html_escape(result_text));
                         html.push_str("</div>\n");
                     }
                 }
@@ -919,11 +903,12 @@ fn format_debug_html(
                 let is_error = msg.content.starts_with('\u{26a0}');
                 html.push_str("<div class=\"section-title\">回答内容</div>\n");
                 if !msg.content.is_empty() {
-                    html.push_str(&format!(
-                        "<div class=\"answer-block{}\">{}</div>\n",
+                    let _ = writeln!(
+                        html,
+                        "<div class=\"answer-block{}\">{}</div>",
                         if is_error { " error-block" } else { "" },
                         html_escape(&msg.content)
-                    ));
+                    );
                 }
 
                 html.push_str("</div>\n");
@@ -932,9 +917,10 @@ fn format_debug_html(
         }
     }
 
-    html.push_str(&format!(
-        "<hr class=\"round-sep\"><div class=\"meta\">对话结束 — 共 {round} 轮</div>\n"
-    ));
+    let _ = writeln!(
+        html,
+        "<hr class=\"round-sep\"><div class=\"meta\">对话结束 — 共 {round} 轮</div>"
+    );
     html.push_str("</body>\n</html>\n");
     html
 }

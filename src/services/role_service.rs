@@ -270,6 +270,7 @@ pub async fn toggle_role_status(
             )
         })?;
     } else {
+        use crate::models::_entities::user_roles;
         let obj_acts =
             permissions_model::Model::find_role_permission_obj_acts(db, id, tenant_id)
                 .await?;
@@ -288,7 +289,6 @@ pub async fn toggle_role_status(
             )
         })?;
 
-        use crate::models::_entities::user_roles;
         let user_role_records = user_roles::Entity::find()
             .filter(user_roles::Column::RoleId.eq(id))
             .filter(user_roles::Column::TenantId.eq(tenant_id))
@@ -380,7 +380,10 @@ pub async fn sync_user_roles<C: ConnectionTrait>(
         )
     })?;
 
-    let new_role_ids: Vec<String> = role_ids.iter().map(|id| id.to_string()).collect();
+    let new_role_ids: Vec<String> = role_ids
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     audit_service::log(
         db,
         audit_ctx,
@@ -495,8 +498,10 @@ pub async fn sync_role_permissions<C: ConnectionTrait>(
         )
     })?;
 
-    let new_permission_ids: Vec<String> =
-        permission_ids.iter().map(|id| id.to_string()).collect();
+    let new_permission_ids: Vec<String> = permission_ids
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     audit_service::log(
         db,
         audit_ctx,
@@ -615,8 +620,10 @@ pub async fn sync_role_menus(
 
     txn.commit().await.model_err()?;
 
-    let new_menu_ids: Vec<String> =
-        sys_menu_ids.iter().map(|id| id.to_string()).collect();
+    let new_menu_ids: Vec<String> = sys_menu_ids
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     audit_service::log(
         db,
         audit_ctx,

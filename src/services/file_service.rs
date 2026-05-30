@@ -157,6 +157,7 @@ fn build_content_disposition(name: &str, kind: Disposition) -> String {
 }
 
 fn rfc8187_encode(value: &str) -> String {
+    use std::fmt::Write;
     let mut encoded = String::with_capacity(value.len() * 3);
     for byte in value.as_bytes() {
         match *byte {
@@ -175,7 +176,9 @@ fn rfc8187_encode(value: &str) -> String {
             | b'`'
             | b'|'
             | b'~' => encoded.push(*byte as char),
-            _ => encoded.push_str(&format!("%{byte:02X}")),
+            _ => {
+                let _ = write!(encoded, "%{byte:02X}");
+            }
         }
     }
     encoded
@@ -184,7 +187,7 @@ fn rfc8187_encode(value: &str) -> String {
 fn map_s3_error(err: &aws_sdk_s3::error::SdkError<GetObjectError>) -> Error {
     if err
         .as_service_error()
-        .is_some_and(|service_err| service_err.is_no_such_key())
+        .is_some_and(aws_sdk_s3::operation::get_object::GetObjectError::is_no_such_key)
     {
         tracing::error!(error = ?err, "S3 GetObject reported NoSuchKey for existing file row");
         crate::views::errors::err_custom(

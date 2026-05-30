@@ -290,7 +290,7 @@ fn build_chat_history(
                                     .filter(|s| !s.is_empty())
                                     .map_or_else(
                                         || format!("hist-{idx}"),
-                                        |s| s.to_string(),
+                                        std::string::ToString::to_string,
                                     );
 
                                 // Use tool_call_with_call_id to satisfy Ollama's
@@ -748,7 +748,7 @@ pub async fn process_qa_v3_stream(
                     .material
                     .file_ids
                     .iter()
-                    .map(|id| id.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>());
             }
             if !request.material.document_ids.is_empty() {
@@ -756,7 +756,7 @@ pub async fn process_qa_v3_stream(
                     .material
                     .document_ids
                     .iter()
-                    .map(|id| id.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>());
             }
             Some(refs)
@@ -989,8 +989,9 @@ pub async fn process_qa_v3_stream(
 
     // Build system_prompt with summary
     let mut system_prompt = format!("{BASE_SYSTEM_PROMPT}{material_hint}\n\n");
+    use std::fmt::Write;
     if !summary.is_empty() {
-        system_prompt.push_str(&format!("\n\n[对话历史摘要]\n{summary}\n"));
+        let _ = write!(system_prompt, "\n\n[对话历史摘要]\n{summary}\n");
     }
 
     // Inject page context when present
@@ -1011,8 +1012,7 @@ pub async fn process_qa_v3_stream(
         let active_title = active_ctx.map_or("未知", |c| c.title.as_str());
         let active_route = active_ctx.map_or("未知", |c| c.route.as_str());
 
-        system_prompt.push_str(&format!(
-            "\n\n## 已注册页面上下文\n\
+        let _ = write!(system_prompt, "\n\n## 已注册页面上下文\n\
              当前活跃页面：「{}」（路由: {}）\n\n\
              所有已注册页面：\n{}\n\n\
              你可以使用 page_ 前缀的工具来查询和操作页面数据。工具的 targetPage 参数用于指定目标页面（默认当前活跃页面）。\n\
@@ -1025,7 +1025,7 @@ pub async fn process_qa_v3_stream(
              - 如果缺少必要参数，**直接向用户询问缺失的参数**，不要假装要执行然后停下来。",
             active_title, active_route,
             page_list.join("\n")
-        ));
+        );
     }
 
     // ── Step 3c: Semantic recall with dedup ────────────────────────
@@ -1199,7 +1199,7 @@ pub async fn process_qa_v3_stream(
             },
             "semantic_recall": {
                 "strategy": config.history_strategy,
-                "context_length": relevant_context.as_ref().map_or(0, |c| c.len()),
+                "context_length": relevant_context.as_ref().map_or(0, std::string::String::len),
                 "has_recall": relevant_context.is_some(),
             }
         });

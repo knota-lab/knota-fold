@@ -297,7 +297,10 @@ pub(crate) async fn get_user_roles(
         user_service::get_user_role_ids(&ctx.db, id_uuid, target_user.tenant_id).await?;
 
     format::json(UserRolesResponse {
-        role_ids: role_ids.iter().map(|id| id.to_string()).collect(),
+        role_ids: role_ids
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect(),
     })
 }
 

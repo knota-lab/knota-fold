@@ -147,12 +147,22 @@ impl QaV3Hook {
 
     /// Take all collected tool call records, clearing the internal buffer.
     pub fn take_tool_records(&self) -> Vec<ToolCallRecord> {
-        std::mem::take(&mut self.tool_records.lock().unwrap_or_else(|e| e.into_inner()))
+        std::mem::take(
+            &mut self
+                .tool_records
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Take all collected citations, clearing the internal buffer.
     pub fn take_citations(&self) -> Vec<Citation> {
-        std::mem::take(&mut self.citations.lock().unwrap_or_else(|e| e.into_inner()))
+        std::mem::take(
+            &mut self
+                .citations
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Take all ordered content parts, flushing any remaining pending text first.
@@ -168,7 +178,12 @@ impl QaV3Hook {
                 }
             }
         }
-        std::mem::take(&mut self.content_parts.lock().unwrap_or_else(|e| e.into_inner()))
+        std::mem::take(
+            &mut self
+                .content_parts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Set the debug context snapshot for this turn.
@@ -188,7 +203,12 @@ impl QaV3Hook {
 
     /// Take all collected tool rounds, clearing the internal buffer.
     pub fn take_tool_rounds(&self) -> Vec<ToolRound> {
-        std::mem::take(&mut self.tool_rounds.lock().unwrap_or_else(|e| e.into_inner()))
+        std::mem::take(
+            &mut self
+                .tool_rounds
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Flush pending text into content_parts as a Text part (if non-empty).

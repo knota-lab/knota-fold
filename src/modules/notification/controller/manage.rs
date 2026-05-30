@@ -34,7 +34,7 @@ pub(crate) async fn create(
         && params
             .target_role_codes
             .as_ref()
-            .is_none_or(|c| c.is_empty())
+            .is_none_or(std::vec::Vec::is_empty)
     {
         return NotificationError::NoRolesSelected.to_response();
     }

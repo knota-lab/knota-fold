@@ -192,8 +192,10 @@ pub async fn sync_template_menus(
         .db_err()?;
     }
 
-    let new_menu_ids: Vec<String> =
-        sys_menu_ids.iter().map(|id| id.to_string()).collect();
+    let new_menu_ids: Vec<String> = sys_menu_ids
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     audit_service::log(
         db,
         audit_ctx,

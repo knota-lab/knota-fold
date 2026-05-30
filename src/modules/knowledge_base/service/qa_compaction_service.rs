@@ -59,6 +59,7 @@ const MERGE_SUMMARY_PROMPT: &str = "\
 /// For normal messages: truncate to 800 chars.
 /// Labels: 用户 / 助手 / 系统.
 fn format_history_for_summary(messages: &[chat_messages::Model]) -> String {
+    use std::fmt::Write;
     let mut parts = Vec::new();
 
     for msg in messages {
@@ -87,7 +88,7 @@ fn format_history_for_summary(messages: &[chat_messages::Model]) -> String {
                             } else {
                                 ""
                             };
-                            block.push_str(&format!("{role_label}: {truncated}"));
+                            let _ = write!(block, "{role_label}: {truncated}");
                             block.push_str(ellipsis);
                             block.push('\n');
                         }
@@ -101,9 +102,8 @@ fn format_history_for_summary(messages: &[chat_messages::Model]) -> String {
                             if let Some(preview) =
                                 tc.get("resultPreview").and_then(|v| v.as_str())
                             {
-                                block.push_str(&format!(
-                                    "[工具调用 {tool_name}] {preview}\n"
-                                ));
+                                let _ =
+                                    writeln!(block, "[工具调用 {tool_name}] {preview}");
                             }
                         }
 

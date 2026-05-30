@@ -246,8 +246,10 @@ impl Tool for ReadConversationTurnTool {
                             .get("toolName")
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown");
-                        let duration_ms =
-                            tc.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let duration_ms = tc
+                            .get("duration_ms")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(0);
                         let result_preview = tc
                             .get("result_preview")
                             .and_then(|v| v.as_str())

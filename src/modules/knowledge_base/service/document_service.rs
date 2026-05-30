@@ -81,7 +81,8 @@ pub async fn update_status(
 
     let mut active: kd_models::ActiveModel = doc.into();
     active.status = ActiveValue::Set(new_status.to_string());
-    active.error_message = ActiveValue::Set(error_message.map(|s| s.to_string()));
+    active.error_message =
+        ActiveValue::Set(error_message.map(std::string::ToString::to_string));
     active.updated_at = ActiveValue::Set(Utc::now().naive_utc());
     active.update(db).await.db_err()?;
     Ok(())

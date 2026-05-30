@@ -223,7 +223,7 @@ impl Task for SeedErrorCodes {
         }
 
         // ── Print report ─────────────────────────────────────────────────
-        let total_sites: usize = report.codes.values().map(|v| v.len()).sum();
+        let total_sites: usize = report.codes.values().map(std::vec::Vec::len).sum();
         tracing::info!(
             codes = total_codes,
             call_sites = total_sites,

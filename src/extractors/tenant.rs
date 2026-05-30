@@ -55,7 +55,7 @@ impl FromRequestParts<AppContext> for TenantContext {
         let token_pwd_iat = user_claims
             .claims
             .get("password_iat")
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or(0);
 
         let db_pwd_iat = auth_cache::get_password_iat(&state.cache, &state.db, user_id)
@@ -109,6 +109,6 @@ fn extract_token_from_header(parts: &Parts) -> Result<String, loco_rs::Error> {
 
     auth_header
         .strip_prefix("Bearer ")
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .ok_or_else(auth_err::err_invalid_auth_header)
 }

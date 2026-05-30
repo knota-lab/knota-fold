@@ -34,6 +34,7 @@ pub struct RequestId(pub String);
 /// verification. For logging purposes only — security enforcement happens in
 /// CasbinAuthzLayer.
 fn extract_jwt_claims(token: &str) -> Option<(String, String)> {
+    use base64::Engine;
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
         return None;
@@ -45,7 +46,6 @@ fn extract_jwt_claims(token: &str) -> Option<(String, String)> {
     } else {
         format!("{input}{}", "=".repeat(4 - input.len() % 4))
     };
-    use base64::Engine;
     let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(input)
         .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(padded))

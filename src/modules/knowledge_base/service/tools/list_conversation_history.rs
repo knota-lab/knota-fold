@@ -180,5 +180,5 @@ fn count_tool_calls(token_usage: Option<&serde_json::Value>) -> usize {
     token_usage
         .and_then(|v| v.get("toolCalls"))
         .and_then(|v| v.as_array())
-        .map_or(0, |arr| arr.len())
+        .map_or(0, std::vec::Vec::len)
 }

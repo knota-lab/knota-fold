@@ -153,6 +153,7 @@ impl WorkerScheduleResponse {
         }
     }
 
+    #[must_use]
     pub fn with_worker_info(mut self, name: &str, code: &str) -> Self {
         self.worker_name = Some(name.to_string());
         self.worker_code = Some(code.to_string());
@@ -232,12 +233,14 @@ impl WorkerExecutionResponse {
         }
     }
 
+    #[must_use]
     pub fn with_worker_info(mut self, name: &str, code: &str) -> Self {
         self.worker_name = Some(name.to_string());
         self.worker_code = Some(code.to_string());
         self
     }
 
+    #[must_use]
     pub fn with_schedule_name(mut self, name: &str) -> Self {
         self.schedule_name = Some(name.to_string());
         self
