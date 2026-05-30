@@ -27,7 +27,7 @@ pub struct S3Config {
     pub force_path_style: bool,
 }
 
-fn default_force_path_style() -> bool {
+const fn default_force_path_style() -> bool {
     true
 }
 

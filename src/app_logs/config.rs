@@ -24,22 +24,22 @@ pub struct AppLogsConfig {
 fn default_db_path() -> String {
     "data/logs/app.db".to_string()
 }
-fn default_batch_size() -> usize {
+const fn default_batch_size() -> usize {
     50
 }
-fn default_batch_interval() -> u64 {
+const fn default_batch_interval() -> u64 {
     100
 }
-fn default_retention() -> u32 {
+const fn default_retention() -> u32 {
     7
 }
 fn default_capture_level() -> String {
     "warn".to_string()
 }
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
-fn default_max_body() -> usize {
+const fn default_max_body() -> usize {
     4096
 }
 

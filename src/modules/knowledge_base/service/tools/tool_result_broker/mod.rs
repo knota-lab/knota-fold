@@ -95,7 +95,7 @@ pub struct ToolResultReceiver {
 }
 
 impl ToolResultReceiver {
-    pub(crate) fn new(
+    pub(crate) const fn new(
         inner: oneshot::Receiver<Result<ToolResult, ReceiverError>>,
     ) -> Self {
         Self { inner }

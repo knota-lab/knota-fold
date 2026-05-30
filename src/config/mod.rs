@@ -39,16 +39,16 @@ pub struct SchedulerConfig {
     pub output_max_bytes: i64,
 }
 
-fn default_true_val() -> bool {
+const fn default_true_val() -> bool {
     true
 }
-fn default_max_concurrent() -> i32 {
+const fn default_max_concurrent() -> i32 {
     3
 }
-fn default_retention_days() -> i32 {
+const fn default_retention_days() -> i32 {
     90
 }
-fn default_output_max_bytes() -> i64 {
+const fn default_output_max_bytes() -> i64 {
     65_536
 }
 
@@ -95,13 +95,13 @@ impl Default for ApiKeyConfig {
 fn default_env_prefix() -> String {
     "sk_live_".to_string()
 }
-fn default_secret_bytes() -> usize {
+const fn default_secret_bytes() -> usize {
     32
 }
-fn default_max_keys_per_tenant() -> i32 {
+const fn default_max_keys_per_tenant() -> i32 {
     20
 }
-fn default_max_exchange_tokens_per_tenant() -> i32 {
+const fn default_max_exchange_tokens_per_tenant() -> i32 {
     50
 }
 
@@ -155,10 +155,10 @@ fn default_embedding_provider() -> String {
 fn default_embedding_base_url() -> String {
     "https://api.openai.com/v1".to_string()
 }
-fn default_embedding_dimension() -> usize {
+const fn default_embedding_dimension() -> usize {
     1536
 }
-fn default_cache_size() -> usize {
+const fn default_cache_size() -> usize {
     10000
 }
 
@@ -225,19 +225,19 @@ impl Default for ChunkingConfig {
     }
 }
 
-fn default_max_chunk_tokens() -> i32 {
+const fn default_max_chunk_tokens() -> i32 {
     800
 }
-fn default_min_chunk_tokens() -> i32 {
+const fn default_min_chunk_tokens() -> i32 {
     100
 }
-fn default_overlap_sentences() -> i32 {
+const fn default_overlap_sentences() -> i32 {
     2
 }
-fn default_min_heading_level() -> i32 {
+const fn default_min_heading_level() -> i32 {
     1
 }
-fn default_max_heading_level() -> i32 {
+const fn default_max_heading_level() -> i32 {
     4
 }
 
@@ -268,13 +268,13 @@ impl Default for SearchConfig {
     }
 }
 
-fn default_search_limit() -> i32 {
+const fn default_search_limit() -> i32 {
     10
 }
-fn default_rrf_k() -> i32 {
+const fn default_rrf_k() -> i32 {
     60
 }
-fn default_pre_fusion_limit() -> i32 {
+const fn default_pre_fusion_limit() -> i32 {
     50
 }
 
@@ -376,31 +376,31 @@ fn default_qa_provider() -> String {
 fn default_qa_model() -> String {
     "auto".to_string()
 }
-fn default_qa_temperature() -> f64 {
+const fn default_qa_temperature() -> f64 {
     0.2
 }
-fn default_max_context_tokens() -> i32 {
+const fn default_max_context_tokens() -> i32 {
     100_000
 }
-fn default_response_reserve_tokens() -> i32 {
+const fn default_response_reserve_tokens() -> i32 {
     4096
 }
-fn default_compaction_threshold() -> usize {
+const fn default_compaction_threshold() -> usize {
     20
 }
-fn default_compaction_recent_turns() -> usize {
+const fn default_compaction_recent_turns() -> usize {
     12
 }
-fn default_compaction_reserve_tokens() -> usize {
+const fn default_compaction_reserve_tokens() -> usize {
     16384
 }
 fn default_history_strategy() -> String {
     "retrieve".to_string()
 }
-fn default_semantic_top_k() -> usize {
+const fn default_semantic_top_k() -> usize {
     10
 }
-fn default_max_inline_chars() -> usize {
+const fn default_max_inline_chars() -> usize {
     100_000
 }
 
@@ -432,7 +432,7 @@ impl Default for IntentConfig {
 fn default_intent_model() -> String {
     "gpt-4o-mini".to_string()
 }
-fn default_confidence_threshold() -> f64 {
+const fn default_confidence_threshold() -> f64 {
     0.6
 }
 

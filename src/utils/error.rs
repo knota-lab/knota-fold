@@ -175,7 +175,7 @@ fn classify_db_err(err: &DbErr) -> (StatusCode, &'static str, &'static str) {
     )
 }
 
-fn extract_sqlx_error(err: &DbErr) -> Option<&sqlx::Error> {
+const fn extract_sqlx_error(err: &DbErr) -> Option<&sqlx::Error> {
     match err {
         DbErr::Exec(RuntimeErr::SqlxError(e))
         | DbErr::Query(RuntimeErr::SqlxError(e))

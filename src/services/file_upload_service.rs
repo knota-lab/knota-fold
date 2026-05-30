@@ -282,7 +282,7 @@ fn validate_initiate_request(params: &InitiateUploadRequest) -> loco_rs::Result<
     Ok(())
 }
 
-fn fast_hash_sample_ranges(size: u64) -> Option<[Range<u64>; 3]> {
+const fn fast_hash_sample_ranges(size: u64) -> Option<[Range<u64>; 3]> {
     if size < FAST_HASH_THRESHOLD {
         return None;
     }

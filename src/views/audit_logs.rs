@@ -56,7 +56,7 @@ pub enum AuditAction {
 }
 
 impl AuditAction {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Create => "create",
             Self::Update => "update",

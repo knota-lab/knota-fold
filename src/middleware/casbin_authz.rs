@@ -35,7 +35,7 @@ pub struct CasbinAuthzLayer {
 }
 
 impl CasbinAuthzLayer {
-    pub fn new(
+    pub const fn new(
         enforcer: Arc<RwLock<Enforcer>>,
         db: DatabaseConnection,
         jwt_secret: String,

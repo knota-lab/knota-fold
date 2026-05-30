@@ -62,7 +62,7 @@ impl MaterialRef<'_> {
         }
     }
 
-    fn total_lines(&self) -> usize {
+    const fn total_lines(&self) -> usize {
         match self {
             MaterialRef::Doc(d) => d.total_lines,
             MaterialRef::Inline(t) => t.total_lines,

@@ -39,19 +39,19 @@ pub struct CaptchaConfig {
     pub dark_mode: bool,
 }
 
-fn default_ttl() -> u64 {
+const fn default_ttl() -> u64 {
     300
 }
-fn default_length() -> usize {
+const fn default_length() -> usize {
     5
 }
-fn default_width() -> u32 {
+const fn default_width() -> u32 {
     130
 }
-fn default_height() -> u32 {
+const fn default_height() -> u32 {
     40
 }
-fn default_complexity() -> u32 {
+const fn default_complexity() -> u32 {
     3
 }
 
