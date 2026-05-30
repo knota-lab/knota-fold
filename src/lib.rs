@@ -1,22 +1,17 @@
 //! knota-fold — knowledge management platform backend.
 //!
-//! Selective allows for pedantic/nursery lints that are either:
-//! - Documentation boilerplate (`missing_errors_doc`, `doc_markdown`, `must_use_candidate`)
-//! - Stylistic preferences that don't affect correctness
-//! - Unavoidable due to DB column types (i32/i64 vs usize/u64)
+//! Remaining allows are for lints that are either:
+//! - Documentation boilerplate too voluminous to maintain (`missing_errors_doc`, `missing_panics_doc`)
+//! - Unavoidable DB column type mismatches (`cast_*` lints)
+//! - Structural lints requiring deep refactoring (`too_many_lines`, `large_futures`, etc.)
 
-// ── Documentation / doc-comment lints ──────────────────────────────
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
-// ── Attribute / struct style lints ─────────────────────────────────
-// ── Cast lints — DB column types (i32/i64) vs Rust (usize/u64) ─────
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::cast_precision_loss)]
-// ── Import / closure / format style lints ──────────────────────────
-// ── Other style lints ──────────────────────────────────────────────
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::significant_drop_tightening)]
 #![allow(clippy::large_futures)]
