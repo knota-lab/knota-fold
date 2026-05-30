@@ -1062,7 +1062,7 @@ pub async fn initiate_upload(
             ErrorDetail::new("upload.part_size_overflow", "part size overflow"),
         )
     })?;
-    if !(1..=MAX_PARTS).contains(&(upload_hint.parts_total as i64)) {
+    if !(1..=MAX_PARTS).contains(&i64::from(upload_hint.parts_total)) {
         return Err(crate::views::errors::err_custom(
             StatusCode::UNPROCESSABLE_ENTITY,
             "too_many_parts",

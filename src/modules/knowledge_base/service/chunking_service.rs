@@ -49,8 +49,8 @@ pub fn chunk_markdown(
 
                 // Decide whether this heading triggers a new chunk.
                 let should_split = split_by_heading
-                    && (level_u8 as i32) >= min_heading_level
-                    && (level_u8 as i32) <= max_heading_level;
+                    && i32::from(level_u8) >= min_heading_level
+                    && i32::from(level_u8) <= max_heading_level;
 
                 if should_split && !current_content.is_empty() {
                     let tokens = count_tokens(&current_content);

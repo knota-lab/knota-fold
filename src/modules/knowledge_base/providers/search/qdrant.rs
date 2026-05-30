@@ -198,7 +198,7 @@ fn map_scored_points(
                 page_number: extract_i32(&r.payload, "page_number"),
                 char_start: extract_i32(&r.payload, "char_start"),
                 char_end: extract_i32(&r.payload, "char_end"),
-                score: r.score as f64,
+                score: f64::from(r.score),
             })
         })
         .collect()

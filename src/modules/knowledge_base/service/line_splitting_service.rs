@@ -16,7 +16,7 @@ pub fn split_lines(text: &str) -> Vec<RawLine> {
 
     for (idx, line) in text.split('\n').enumerate() {
         let line_chars = line.chars().count() as i32;
-        cumulative += line_chars as i64;
+        cumulative += i64::from(line_chars);
 
         lines.push(RawLine {
             line_number: (idx + 1) as i32,

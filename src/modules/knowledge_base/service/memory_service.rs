@@ -286,7 +286,7 @@ async fn vector_recall(
                 message_id,
                 role,
                 content,
-                score: r.score as f64,
+                score: f64::from(r.score),
                 turn_index,
                 has_material,
             })

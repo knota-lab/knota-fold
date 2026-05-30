@@ -426,7 +426,7 @@ fn format_duration(duration_ms: u64) -> String {
     if duration_ms < 1000 {
         format!("{duration_ms}ms")
     } else {
-        format!("{:.1}s", duration_ms as f64 / 1000.0)
+        format!("{}.{:01}s", duration_ms / 1000, (duration_ms % 1000) / 100)
     }
 }
 

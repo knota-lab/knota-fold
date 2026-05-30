@@ -207,7 +207,7 @@ fn build_conversation_context(
 pub(crate) fn estimate_text_tokens(text: &str, is_json: bool) -> usize {
     let char_count = text.chars().count();
     if is_json {
-        (char_count as f64 / 1.2).ceil() as usize
+        char_count.saturating_mul(5).div_ceil(6)
     } else {
         (char_count / 2).max(1)
     }
