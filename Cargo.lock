@@ -3673,6 +3673,7 @@ dependencies = [
  "loco-openapi",
  "loco-rs",
  "migration",
+ "num-traits",
  "opentelemetry",
  "pulldown-cmark",
  "qdrant-client",

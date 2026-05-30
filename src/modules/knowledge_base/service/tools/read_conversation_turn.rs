@@ -126,7 +126,7 @@ impl Tool for ReadConversationTurnTool {
 
         let turns = pair_messages_into_turns(&messages);
 
-        let total_turns = turns.len() as u32;
+        let total_turns = u32::try_from(turns.len()).unwrap_or(u32::MAX);
 
         if total_turns == 0 {
             return Ok("当前会话暂无对话历史。".to_string());
@@ -205,7 +205,8 @@ fn render_turns(turns: &[Turn], start_turn: u32, end_turn: u32) -> String {
     let mut output_parts: Vec<String> = Vec::new();
 
     for turn_idx in start_turn..=end_turn {
-        let turn = &turns[(turn_idx - 1) as usize];
+        let turn_index = usize::try_from(turn_idx - 1).unwrap_or(usize::MAX);
+        let turn = &turns[turn_index];
         let mut parts: Vec<String> = Vec::new();
 
         parts.push(format!("=== 第 {turn_idx} 轮对话 ==="));

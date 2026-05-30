@@ -57,7 +57,7 @@ impl QdrantSearchProvider {
                 .create_collection(
                     CreateCollectionBuilder::new(collection_name)
                         .vectors_config(VectorParamsBuilder::new(
-                            dimension as u64,
+                            u64::try_from(dimension).unwrap_or(u64::MAX),
                             Distance::Cosine,
                         ))
                         .sparse_vectors_config(sparse_config),
@@ -113,7 +113,12 @@ fn tokenize_to_sparse(text: &str) -> (Vec<u32>, Vec<f32>) {
 fn simple_hash(s: &str) -> u32 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     s.hash(&mut hasher);
-    hasher.finish() as u32
+    let hash = hasher.finish();
+    u32::from_ne_bytes(
+        hash.to_ne_bytes()[..4]
+            .try_into()
+            .expect("u64 hash prefix is exactly 4 bytes"),
+    )
 }
 
 // ── Payload extraction helpers ───────────────────────────────────────
@@ -127,7 +132,7 @@ fn extract_string(payload: &HashMap<String, Value>, key: &str) -> Option<String>
 
 fn extract_i32(payload: &HashMap<String, Value>, key: &str) -> Option<i32> {
     payload.get(key).and_then(|v| match &v.kind {
-        Some(ValueKind::IntegerValue(i)) => Some(*i as i32),
+        Some(ValueKind::IntegerValue(i)) => i32::try_from(*i).ok(),
         _ => None,
     })
 }
@@ -303,7 +308,7 @@ impl SearchProvider for QdrantSearchProvider {
                     )
                     .query(Fusion::Rrf)
                     .filter(qdrant_filter)
-                    .limit(limit as u64)
+                    .limit(u64::try_from(limit).unwrap_or(u64::MAX))
                     .with_payload(true),
             )
             .await
@@ -327,7 +332,7 @@ impl SearchProvider for QdrantSearchProvider {
                 QueryPointsBuilder::new(&self.collection_name)
                     .query(query_vector.to_vec())
                     .filter(qdrant_filter)
-                    .limit(limit as u64)
+                    .limit(u64::try_from(limit).unwrap_or(u64::MAX))
                     .with_payload(true),
             )
             .await

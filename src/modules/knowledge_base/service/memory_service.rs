@@ -17,6 +17,7 @@ use std::hash::{Hash, Hasher};
 use uuid::Uuid;
 
 use crate::modules::knowledge_base::errors::KnowledgeBaseError;
+use crate::modules::knowledge_base::service::numeric::embedding_vec_f64_to_f32;
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -92,7 +93,12 @@ fn tokenize_to_sparse(text: &str) -> (Vec<u32>, Vec<f32>) {
 fn simple_hash(s: &str) -> u32 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     s.hash(&mut hasher);
-    hasher.finish() as u32
+    let hash = hasher.finish();
+    u32::from_ne_bytes(
+        hash.to_ne_bytes()[..4]
+            .try_into()
+            .expect("u64 hash prefix is exactly 4 bytes"),
+    )
 }
 
 // ── Core functions ───────────────────────────────────────────────────
@@ -111,7 +117,7 @@ async fn embed_text(
         .embed_text(text)
         .await
         .map_err(|e| KnowledgeBaseError::EmbeddingError(e.to_string()))?;
-    Ok(embedding.vec.iter().map(|&v| v as f32).collect())
+    Ok(embedding_vec_f64_to_f32(&embedding.vec))
 }
 
 /// Parameters for [`index_message`].
@@ -230,7 +236,7 @@ async fn vector_recall(
                 )
                 .query(Fusion::Rrf)
                 .filter(filter)
-                .limit(params.top_k as u64)
+                .limit(u64::try_from(params.top_k).unwrap_or(u64::MAX))
                 .with_payload(true),
         )
         .await
@@ -269,7 +275,7 @@ async fn vector_recall(
                 .get("turn_index")
                 .and_then(|v| match &v.kind {
                     Some(qdrant_client::qdrant::value::Kind::IntegerValue(i)) => {
-                        Some(*i as i32)
+                        i32::try_from(*i).ok()
                     }
                     _ => None,
                 })

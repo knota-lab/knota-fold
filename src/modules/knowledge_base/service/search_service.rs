@@ -4,6 +4,7 @@ use crate::initializers::knowledge_base::SharedSearchProvider;
 use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::providers::search::{SearchFilter, SearchResult};
 use crate::modules::knowledge_base::providers::SharedEmbeddingClient;
+use crate::modules::knowledge_base::service::numeric::embedding_vec_f64_to_f32;
 
 use super::qa_types::Citation;
 
@@ -35,8 +36,7 @@ pub async fn hybrid_search(
         .await
         .map_err(|e| KnowledgeBaseError::EmbeddingError(e.to_string()))?;
 
-    // Convert f64 → f32
-    let query_vector: Vec<f32> = embedding.vec.iter().map(|&v| v as f32).collect();
+    let query_vector = embedding_vec_f64_to_f32(&embedding.vec);
 
     // Build filter
     let filter = Some(SearchFilter {

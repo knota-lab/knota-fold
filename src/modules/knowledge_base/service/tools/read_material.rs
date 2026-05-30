@@ -151,7 +151,8 @@ impl Tool for ReadMaterialTool {
         let total = material.total_lines();
 
         // 1-indexed, default start = 1
-        let start = args.start_line.unwrap_or(1).max(1) as usize;
+        let start =
+            usize::try_from(args.start_line.unwrap_or(1).max(1)).unwrap_or(usize::MAX);
 
         // Out-of-range check
         if start > total {
@@ -163,11 +164,13 @@ impl Tool for ReadMaterialTool {
             ));
         }
 
-        let default_end = start as u32 + MAX_LINES_PER_READ;
+        let start_u32 = u32::try_from(start).unwrap_or(u32::MAX);
+        let default_end = start_u32.saturating_add(MAX_LINES_PER_READ);
         let end = args
             .end_line
             .unwrap_or(default_end)
-            .min(start as u32 + MAX_LINES_PER_READ) as usize;
+            .min(start_u32.saturating_add(MAX_LINES_PER_READ));
+        let end = usize::try_from(end).unwrap_or(usize::MAX);
 
         let actual_end = end.min(total).max(start);
 

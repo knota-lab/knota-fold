@@ -325,7 +325,9 @@ where
             .lock()
             .ok()
             .and_then(|mut map| map.remove(internal_call_id))
-            .map_or(0, |start| start.elapsed().as_millis() as u64);
+            .map_or(0, |start| {
+                u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
+            });
 
         let result_preview = truncate_str(result, 500).to_owned();
         let result_full = truncate_str(result, 50_000).to_owned();

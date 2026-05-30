@@ -11,6 +11,7 @@ use crate::modules::knowledge_base::models::{
 };
 use crate::modules::knowledge_base::providers::search::ChunkPoint;
 use crate::modules::knowledge_base::providers::SharedEmbeddingClient;
+use crate::modules::knowledge_base::service::numeric::embedding_vec_f64_to_f32;
 use crate::modules::knowledge_base::service::{
     chunking_service, document_service, line_splitting_service,
 };
@@ -164,7 +165,7 @@ fn build_chunk_points_and_models(
 
     for (i, (chunk, embedding)) in chunks.iter().zip(embeddings.iter()).enumerate() {
         let chunk_id = Uuid::now_v7();
-        let embedding_f32: Vec<f32> = embedding.vec.iter().map(|&v| v as f32).collect();
+        let embedding_f32 = embedding_vec_f64_to_f32(&embedding.vec);
         total_tokens += chunk.token_count;
 
         chunk_points.push(ChunkPoint {

@@ -394,7 +394,8 @@ async fn stream_object_hashes(
 
         if let Some(sample_ranges) = ranges.as_ref() {
             let chunk_start = offset;
-            let chunk_end = offset + read as u64;
+            let read_u64 = u64::try_from(read).unwrap_or(u64::MAX);
+            let chunk_end = offset.saturating_add(read_u64);
 
             while range_index < sample_ranges.len() {
                 let range = &sample_ranges[range_index];
@@ -408,8 +409,12 @@ async fn stream_object_hashes(
 
                 let start = range.start.max(chunk_start) - chunk_start;
                 let end = range.end.min(chunk_end) - chunk_start;
+                let start = usize::try_from(start)
+                    .unwrap_or(usize::MAX)
+                    .min(chunk.len());
+                let end = usize::try_from(end).unwrap_or(usize::MAX).min(chunk.len());
                 if start < end {
-                    fast_hasher.update(&chunk[start as usize..end as usize]);
+                    fast_hasher.update(&chunk[start..end]);
                 }
 
                 if chunk_end >= range.end {
@@ -420,7 +425,7 @@ async fn stream_object_hashes(
             }
         }
 
-        offset += read as u64;
+        offset = offset.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
     }
 
     Ok(StreamedHashes {
@@ -1418,7 +1423,8 @@ async fn upsert_part_and_finalize(
         .filter(file_upload_parts::Column::UploadId.eq(args.upload_id))
         .count(&txn)
         .await
-        .db_err()? as i32;
+        .db_err()?;
+    let parts_received = i32::try_from(parts_received).unwrap_or(i32::MAX);
 
     let next_status = if parts_received > 0 {
         STATUS_IN_PROGRESS

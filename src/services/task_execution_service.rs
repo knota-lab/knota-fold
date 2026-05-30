@@ -92,7 +92,8 @@ where
         r = work_fn() => r,
         () = tokio::time::sleep(Duration::from_secs(timeout_secs)) => {
             let finished_at = Utc::now().fixed_offset();
-            let duration_ms = (finished_at - started_at).num_milliseconds() as i32;
+            let duration_ms =
+                i32::try_from((finished_at - started_at).num_milliseconds()).unwrap_or(i32::MAX);
             scheduled_worker_executions::Model::update_status(
                 db,
                 execution_id,
@@ -111,7 +112,8 @@ where
     };
 
     let finished_at = Utc::now().fixed_offset();
-    let duration_ms = (finished_at - started_at).num_milliseconds() as i32;
+    let duration_ms =
+        i32::try_from((finished_at - started_at).num_milliseconds()).unwrap_or(i32::MAX);
 
     match result {
         Ok(output) => {

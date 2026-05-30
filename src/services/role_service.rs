@@ -338,7 +338,8 @@ pub async fn sync_user_roles<C: ConnectionTrait>(
             .await
             .model_err()?;
 
-        if valid_count as usize != role_ids.len() {
+        let expected_count = u64::try_from(role_ids.len()).unwrap_or(u64::MAX);
+        if valid_count != expected_count {
             return Err(loco_rs::Error::CustomError(
                 StatusCode::BAD_REQUEST,
                 ErrorDetail::new(
@@ -438,7 +439,8 @@ pub async fn sync_role_permissions<C: ConnectionTrait>(
             .await
             .model_err()?;
 
-        if valid_count as usize != permission_ids.len() {
+        let expected_count = u64::try_from(permission_ids.len()).unwrap_or(u64::MAX);
+        if valid_count != expected_count {
             return Err(loco_rs::Error::CustomError(
                 StatusCode::BAD_REQUEST,
                 ErrorDetail::new(

@@ -3,6 +3,7 @@ pub mod chunking_service;
 pub mod document_service;
 pub mod line_splitting_service;
 pub mod memory_service;
+pub(crate) mod numeric;
 pub mod qa_compaction_service;
 pub mod qa_stream_types;
 pub mod qa_types;

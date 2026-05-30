@@ -1573,9 +1573,9 @@ async fn persist_successful_turn(
     let (prompt_tokens, completion_tokens, total_tokens) =
         turn_result.captured_usage.map_or((0, 0, 0), |u| {
             (
-                u.input_tokens as i32,
-                u.output_tokens as i32,
-                u.total_tokens as i32,
+                i32::try_from(u.input_tokens).unwrap_or(i32::MAX),
+                i32::try_from(u.output_tokens).unwrap_or(i32::MAX),
+                i32::try_from(u.total_tokens).unwrap_or(i32::MAX),
             )
         });
 

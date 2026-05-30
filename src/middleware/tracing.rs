@@ -183,7 +183,8 @@ where
                 Ok(response) => {
                     // Send request summary to app-logs (if module is enabled).
                     if let Some(sender) = crate::app_logs::layer::get_sender() {
-                        let duration_ms = start.elapsed().as_millis() as u64;
+                        let duration_ms = u64::try_from(start.elapsed().as_millis())
+                            .unwrap_or(u64::MAX);
                         let status = response.status().as_u16();
 
                         let error = if status >= 400 {
