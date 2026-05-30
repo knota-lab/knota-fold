@@ -131,7 +131,7 @@ fn spawn_index_message(
 ) {
     let ms = memory_store.clone();
     let ec = embedding_client.clone();
-    let collection_name = ms.collection_name.clone();
+    let collection_name = memory_store.collection_name.clone();
     let embedding_model_name = params.embedding_model_name.clone();
     let session_id = params.session_id;
     let tenant_id = params.tenant_id;
@@ -462,7 +462,6 @@ pub async fn process_qa_v3_stream(
     let embedding_model_name = &params.embedding_model_name;
     let tx = &params.tx;
     let search_provider = &params.search_provider;
-    let memory_store = &params.memory_store;
     let session_locks = &params.session_locks;
     let compaction_guard = &params.compaction_guard;
     let broker = &params.broker;
@@ -509,10 +508,12 @@ pub async fn process_qa_v3_stream(
             locks.retain(|_, arc| arc.try_lock().is_err());
         }
 
-        let lock = locks
+        let cloned = locks
             .entry(session.id)
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())));
-        lock.clone()
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone();
+        drop(locks);
+        cloned
     };
     let session_guard_lock = session_guard_lock.lock().await;
 
@@ -791,7 +792,7 @@ pub async fn process_qa_v3_stream(
 
     // Index user message to chat_memory (fire-and-forget)
     spawn_index_message(
-        memory_store,
+        &params.memory_store,
         embedding_client,
         &SpawnIndexParams {
             embedding_model_name: embedding_model_name.clone(),
@@ -910,6 +911,7 @@ pub async fn process_qa_v3_stream(
         let mut should_spawn = compaction_guard.entry(guard_key).or_insert(false);
         if !should_spawn.value() {
             *should_spawn.value_mut() = true;
+            drop(should_spawn);
 
             let bg_db = db.clone();
             let bg_qa_client = qa_client.clone();
@@ -1056,8 +1058,8 @@ pub async fn process_qa_v3_stream(
         if let Some(strategy) = strategy {
             let recalled = memory_service::recall_history(
                 &embedding_client.0,
-                &memory_store.client,
-                &memory_store.collection_name,
+                &params.memory_store.client,
+                &params.memory_store.collection_name,
                 embedding_model_name,
                 &strategy,
                 &RecallHistoryParams {
@@ -1444,7 +1446,7 @@ pub async fn process_qa_v3_stream(
 
     // Index assistant message to chat_memory (fire-and-forget)
     spawn_index_message(
-        memory_store,
+        &params.memory_store,
         embedding_client,
         &SpawnIndexParams {
             embedding_model_name: embedding_model_name.clone(),

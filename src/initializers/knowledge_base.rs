@@ -94,11 +94,6 @@ impl Initializer for KnowledgeBaseInitializer {
             Error::Message(format!("chat_memory collection init failed: {e}"))
         })?;
 
-        let memory_store = Arc::new(ChatMemoryStore {
-            client: chat_client,
-            collection_name: kb_config.qdrant.chat_collection_name.clone(),
-        });
-
         // Inject into shared_store
         ctx.shared_store
             .insert::<SharedParserChain>(Arc::new(parser_chain));
@@ -107,7 +102,11 @@ impl Initializer for KnowledgeBaseInitializer {
         ctx.shared_store.insert::<SharedQaClient>(qa_client);
         ctx.shared_store
             .insert::<SharedSearchProvider>(Arc::new(search_provider));
-        ctx.shared_store.insert::<SharedMemoryStore>(memory_store);
+        ctx.shared_store
+            .insert::<SharedMemoryStore>(Arc::new(ChatMemoryStore {
+                client: chat_client,
+                collection_name: kb_config.qdrant.chat_collection_name.clone(),
+            }));
         ctx.shared_store
             .insert::<SessionLockMap>(Arc::new(Mutex::new(HashMap::new())));
         ctx.shared_store

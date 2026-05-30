@@ -63,6 +63,7 @@ pub async fn sync_user_roles(
         ])
         .await?;
     }
+    drop(e);
     Ok(())
 }
 
@@ -84,6 +85,7 @@ pub async fn sync_role_permissions(
         ])
         .await?;
     }
+    drop(e);
     Ok(())
 }
 
@@ -102,6 +104,7 @@ pub async fn sync_api_key_role(
     .await?;
     e.add_grouping_policy(vec![subject, role_code.to_string(), tenant_id.to_string()])
         .await?;
+    drop(e);
     Ok(())
 }
 
@@ -110,16 +113,18 @@ pub async fn remove_api_key_role(
     api_key_id: &str,
     tenant_id: &str,
 ) -> casbin::Result<()> {
-    let mut e = enforcer.write().await;
-    e.remove_filtered_grouping_policy(
-        0,
-        vec![
-            format!("apikey:{api_key_id}"),
-            String::new(),
-            tenant_id.to_string(),
-        ],
-    )
-    .await?;
+    enforcer
+        .write()
+        .await
+        .remove_filtered_grouping_policy(
+            0,
+            vec![
+                format!("apikey:{api_key_id}"),
+                String::new(),
+                tenant_id.to_string(),
+            ],
+        )
+        .await?;
     Ok(())
 }
 
@@ -136,6 +141,7 @@ pub async fn remove_role_policies(
         vec![role_code.to_string(), tenant_id.to_string()],
     )
     .await?;
+    drop(e);
     Ok(())
 }
 
@@ -144,9 +150,11 @@ pub async fn remove_permission_policies(
     obj: &str,
     act: &str,
 ) -> casbin::Result<()> {
-    let mut e = enforcer.write().await;
     // Remove all policies matching (*, *, obj, act) across all tenants
-    e.remove_filtered_policy(2, vec![obj.to_string(), act.to_string()])
+    enforcer
+        .write()
+        .await
+        .remove_filtered_policy(2, vec![obj.to_string(), act.to_string()])
         .await?;
     Ok(())
 }

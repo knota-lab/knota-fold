@@ -248,6 +248,7 @@ where
                             method.as_str(),
                         ))
                         .unwrap_or(false);
+                    drop(enforcer);
 
                     if !result {
                         tracing::warn!(

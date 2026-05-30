@@ -12,8 +12,6 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::cast_precision_loss)]
-#![allow(clippy::too_many_lines)]
-#![allow(clippy::significant_drop_tightening)]
 
 pub mod app;
 pub mod app_logs;
