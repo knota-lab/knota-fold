@@ -5,7 +5,7 @@ use serial_test::serial;
 use super::prepare_data;
 
 const SUPER_ADMIN_ROLE_ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaa001";
-const ADMIN_ROLE_ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaa002";
+const TENANT_ADMIN_ROLE_ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaa004";
 const PERMISSION_ID: &str = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbb001";
 const SYS_MENU_ID: &str = "cccccccc-cccc-cccc-cccc-ccccccccc001";
 
@@ -39,8 +39,8 @@ async fn can_list_roles() {
 
         let body: serde_json::Value = serde_json::from_str(&response.text()).unwrap();
         assert_eq!(
-            body["totalItems"], 4,
-            "Expected 4 seeded roles (SUPER_ADMIN, ADMIN, USER, TENANT_ADMIN)"
+            body["totalItems"], 2,
+            "Expected 2 seeded roles (SUPER_ADMIN, TENANT_ADMIN)"
         );
 
         let first = &body["items"][0];
@@ -99,15 +99,36 @@ async fn can_create_role() {
 async fn can_update_role() {
     request::<App, _, _>(|request, ctx| async move {
         let admin = prepare_data::login_super_admin(&request, &ctx).await;
+        let (create_key, create_value) = prepare_data::auth_header(&admin.token);
+        let create_payload = serde_json::json!({
+            "name": "Update Target",
+            "code": "UPDATE_TARGET",
+            "description": "Role created for update test"
+        });
+        let create_response = request
+            .post("/api/roles")
+            .json(&create_payload)
+            .add_header(create_key, create_value)
+            .await;
+        assert_eq!(
+            create_response.status_code(),
+            200,
+            "Create role for update should succeed: {}",
+            create_response.text()
+        );
+        let created: serde_json::Value =
+            serde_json::from_str(&create_response.text()).unwrap();
+        let role_id = created["id"].as_str().expect("Created role should have id");
+
         let (auth_key, auth_value) = prepare_data::auth_header(&admin.token);
 
         let payload = serde_json::json!({
-            "name": "Admin Updated",
+            "name": "Update Target Renamed",
             "version": 1
         });
 
         let response = request
-            .put(&format!("/api/roles/{ADMIN_ROLE_ID}"))
+            .put(&format!("/api/roles/{role_id}"))
             .json(&payload)
             .add_header(auth_key, auth_value)
             .await;
@@ -115,7 +136,7 @@ async fn can_update_role() {
         assert_eq!(response.status_code(), 200, "Update role should succeed");
 
         let body: serde_json::Value = serde_json::from_str(&response.text()).unwrap();
-        assert_eq!(body["name"], "Admin Updated");
+        assert_eq!(body["name"], "Update Target Renamed");
         assert_eq!(body["version"], 2);
     })
     .await;
@@ -230,6 +251,26 @@ async fn can_get_role_permissions() {
 async fn can_sync_role_permissions() {
     request::<App, _, _>(|request, ctx| async move {
         let admin = prepare_data::login_super_admin(&request, &ctx).await;
+        let (create_key, create_value) = prepare_data::auth_header(&admin.token);
+        let create_payload = serde_json::json!({
+            "name": "Permission Sync Target",
+            "code": "PERMISSION_SYNC_TARGET",
+            "description": "Role created for permission sync test"
+        });
+        let create_response = request
+            .post("/api/roles")
+            .json(&create_payload)
+            .add_header(create_key, create_value)
+            .await;
+        assert_eq!(
+            create_response.status_code(),
+            200,
+            "Create role for permission sync should succeed: {}",
+            create_response.text()
+        );
+        let created: serde_json::Value =
+            serde_json::from_str(&create_response.text()).unwrap();
+        let role_id = created["id"].as_str().expect("Created role should have id");
 
         // Sync permissions
         let (k1, v1) = prepare_data::auth_header(&admin.token);
@@ -237,7 +278,7 @@ async fn can_sync_role_permissions() {
             "permissionIds": [PERMISSION_ID]
         });
         let sync_response = request
-            .put(&format!("/api/roles/{ADMIN_ROLE_ID}/permissions"))
+            .put(&format!("/api/roles/{role_id}/permissions"))
             .json(&sync_payload)
             .add_header(k1, v1)
             .await;
@@ -250,7 +291,7 @@ async fn can_sync_role_permissions() {
         // Verify persisted
         let (k2, v2) = prepare_data::auth_header(&admin.token);
         let get_response = request
-            .get(&format!("/api/roles/{ADMIN_ROLE_ID}/permissions"))
+            .get(&format!("/api/roles/{role_id}/permissions"))
             .add_header(k2, v2)
             .await;
         assert_eq!(
@@ -280,7 +321,7 @@ async fn can_get_role_menus() {
         let (auth_key, auth_value) = prepare_data::auth_header(&admin.token);
 
         let response = request
-            .get(&format!("/api/roles/{ADMIN_ROLE_ID}/menus"))
+            .get(&format!("/api/roles/{TENANT_ADMIN_ROLE_ID}/menus"))
             .add_header(auth_key, auth_value)
             .await;
 
@@ -304,6 +345,26 @@ async fn can_get_role_menus() {
 async fn can_sync_role_menus() {
     request::<App, _, _>(|request, ctx| async move {
         let admin = prepare_data::login_super_admin(&request, &ctx).await;
+        let (create_key, create_value) = prepare_data::auth_header(&admin.token);
+        let create_payload = serde_json::json!({
+            "name": "Menu Sync Target",
+            "code": "MENU_SYNC_TARGET",
+            "description": "Role created for menu sync test"
+        });
+        let create_response = request
+            .post("/api/roles")
+            .json(&create_payload)
+            .add_header(create_key, create_value)
+            .await;
+        assert_eq!(
+            create_response.status_code(),
+            200,
+            "Create role for menu sync should succeed: {}",
+            create_response.text()
+        );
+        let created: serde_json::Value =
+            serde_json::from_str(&create_response.text()).unwrap();
+        let role_id = created["id"].as_str().expect("Created role should have id");
 
         // Sync menus
         let (k1, v1) = prepare_data::auth_header(&admin.token);
@@ -311,7 +372,7 @@ async fn can_sync_role_menus() {
             "sysMenuIds": [SYS_MENU_ID]
         });
         let sync_response = request
-            .put(&format!("/api/roles/{ADMIN_ROLE_ID}/menus"))
+            .put(&format!("/api/roles/{role_id}/menus"))
             .json(&sync_payload)
             .add_header(k1, v1)
             .await;
@@ -324,7 +385,7 @@ async fn can_sync_role_menus() {
         // Verify persisted
         let (k2, v2) = prepare_data::auth_header(&admin.token);
         let get_response = request
-            .get(&format!("/api/roles/{ADMIN_ROLE_ID}/menus"))
+            .get(&format!("/api/roles/{role_id}/menus"))
             .add_header(k2, v2)
             .await;
         assert_eq!(
@@ -355,7 +416,7 @@ async fn can_get_assignable_permissions() {
 
         let response = request
             .get(&format!(
-                "/api/roles/{ADMIN_ROLE_ID}/assignable-permissions"
+                "/api/roles/{TENANT_ADMIN_ROLE_ID}/assignable-permissions"
             ))
             .add_header(auth_key, auth_value)
             .await;

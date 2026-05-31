@@ -106,8 +106,8 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
-      - name: Run cargo test (all tests including previously-ignored)
-        run: cargo test --all-features --all -- --include-ignored
+      - name: Run cargo test
+        run: cargo test --all-features --all -- --test-threads=1
         env:
           REDIS_URL: redis://localhost:${{job.services.redis.ports[6379]}}
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres_test

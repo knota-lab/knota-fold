@@ -207,20 +207,29 @@ async fn can_get_tenant_roles() {
             .add_header(auth_key, auth_value)
             .await;
 
-        assert_eq!(response.status_code(), 200, "Get tenant roles should succeed");
+        assert_eq!(
+            response.status_code(),
+            200,
+            "Get tenant roles should succeed"
+        );
 
         let body: serde_json::Value = serde_json::from_str(&response.text()).unwrap();
-        let roles = body.as_array().expect("Response should be an array of roles");
+        let roles = body
+            .as_array()
+            .expect("Response should be an array of roles");
         assert_eq!(
             roles.len(),
-            4,
-            "DEFAULT tenant should have 4 roles (SUPER_ADMIN, ADMIN, USER, TENANT_ADMIN), got {}",
+            2,
+            "DEFAULT tenant should have 2 roles (SUPER_ADMIN, TENANT_ADMIN), got {}",
             roles.len()
         );
 
         let first = &roles[0];
         assert!(first.get("id").is_some(), "Missing 'id' key");
-        assert!(first.get("tenantCode").is_some(), "Missing 'tenantCode' key");
+        assert!(
+            first.get("tenantCode").is_some(),
+            "Missing 'tenantCode' key"
+        );
         assert!(first.get("name").is_some(), "Missing 'name' key");
         assert!(first.get("code").is_some(), "Missing 'code' key");
     })

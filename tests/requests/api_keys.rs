@@ -424,6 +424,12 @@ async fn get_default_tenant_admin_role_id(
         .get("/api/roles?page=1&page_size=100&tenant_code=DEFAULT")
         .add_header(k, v)
         .await;
+    assert_eq!(
+        response.status_code(),
+        200,
+        "Get DEFAULT tenant roles failed: {}",
+        response.text()
+    );
     let body: serde_json::Value = serde_json::from_str(&response.text()).unwrap();
     let role = body["items"]
         .as_array()
