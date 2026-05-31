@@ -306,7 +306,7 @@ impl<T> IntoModelResult<T> for Result<T, Error> {
 ///
 /// Replaces `.map_err(|_| from_info(...))`.
 ///
-/// ```rust
+/// ```text
 /// // Before
 /// .map_err(|_| from_info(error_info::common::INVALID_UUID))?
 ///
@@ -360,7 +360,7 @@ impl<T, E> ErrIntoDesc<T> for Result<T, E> {
 ///
 /// Replaces `.ok_or_else(|| from_info(...))`.
 ///
-/// ```rust
+/// ```text
 /// // Before
 /// .ok_or_else(|| from_info(error_info::role::NOT_FOUND))?
 ///
