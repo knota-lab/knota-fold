@@ -124,7 +124,10 @@ async fn update_permission_version_conflict() {
         .await
         .expect_err("Expected version conflict");
 
-    assert!(err.to_string().contains("Version conflict"));
+    assert!(
+        format!("{err:?}").contains("Version conflict"),
+        "Error should mention version conflict, got: {err:?}"
+    );
 }
 
 #[tokio::test]

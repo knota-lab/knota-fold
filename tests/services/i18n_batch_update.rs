@@ -169,7 +169,10 @@ async fn batch_update_rejects_empty_entries() {
     .await
     .expect_err("Should reject empty entries");
 
-    assert!(err.to_string().contains("entries 不能为空"));
+    assert!(
+        format!("{err:?}").contains("entries 不能为空"),
+        "Error should mention empty entries, got: {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -189,7 +192,10 @@ async fn batch_update_rejects_empty_value() {
     .await
     .expect_err("Should reject empty value");
 
-    assert!(err.to_string().contains("value 不能为空"));
+    assert!(
+        format!("{err:?}").contains("value 不能为空"),
+        "Error should mention empty value, got: {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -209,7 +215,10 @@ async fn batch_update_rejects_invalid_locale_format() {
     .await
     .expect_err("Should reject invalid locale format");
 
-    assert!(err.to_string().contains("locale"));
+    assert!(
+        format!("{err:?}").contains("locale"),
+        "Error should mention locale, got: {err:?}"
+    );
 }
 
 // ── batch_update_tenant tests ──────────────────────────────────────────────

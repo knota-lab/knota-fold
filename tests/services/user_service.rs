@@ -44,8 +44,8 @@ async fn super_admin_cannot_disable_self() {
     .expect_err("Should reject super admin disabling themselves");
 
     assert!(
-        err.to_string().contains("管理员不能禁用自己的帐户"),
-        "Error should mention admin self-disable, got: {err}"
+        format!("{err:?}").contains("管理员不能禁用自己的帐户"),
+        "Error should mention admin self-disable, got: {err:?}"
     );
 }
 
@@ -75,8 +75,8 @@ async fn cannot_disable_last_super_admin() {
     .expect_err("Should reject disabling the last super admin");
 
     assert!(
-        err.to_string().contains("系统中仅剩一个超级管理员"),
-        "Error should mention last super admin, got: {err}"
+        format!("{err:?}").contains("系统中仅剩一个超级管理员"),
+        "Error should mention last super admin, got: {err:?}"
     );
 }
 

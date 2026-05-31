@@ -165,7 +165,10 @@ async fn tenant_cannot_create_code_conflicting_with_system() {
     .await
     .expect_err("Tenant should not create a code conflicting with system type");
 
-    assert!(err.to_string().contains("系统字典冲突"));
+    assert!(
+        format!("{err:?}").contains("系统字典冲突"),
+        "Error should mention system dict conflict, got: {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -258,7 +261,10 @@ async fn update_dict_type_version_conflict() {
     .await
     .expect_err("Expected version conflict");
 
-    assert!(err.to_string().contains("Version conflict"));
+    assert!(
+        format!("{err:?}").contains("Version conflict"),
+        "Error should mention version conflict, got: {err:?}"
+    );
 }
 
 #[tokio::test]

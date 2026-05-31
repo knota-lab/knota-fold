@@ -137,8 +137,15 @@ async fn login_with_un_existing_email() {
             }))
             .await;
 
-        assert_eq!(login_response.status_code(), 401, "Login request should return 401");
-        login_response.assert_json(&serde_json::json!({"error": "unauthorized", "description": "You do not have permission to access this resource"}));
+        assert_eq!(
+            login_response.status_code(),
+            401,
+            "Login request should return 401"
+        );
+        login_response.assert_json(&serde_json::json!({
+            "code": "INVALID_CREDENTIALS",
+            "message": "邮箱或密码错误"
+        }));
     })
     .await;
 }
