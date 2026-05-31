@@ -45,13 +45,13 @@ impl MigrationTrait for Migration {
                 )
                 .col(
                     ColumnDef::new(Notifications::CreatedAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .not_null()
                         .default(Expr::current_timestamp()),
                 )
                 .col(
                     ColumnDef::new(Notifications::UpdatedAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .not_null()
                         .default(Expr::current_timestamp()),
                 )
@@ -82,12 +82,12 @@ impl MigrationTrait for Migration {
                 )
                 .col(
                     ColumnDef::new(NotificationRecipients::ReadAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .null(),
                 )
                 .col(
                     ColumnDef::new(NotificationRecipients::CreatedAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .not_null()
                         .default(Expr::current_timestamp()),
                 )

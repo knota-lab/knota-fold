@@ -18,19 +18,31 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(ApiKeys::RoleId).uuid().not_null())
                 .col(ColumnDef::new(ApiKeys::Description).text().null())
                 .col(ColumnDef::new(ApiKeys::ExchangedFromId).uuid().null())
-                .col(ColumnDef::new(ApiKeys::ExpiresAt).date_time().null())
-                .col(ColumnDef::new(ApiKeys::RevokedAt).date_time().null())
-                .col(ColumnDef::new(ApiKeys::LastUsedAt).date_time().null())
+                .col(
+                    ColumnDef::new(ApiKeys::ExpiresAt)
+                        .timestamp_with_time_zone()
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeys::RevokedAt)
+                        .timestamp_with_time_zone()
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ApiKeys::LastUsedAt)
+                        .timestamp_with_time_zone()
+                        .null(),
+                )
                 .col(ColumnDef::new(ApiKeys::CreatedBy).uuid().not_null())
                 .col(
                     ColumnDef::new(ApiKeys::CreatedAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .not_null()
                         .default(Expr::current_timestamp()),
                 )
                 .col(
                     ColumnDef::new(ApiKeys::UpdatedAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .not_null()
                         .default(Expr::current_timestamp()),
                 )
@@ -80,12 +92,12 @@ impl MigrationTrait for Migration {
                 )
                 .col(
                     ColumnDef::new(ApiKeyExchangeTokens::ExpiresAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .not_null(),
                 )
                 .col(
                     ColumnDef::new(ApiKeyExchangeTokens::ApiKeyExpiresAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .null(),
                 )
                 .col(
@@ -107,13 +119,13 @@ impl MigrationTrait for Migration {
                 )
                 .col(
                     ColumnDef::new(ApiKeyExchangeTokens::CreatedAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .not_null()
                         .default(Expr::current_timestamp()),
                 )
                 .col(
                     ColumnDef::new(ApiKeyExchangeTokens::UpdatedAt)
-                        .date_time()
+                        .timestamp_with_time_zone()
                         .not_null()
                         .default(Expr::current_timestamp()),
                 )
