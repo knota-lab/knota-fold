@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::config::{AppSettings, ConfigExt};
 use crate::initializers::knowledge_base::{SharedParserChain, SharedSearchProvider};
+use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::models::{
     document_lines as dl_models, kb_chunks as kc_models,
 };
@@ -65,39 +66,47 @@ async fn run_indexing_pipeline(
     let db = &ctx.db;
 
     // 1. Get dependencies from shared_store
-    let parser_chain = ctx
-        .shared_store
-        .get::<SharedParserChain>()
-        .ok_or_else(|| Error::string("Parser chain not initialized"))?;
-    let embedding_client = ctx
-        .shared_store
-        .get::<SharedEmbeddingClient>()
-        .ok_or_else(|| Error::string("Embedding client not initialized"))?;
-    let search_provider = ctx
-        .shared_store
-        .get::<SharedSearchProvider>()
-        .ok_or_else(|| Error::string("Search provider not initialized"))?;
+    let parser_chain = ctx.shared_store.get::<SharedParserChain>().ok_or_else(|| {
+        KnowledgeBaseError::ConfigError("Parser chain not initialized".into()).to_err()
+    })?;
+    let embedding_client =
+        ctx.shared_store
+            .get::<SharedEmbeddingClient>()
+            .ok_or_else(|| {
+                KnowledgeBaseError::ConfigError("Embedding client not initialized".into())
+                    .to_err()
+            })?;
+    let search_provider =
+        ctx.shared_store
+            .get::<SharedSearchProvider>()
+            .ok_or_else(|| {
+                KnowledgeBaseError::ConfigError("Search provider not initialized".into())
+                    .to_err()
+            })?;
 
     // Read KB config
     let settings: AppSettings = ctx
         .config
         .typed_settings()
-        .map_err(|e| Error::Message(format!("invalid settings: {e}")))?
-        .ok_or_else(|| Error::Message("settings missing".into()))?;
-    let kb_config = settings
-        .knowledge_base
-        .as_ref()
-        .ok_or_else(|| Error::Message("knowledge base config missing".into()))?;
+        .map_err(|e| {
+            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}")).to_err()
+        })?
+        .ok_or_else(|| {
+            KnowledgeBaseError::ConfigError("settings missing".into()).to_err()
+        })?;
+    let kb_config = settings.knowledge_base.as_ref().ok_or_else(|| {
+        KnowledgeBaseError::ConfigError("knowledge base config missing".into()).to_err()
+    })?;
     let config = &kb_config.chunking;
 
     // 2. Get document from DB
     let doc = document_service::get_document(db, document_id, tenant_id).await?;
 
     // 3. Set status to 'indexing' and update full_text
-    let full_text = doc
-        .full_text
-        .clone()
-        .ok_or_else(|| Error::string("document has no full_text content"))?;
+    let full_text = doc.full_text.clone().ok_or_else(|| {
+        KnowledgeBaseError::ParsingError("document has no full_text content".into())
+            .to_err()
+    })?;
     document_service::set_full_text(db, document_id, &full_text).await?;
 
     // 4-11. Run pipeline; mark as error on failure
@@ -208,15 +217,18 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
         .iter()
         .find(|pr| pr.supported_mime_types().contains(&p.source_type))
         .ok_or_else(|| {
-            Error::Message(format!(
+            KnowledgeBaseError::UnsupportedFormat(format!(
                 "no parser found for content type '{}'",
                 p.source_type
             ))
+            .to_err()
         })?;
     let parsed = parser
         .parse(p.full_text.as_bytes(), p.source_type, "document")
         .await
-        .map_err(|e| Error::Message(format!("parsing failed: {e}")))?;
+        .map_err(|e| {
+            KnowledgeBaseError::ParsingError(format!("parsing failed: {e}")).to_err()
+        })?;
     let markdown = &parsed.markdown;
 
     // 5. Chunk the markdown
@@ -229,7 +241,10 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
         p.config.max_heading_level,
     );
     if chunks.is_empty() {
-        return Err(Error::string("chunking produced no chunks"));
+        return Err(KnowledgeBaseError::IndexingError(
+            "chunking produced no chunks".into(),
+        )
+        .to_err());
     }
 
     // 6. Split lines and insert
@@ -251,17 +266,18 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     // 7. Generate embeddings
     let model = p.embedding_client.0.embedding_model(p.embedding_model_name);
     let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
-    let embeddings: Vec<rig::embeddings::Embedding> = model
-        .embed_texts(texts)
-        .await
-        .map_err(|e| Error::Message(format!("embedding failed: {e}")))?;
+    let embeddings: Vec<rig::embeddings::Embedding> =
+        model.embed_texts(texts).await.map_err(|e| {
+            KnowledgeBaseError::EmbeddingError(format!("embedding failed: {e}")).to_err()
+        })?;
 
     if embeddings.len() != chunks.len() {
-        return Err(Error::Message(format!(
+        return Err(KnowledgeBaseError::EmbeddingError(format!(
             "embedding count mismatch: got {} embeddings for {} chunks",
             embeddings.len(),
             chunks.len()
-        )));
+        ))
+        .to_err());
     }
 
     // 8. Build ChunkPoints + kb_chunks ActiveModels
@@ -275,7 +291,10 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     p.search_provider
         .upsert_chunks(&chunk_points, p.tenant_id)
         .await
-        .map_err(|e| Error::Message(format!("Qdrant upsert failed: {e}")))?;
+        .map_err(|e| {
+            KnowledgeBaseError::IndexingError(format!("Qdrant upsert failed: {e}"))
+                .to_err()
+        })?;
 
     // 11. Mark document as ready
     document_service::mark_ready(

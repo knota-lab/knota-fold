@@ -62,12 +62,15 @@ pub(crate) async fn search(
     let settings: AppSettings = ctx
         .config
         .typed_settings()
-        .map_err(|e| Error::Message(format!("invalid settings: {e}")))?
-        .ok_or_else(|| Error::Message("settings missing".into()))?;
-    let kb_config = settings
-        .knowledge_base
-        .as_ref()
-        .ok_or_else(|| Error::Message("knowledge base not configured".into()))?;
+        .map_err(|e| {
+            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}")).to_err()
+        })?
+        .ok_or_else(|| {
+            KnowledgeBaseError::ConfigError("settings missing".into()).to_err()
+        })?;
+    let kb_config = settings.knowledge_base.as_ref().ok_or_else(|| {
+        KnowledgeBaseError::ConfigError("knowledge base not configured".into()).to_err()
+    })?;
 
     let limit = params.limit.unwrap_or_else(|| {
         usize::try_from(kb_config.search.default_limit).unwrap_or_default()
@@ -216,11 +219,15 @@ fn resolve_qa_v3_deps(ctx: &AppContext) -> Result<QaV3StreamDeps> {
     let settings: AppSettings = ctx
         .config
         .typed_settings()
-        .map_err(|e| Error::Message(format!("invalid settings: {e}")))?
-        .ok_or_else(|| Error::Message("settings missing".into()))?;
-    let kb_config = settings
-        .knowledge_base
-        .ok_or_else(|| Error::Message("knowledge base not configured".into()))?;
+        .map_err(|e| {
+            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}")).to_err()
+        })?
+        .ok_or_else(|| {
+            KnowledgeBaseError::ConfigError("settings missing".into()).to_err()
+        })?;
+    let kb_config = settings.knowledge_base.ok_or_else(|| {
+        KnowledgeBaseError::ConfigError("knowledge base not configured".into()).to_err()
+    })?;
 
     Ok(QaV3StreamDeps {
         embedding_client,

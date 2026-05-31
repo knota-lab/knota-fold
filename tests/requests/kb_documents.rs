@@ -271,7 +271,7 @@ async fn can_qa() {
         let (auth_key, auth_value) = super::prepare_data::auth_header(&admin.token);
 
         let response = request
-            .post("/api/kb/qa")
+            .post("/api/kb/qa/v3/stream")
             .json(&serde_json::json!({
                 "instruction": "Summarize the following text",
                 "material": {
@@ -288,14 +288,14 @@ async fn can_qa() {
             response.text()
         );
 
-        let body: serde_json::Value = serde_json::from_str(&response.text()).unwrap();
+        let body = response.text();
         assert!(
-            body.get("answer").is_some(),
-            "QA response should have 'answer'"
+            body.contains("\"type\":\"Completed\""),
+            "QA SSE should include a Completed event: {body}"
         );
         assert!(
-            !body["answer"].as_str().unwrap_or("").is_empty(),
-            "Answer should not be empty"
+            body.contains("\"answer\""),
+            "QA SSE should include an answer payload: {body}"
         );
     })
     .await;

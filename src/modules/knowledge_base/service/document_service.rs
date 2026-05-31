@@ -74,9 +74,10 @@ pub async fn update_status(
         _ => false,
     };
     if !valid {
-        return Err(loco_rs::Error::Message(format!(
+        return Err(KnowledgeBaseError::IndexingError(format!(
             "invalid status transition: {current} -> {new_status}"
-        )));
+        ))
+        .to_err());
     }
 
     let mut active: kd_models::ActiveModel = doc.into();

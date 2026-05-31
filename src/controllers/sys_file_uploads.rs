@@ -75,6 +75,21 @@ fn ensure_super_admin(tc: &TenantContext) -> Result<()> {
     Ok(())
 }
 
+fn target_audit_context(
+    tc: &TenantContext,
+    meta: &RequestMeta,
+    tenant_id: Uuid,
+) -> AuditContext {
+    AuditContext {
+        trace_id: Some(meta.trace_id.clone()),
+        request_id: meta.request_id.clone(),
+        tenant_id,
+        user_id: Some(tc.user_id),
+        ip_address: meta.ip_address.clone(),
+        user_agent: meta.user_agent.clone(),
+    }
+}
+
 async fn ensure_active_tenant_by_id(
     ctx: &AppContext,
     tenant_id: Uuid,
@@ -161,7 +176,7 @@ pub(crate) async fn sys_instant_upload(
 ) -> Result<Response> {
     ensure_super_admin(&tc)?;
     let tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
-    let audit_ctx = AuditContext::from_request(&tc, &meta);
+    let audit_ctx = target_audit_context(&tc, &meta, tenant.id);
     let attach = match params.attach_to.clone() {
         Some(payload) => Some(attach_to_service_request(payload)?),
         None => Some(file_reference_service::default_self_attach()),
@@ -245,7 +260,7 @@ pub(crate) async fn sys_complete(
 ) -> Result<Response> {
     ensure_super_admin(&tc)?;
     let _tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
-    let audit_ctx = AuditContext::from_request(&tc, &meta);
+    let audit_ctx = target_audit_context(&tc, &meta, tenant_id);
     let attach = match params.attach_to {
         Some(payload) => Some(attach_to_service_request(payload)?),
         None => Some(file_reference_service::default_self_attach()),
@@ -279,7 +294,7 @@ pub(crate) async fn sys_abort(
 ) -> Result<Response> {
     ensure_super_admin(&tc)?;
     let _tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
-    let audit_ctx = AuditContext::from_request(&tc, &meta);
+    let audit_ctx = target_audit_context(&tc, &meta, tenant_id);
     let response = file_upload_service::abort_upload(
         &ctx,
         tenant_id,

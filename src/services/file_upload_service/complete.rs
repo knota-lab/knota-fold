@@ -600,6 +600,7 @@ async fn complete_upload_inserted(
 ) -> loco_rs::Result<JsonEndpointResponse> {
     let (txn, inserted_file) =
         load_inserted_file(txn, &req, &upload, s3_client, final_key).await?;
+    let inserted_file_id = inserted_file.id;
     let (txn, response) = cache_inserted_completion(
         txn,
         &req,
@@ -610,8 +611,15 @@ async fn complete_upload_inserted(
         inserted_file,
     )
     .await?;
-    let txn =
-        attach_inserted_completion(txn, &req, &upload, s3_client, final_key).await?;
+    let txn = attach_inserted_completion(
+        txn,
+        &req,
+        &upload,
+        s3_client,
+        final_key,
+        inserted_file_id,
+    )
+    .await?;
     commit_inserted_completion(txn, &req, &upload, s3_client, final_key, response).await
 }
 
@@ -717,10 +725,11 @@ async fn attach_inserted_completion(
     upload: &file_uploads::Model,
     s3_client: &SharedS3Client,
     final_key: &str,
+    file_id: Uuid,
 ) -> loco_rs::Result<DatabaseTransaction> {
     if let Some(req_attach) = req.attach.as_deref() {
         let req_attach = file_reference_service::AttachRequest {
-            file_id: upload.id,
+            file_id,
             ..req_attach.clone()
         };
         if let Err(err) =
@@ -806,10 +815,12 @@ async fn complete_upload_dedup(
 
     let candidate = find_dedup_candidate(&req, &upload, authoritative_hash).await?;
     let winner = revive_dedup_winner(&req, candidate).await?;
+    let winner_id = winner.id;
     let reuse_txn = begin_dedup_reuse_txn(&req).await?;
     let (reuse_txn, response) =
         persist_dedup_reuse(reuse_txn, &req, &upload, key, winner).await?;
-    let reuse_txn = attach_dedup_completion(reuse_txn, &req, &upload, s3_client).await?;
+    let reuse_txn =
+        attach_dedup_completion(reuse_txn, &req, &upload, s3_client, winner_id).await?;
     commit_dedup_completion(reuse_txn, &req, &upload, s3_client, response).await
 }
 
@@ -950,10 +961,11 @@ async fn attach_dedup_completion(
     req: &CompleteUploadRequest<'_>,
     upload: &file_uploads::Model,
     s3_client: &SharedS3Client,
+    file_id: Uuid,
 ) -> loco_rs::Result<DatabaseTransaction> {
     if let Some(req_attach) = req.attach.as_deref() {
         let req_attach = file_reference_service::AttachRequest {
-            file_id: upload.id,
+            file_id,
             ..req_attach.clone()
         };
         if let Err(err) =
