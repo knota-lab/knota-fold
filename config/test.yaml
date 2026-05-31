@@ -82,7 +82,7 @@ settings:
   # Knowledge base module — points at same Qdrant + Ollama as dev.
   # Only needed for KB integration tests (marked #[ignore]).
   knowledgeBase:
-    enabled: true
+    enabled: {{ get_env(name="KNOWLEDGE_BASE_ENABLED", default="false") }}
     embedding:
       provider: openai
       model: bge-m3
