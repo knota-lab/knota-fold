@@ -224,7 +224,3 @@ cargo test --test mod api_keys
 # 运行全部测试（注意：全量编译可能触发 mmap os error 1455）
 cargo test --test mod
 ```
-
-## 许可证
-
-MIT
