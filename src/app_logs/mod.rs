@@ -44,12 +44,21 @@ pub fn init_logger(ctx: &AppContext) -> Result<bool> {
         .with_file(true)
         .with_line_number(true);
 
+    // Build filter: RUST_LOG > config override_filter > config level + whitelist.
+    // Rust module paths use underscores, which is also what CARGO_CRATE_NAME
+    // exposes for a hyphenated package name.
     let filter = EnvFilter::try_from_default_env()
         .or_else(|_| {
-            EnvFilter::try_new(format!(
-                "loco_rs=info,sea_orm_migration=info,tower_http=info,sqlx::query=info,{}=info",
-                env!("CARGO_CRATE_NAME")
-            ))
+            ctx.config.logger.override_filter.as_ref().map_or_else(
+                || {
+                    EnvFilter::try_new(format!(
+                        "loco_rs={lvl},sea_orm_migration={lvl},tower_http={lvl},sqlx::query={lvl},{}={lvl}",
+                        env!("CARGO_CRATE_NAME"),
+                        lvl = ctx.config.logger.level
+                    ))
+                },
+                EnvFilter::try_new,
+            )
         })
         .expect("env filter init failed");
 
