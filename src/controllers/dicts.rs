@@ -1,6 +1,5 @@
 use axum::extract::Query;
 use loco_openapi::prelude::*;
-use loco_rs::prelude::model::query;
 use loco_rs::prelude::*;
 
 use crate::extractors::{RequestMeta, TenantContext};
@@ -12,7 +11,7 @@ use crate::views::dicts::{
     UpdateDictTypeRequest,
 };
 use crate::views::errors::parse_uuid;
-use crate::views::pagination::PaginatedResponse;
+use crate::views::pagination::{PaginatedResponse, PaginationParams};
 
 // ══════════════════════════════════════════════
 //  Dict Type handlers
@@ -29,8 +28,9 @@ use crate::views::pagination::PaginatedResponse;
 pub(crate) async fn list_types(
     tc: TenantContext,
     State(ctx): State<AppContext>,
-    Query(pagination): Query<query::PaginationQuery>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Response> {
+    let pagination = pagination.into();
     let response: PaginatedResponse<DictTypeResponse> =
         dict_service::list_dict_types(&ctx.db, tc.tenant_filter(), &pagination).await?;
 

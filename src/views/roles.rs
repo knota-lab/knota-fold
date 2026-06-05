@@ -99,9 +99,7 @@ pub struct ToggleRoleStatusRequest {
 #[serde(rename_all = "camelCase")]
 pub struct RoleListParams {
     pub page: u64,
-    #[serde(alias = "page_size")]
     pub page_size: u64,
-    #[serde(alias = "tenant_code")]
     pub tenant_code: Option<String>,
     pub name: Option<String>,
     pub status: Option<String>,

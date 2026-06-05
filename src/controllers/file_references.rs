@@ -22,14 +22,16 @@ use crate::extractors::{RequestMeta, TenantContext};
 use crate::services::{file_reference_service, resource_types::ResourceType};
 use crate::views::audit_logs::AuditContext;
 use crate::views::file_references::{AttachReferenceRequest, FileReferenceResponse};
+use crate::views::pagination::PaginationParams;
 
 /// Optional query filter for the tenant-wide list endpoint.
 ///
-/// `resource_type` is the wire form (`"system:attachment"`,
+/// `resourceType` is the wire form (`"system:attachment"`,
 /// `"crm:contract"`, ...). We parse it through [`ResourceType::parse`]
 /// so unknown values fail closed with `400 unknown_resource_type`
 /// rather than silently returning `[]`.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ListReferencesFilter {
     #[serde(default)]
     pub resource_type: Option<String>,
@@ -116,7 +118,7 @@ pub(crate) async fn detach(
     get,
     path = "/api/file-references",
     tag = "文件引用",
-    description = "分页列出当前租户全部活跃文件引用（join files），可选 ?resource_type=xxx 过滤",
+    description = "分页列出当前租户全部活跃文件引用（join files），可选 ?resourceType=xxx 过滤",
     responses((status = 200, description = "Success"))
 )]
 #[debug_handler]
@@ -124,9 +126,10 @@ pub(crate) async fn list_for_tenant(
     tc: TenantContext,
     _meta: RequestMeta,
     State(ctx): State<AppContext>,
-    Query(pagination): Query<loco_rs::prelude::model::query::PaginationQuery>,
+    Query(pagination): Query<PaginationParams>,
     Query(filter): Query<ListReferencesFilter>,
 ) -> Result<Response> {
+    let pagination = pagination.into();
     let resource_type_filter = match filter.resource_type.as_deref() {
         Some(s) if !s.is_empty() => Some(parse_resource_type(s)?),
         _ => None,

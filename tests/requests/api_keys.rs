@@ -421,7 +421,7 @@ async fn get_default_tenant_admin_role_id(
 ) -> String {
     let (k, v) = prepare_data::auth_header(token);
     let response = request
-        .get("/api/roles?page=1&page_size=100&tenant_code=DEFAULT")
+        .get("/api/roles?page=1&pageSize=100&tenantCode=DEFAULT")
         .add_header(k, v)
         .await;
     assert_eq!(

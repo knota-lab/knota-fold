@@ -20,6 +20,7 @@ use crate::views::files::{
     DedupCheckRequest, DownloadUrlQuery, FileResponse, SmallUploadRequest,
     SoftDeleteRequest,
 };
+use crate::views::pagination::PaginationParams;
 
 pub(crate) const MAX_SMALL_UPLOAD_BYTES: usize = 5 * 1024 * 1024;
 // Allow a small envelope headroom (multipart boundary, headers, filename)
@@ -63,8 +64,9 @@ fn attach_to_service_request(
 pub(crate) async fn list(
     tc: TenantContext,
     State(ctx): State<AppContext>,
-    Query(pagination): Query<loco_rs::prelude::model::query::PaginationQuery>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Response> {
+    let pagination = pagination.into();
     let response: crate::views::pagination::PaginatedResponse<FileResponse> =
         file_service::list_paginated(&ctx.db, tc.tenant_id, &pagination).await?;
     format::json(response)

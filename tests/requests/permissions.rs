@@ -29,7 +29,7 @@ async fn can_list_permissions() {
         let (auth_key, auth_value) = prepare_data::auth_header(&admin.token);
 
         let response = request
-            .get("/api/permissions?page=1&page_size=10")
+            .get("/api/permissions?page=1&pageSize=10")
             .add_header(auth_key, auth_value)
             .await;
 
@@ -72,7 +72,7 @@ async fn can_list_permissions_paginated() {
         let (auth_key, auth_value) = prepare_data::auth_header(&admin.token);
 
         let response = request
-            .get("/api/permissions?page=1&page_size=5")
+            .get("/api/permissions?page=1&pageSize=5")
             .add_header(auth_key, auth_value)
             .await;
 

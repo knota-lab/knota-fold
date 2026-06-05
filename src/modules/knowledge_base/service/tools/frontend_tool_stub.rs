@@ -66,7 +66,7 @@ fn tool_timeout(name: &str) -> Duration {
     match name {
         "page_query_table" | "page_get_form_values" => Duration::from_secs(15),
         "page_list_actions" | "page_get_action_detail" => Duration::from_secs(10),
-        "page_execute_action" => Duration::from_secs(60),
+        "page_execute_action" => Duration::from_mins(1),
         _ => Duration::from_secs(30),
     }
 }

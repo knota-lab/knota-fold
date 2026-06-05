@@ -57,7 +57,7 @@ async fn super_admin_can_query_audit_logs() {
         let (k, v) = prepare_data::auth_header(&admin.token);
 
         let response = request
-            .get("/api/audit-logs?page=1&page_size=10")
+            .get("/api/audit-logs?page=1&pageSize=10")
             .add_header(k, v)
             .await;
 
@@ -269,7 +269,7 @@ async fn sync_user_roles_generates_audit_log() {
 
         let (k, v) = prepare_data::auth_header(&admin.token);
         let roles_response = request
-            .get("/api/roles?page=1&page_size=10")
+            .get("/api/roles?page=1&pageSize=10")
             .add_header(k, v)
             .await;
         assert_eq!(
@@ -342,7 +342,7 @@ async fn filter_audit_logs_by_resource_type() {
 
         let (k, v) = prepare_data::auth_header(&admin.token);
         let response = request
-            .get("/api/audit-logs?resource_type=user&page=1&page_size=10")
+            .get("/api/audit-logs?resourceType=user&page=1&pageSize=10")
             .add_header(k, v)
             .await;
 
@@ -380,7 +380,7 @@ async fn filter_audit_logs_by_action() {
 
         let (k, v) = prepare_data::auth_header(&admin.token);
         let response = request
-            .get("/api/audit-logs?action=create&page=1&page_size=10")
+            .get("/api/audit-logs?action=create&page=1&pageSize=10")
             .add_header(k, v)
             .await;
 

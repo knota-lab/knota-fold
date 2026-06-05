@@ -8,7 +8,7 @@ use crate::models::{
     scheduled_worker_definitions, scheduled_worker_executions, scheduled_worker_schedules,
 };
 use crate::views::errors::parse_uuid;
-use crate::views::pagination::PaginatedResponse;
+use crate::views::pagination::{PaginatedResponse, PaginationParams};
 use crate::views::worker_scheduler::WorkerExecutionResponse;
 
 #[utoipa::path(
@@ -22,8 +22,9 @@ use crate::views::worker_scheduler::WorkerExecutionResponse;
 pub(crate) async fn list(
     tc: TenantContext,
     State(ctx): State<AppContext>,
-    Query(pagination): Query<query::PaginationQuery>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Response> {
+    let pagination: query::PaginationQuery = pagination.into();
     let db = &ctx.db;
     let (rows, total) = scheduled_worker_executions::Model::find_by_tenant(
         db,

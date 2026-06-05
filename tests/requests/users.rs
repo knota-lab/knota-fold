@@ -27,7 +27,7 @@ async fn can_list_users() {
         let (auth_key, auth_value) = prepare_data::auth_header(&admin.token);
 
         let response = request
-            .get("/api/users?page=1&page_size=10")
+            .get("/api/users?page=1&pageSize=10")
             .add_header(auth_key, auth_value)
             .await;
 
@@ -480,7 +480,7 @@ async fn new_super_admin_can_login_and_access_admin_endpoints() {
         let (k2, v2) = prepare_data::auth_header(&lr.token);
 
         let list_response = request
-            .get("/api/users?page=1&page_size=10")
+            .get("/api/users?page=1&pageSize=10")
             .add_header(k2, v2)
             .await;
         assert_eq!(
@@ -520,7 +520,7 @@ async fn can_get_user_roles() {
 
         let (k2, v2) = prepare_data::auth_header(&admin.token);
         let roles_response = request
-            .get("/api/roles?page=1&page_size=10")
+            .get("/api/roles?page=1&pageSize=10")
             .add_header(k2, v2)
             .await;
         assert_eq!(

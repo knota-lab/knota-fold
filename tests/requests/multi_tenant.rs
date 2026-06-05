@@ -26,7 +26,7 @@ async fn full_tenant_lifecycle() {
         // List roles as tenant admin — should see tenant's own roles
         let (k1, v1) = prepare_data::auth_header(&ta.token);
         let roles_response = request
-            .get("/api/roles?page=1&page_size=10")
+            .get("/api/roles?page=1&pageSize=10")
             .add_header(k1, v1)
             .await;
         assert_eq!(
@@ -46,7 +46,7 @@ async fn full_tenant_lifecycle() {
         // List users as tenant admin — should see 1 user (the admin itself)
         let (k2, v2) = prepare_data::auth_header(&ta.token);
         let users_response = request
-            .get("/api/users?page=1&page_size=10")
+            .get("/api/users?page=1&pageSize=10")
             .add_header(k2, v2)
             .await;
         assert_eq!(
@@ -116,7 +116,7 @@ async fn tenant_admin_cannot_see_other_tenant_roles() {
         // Tenant admin lists roles — should NOT see DEFAULT tenant's 3 roles
         let (k1, v1) = prepare_data::auth_header(&ta.token);
         let roles_response = request
-            .get("/api/roles?page=1&page_size=50")
+            .get("/api/roles?page=1&pageSize=50")
             .add_header(k1, v1)
             .await;
         assert_eq!(roles_response.status_code(), 200);
@@ -239,7 +239,7 @@ async fn tenant_user_list_isolated() {
 
         let (k1, v1) = prepare_data::auth_header(&ta.token);
         let response = request
-            .get("/api/users?page=1&page_size=50")
+            .get("/api/users?page=1&pageSize=50")
             .add_header(k1, v1)
             .await;
         assert_eq!(response.status_code(), 200);
@@ -357,7 +357,7 @@ async fn new_user_without_role_gets_forbidden() {
         // Try to access protected endpoint — should get 403 from Casbin
         let (k2, v2) = prepare_data::auth_header(&lr.token);
         let roles_response = request
-            .get("/api/roles?page=1&page_size=10")
+            .get("/api/roles?page=1&pageSize=10")
             .add_header(k2, v2)
             .await;
 
@@ -392,7 +392,7 @@ async fn tenant_admin_cannot_list_all_tenants() {
 
         let (k1, v1) = prepare_data::auth_header(&ta.token);
         let response = request
-            .get("/api/tenants?page=1&page_size=10")
+            .get("/api/tenants?page=1&pageSize=10")
             .add_header(k1, v1)
             .await;
 
@@ -481,7 +481,7 @@ async fn disabled_tenant_user_access_denied() {
         // The tenant admin should now be rejected
         let (auth_key2, auth_value2) = prepare_data::auth_header(&ta.token);
         let response = request
-            .get("/api/roles?page=1&page_size=10")
+            .get("/api/roles?page=1&pageSize=10")
             .add_header(auth_key2, auth_value2)
             .await;
 
@@ -517,7 +517,7 @@ async fn tenant_admin_cannot_access_other_tenant_dicts() {
         // or 200 with only own tenant's data. Either way, cross-tenant data is protected.
         let (k1, v1) = prepare_data::auth_header(&ta.token);
         let response = request
-            .get("/api/dicts/types?page=1&page_size=50")
+            .get("/api/dicts/types?page=1&pageSize=50")
             .add_header(k1, v1)
             .await;
 
@@ -628,7 +628,7 @@ async fn tenant_admin_full_permission_lifecycle() {
         // ── Step 3: Super admin finds TENANT_ADMIN role for the new tenant ──
         let (k, v) = prepare_data::auth_header(&super_admin.token);
         let roles_response = request
-            .get("/api/roles?page=1&page_size=50&tenant_code=PERM_LC")
+            .get("/api/roles?page=1&pageSize=50&tenantCode=PERM_LC")
             .add_header(k, v)
             .await;
         assert_eq!(

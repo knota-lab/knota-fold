@@ -25,10 +25,10 @@ use crate::utils::error::OptionErrInto;
 // ── TTLs ────────────────────────────────────────────────────────────────
 
 /// How long a `password_changed_at` timestamp stays cached before re-fetch.
-const PWD_IAT_TTL: Duration = Duration::from_secs(60);
+const PWD_IAT_TTL: Duration = Duration::from_mins(1);
 
 /// How long a full user profile stays cached.
-const PROFILE_TTL: Duration = Duration::from_secs(300);
+const PROFILE_TTL: Duration = Duration::from_mins(5);
 
 // ── Cache key helpers ───────────────────────────────────────────────────
 

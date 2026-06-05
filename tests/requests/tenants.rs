@@ -26,7 +26,7 @@ async fn can_list_tenants() {
         let (auth_key, auth_value) = prepare_data::auth_header(&admin.token);
 
         let response = request
-            .get("/api/tenants?page=1&page_size=10")
+            .get("/api/tenants?page=1&pageSize=10")
             .add_header(auth_key, auth_value)
             .await;
 
@@ -383,7 +383,7 @@ async fn cannot_disable_default_tenant() {
         // Get default tenant ID from the list
         let (k1, v1) = prepare_data::auth_header(&admin.token);
         let list_response = request
-            .get("/api/tenants?page=1&page_size=10")
+            .get("/api/tenants?page=1&pageSize=10")
             .add_header(k1, v1)
             .await;
         assert_eq!(list_response.status_code(), 200);

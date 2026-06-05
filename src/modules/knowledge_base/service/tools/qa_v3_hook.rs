@@ -361,14 +361,10 @@ where
         }
 
         // Record tool round for debug export (complete interaction trace)
-        let round_num = self
-            .tool_round_counter
-            .lock()
-            .map(|mut g| {
-                *g += 1;
-                *g
-            })
-            .unwrap_or(1);
+        let round_num = self.tool_round_counter.lock().map_or(1, |mut g| {
+            *g += 1;
+            *g
+        });
         if let Ok(mut rounds) = self.tool_rounds.lock() {
             rounds.push(ToolRound {
                 round: round_num,

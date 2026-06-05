@@ -23,7 +23,7 @@ use crate::views::i18n::{
 };
 
 const CACHE_KEY_ENABLED: &str = "i18n:locales:enabled";
-const CACHE_TTL: Duration = Duration::from_secs(300);
+const CACHE_TTL: Duration = Duration::from_mins(5);
 
 /// `BCP-47` validator. Strict but cheap: alnum + `-`, 2-35 chars, must start
 /// with a letter, no consecutive `--`, no leading/trailing `-`.

@@ -307,8 +307,7 @@ pub async fn get_assignable_permissions(
             get_user_effective_permission_ids(db, actor_user_id, tenant_id).await?;
         permissions.retain(|p| {
             p.id.parse::<Uuid>()
-                .map(|id| actor_scope.contains(&id))
-                .unwrap_or(false)
+                .is_ok_and(|id| actor_scope.contains(&id))
         });
     }
 

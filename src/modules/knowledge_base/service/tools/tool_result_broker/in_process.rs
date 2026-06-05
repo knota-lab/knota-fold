@@ -10,7 +10,7 @@ use super::{
 };
 
 /// How long a resolved entry is retained for idempotent duplicate detection.
-const RESOLVED_TTL: Duration = Duration::from_secs(60);
+const RESOLVED_TTL: Duration = Duration::from_mins(1);
 
 /// Internal entry stored in the `DashMap`.
 enum BrokerEntry {

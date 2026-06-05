@@ -131,7 +131,7 @@ pub async fn get_resolved_detail(
         .cache
         .get_or_insert_with_expiry::<ResolvedConfigDetail, _>(
             &cache_key,
-            Duration::from_secs(300),
+            Duration::from_mins(5),
             async {
                 resolve_detail_from_db(&ctx.db, key, tenant_id)
                     .await
@@ -161,7 +161,7 @@ pub async fn get_all_resolved(
         .cache
         .get_or_insert_with_expiry::<HashMap<String, ResolvedConfigSlim>, _>(
             &cache_key,
-            Duration::from_secs(300),
+            Duration::from_mins(5),
             async {
                 fetch_all_resolved_from_db(&ctx.db, tenant_id)
                     .await

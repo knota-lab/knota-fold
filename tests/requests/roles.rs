@@ -31,7 +31,7 @@ async fn can_list_roles() {
         let (auth_key, auth_value) = prepare_data::auth_header(&admin.token);
 
         let response = request
-            .get("/api/roles?page=1&page_size=10")
+            .get("/api/roles?page=1&pageSize=10")
             .add_header(auth_key, auth_value)
             .await;
 
@@ -468,14 +468,14 @@ async fn can_list_roles_with_tenant_code() {
         let (auth_key, auth_value) = prepare_data::auth_header(&admin.token);
 
         let response = request
-            .get("/api/roles?page=1&page_size=10&tenant_code=DEFAULT")
+            .get("/api/roles?page=1&pageSize=10&tenantCode=DEFAULT")
             .add_header(auth_key, auth_value)
             .await;
 
         assert_eq!(
             response.status_code(),
             200,
-            "List roles with tenant_code should succeed"
+            "List roles with tenantCode should succeed"
         );
 
         let body: serde_json::Value = serde_json::from_str(&response.text()).unwrap();

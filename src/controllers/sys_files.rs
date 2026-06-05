@@ -23,6 +23,7 @@ use crate::views::file_references::AttachReferenceRequest;
 use crate::views::files::{
     DedupCheckRequest, DownloadUrlQuery, SmallUploadRequest, SoftDeleteRequest,
 };
+use crate::views::pagination::PaginationParams;
 
 /// Sys-side mirror of `controllers::files::attach_to_service_request`.
 /// Kept colocated to avoid a cross-module helper export and to make
@@ -54,11 +55,12 @@ pub(crate) async fn sys_list(
     tc: TenantContext,
     State(ctx): State<AppContext>,
     Path(tenant_code): Path<String>,
-    Query(pagination): Query<loco_rs::prelude::model::query::PaginationQuery>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Response> {
     if !tc.is_super_admin {
         return crate::views::errors::authz::super_admin_required();
     }
+    let pagination = pagination.into();
     let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
     let response =
         file_service::sys_list_paginated(&ctx.db, tenant.id, &pagination).await?;

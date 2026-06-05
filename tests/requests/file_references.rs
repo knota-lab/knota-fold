@@ -10,7 +10,7 @@
 //!  - tenant `GET /api/file-references`
 //!      * default upload produces a `system:attachment` reference row
 //!        joined with its file payload
-//!      * `?resource_type=` filter narrows the list
+//!      * `?resourceType=` filter narrows the list
 //!      * unknown resource_type returns 400 `unknown_resource_type`
 //!      * pagination metadata is wired through correctly
 //!      * cross-tenant rows are NOT visible
@@ -138,7 +138,7 @@ async fn list_for_tenant_returns_default_system_attachment_with_file_payload() {
         );
 
         // Find our reference row: there should be exactly one referencing
-        // the uploaded file with resource_type == system:attachment.
+        // the uploaded file with resourceType == system:attachment.
         let items = body["items"].as_array().unwrap();
         let row = items
             .iter()
@@ -191,7 +191,7 @@ async fn list_for_tenant_resource_type_filter_narrows_results() {
         .await;
         let file_id = upload["id"].as_str().unwrap().to_string();
 
-        // Add a second reference under a different resource_type.
+        // Add a second reference under a different resourceType.
         let dict_resource_id = uuid::Uuid::now_v7().to_string();
         let dict_ref = attach_reference(
             &request,
@@ -207,7 +207,7 @@ async fn list_for_tenant_resource_type_filter_narrows_results() {
 
         // Filter by crm:contract — should return only the explicit attach.
         let dict_only = request
-            .get("/api/file-references?resource_type=crm:contract")
+            .get("/api/file-references?resourceType=crm:contract")
             .add_header(auth_key.clone(), auth_value.clone())
             .await;
         assert_eq!(dict_only.status_code(), 200, "{}", dict_only.text());
@@ -228,7 +228,7 @@ async fn list_for_tenant_resource_type_filter_narrows_results() {
 
         // Filter by system:attachment — should NOT include the crm:contract row.
         let sys_only = request
-            .get("/api/file-references?resource_type=system:attachment")
+            .get("/api/file-references?resourceType=system:attachment")
             .add_header(auth_key.clone(), auth_value.clone())
             .await;
         assert_eq!(sys_only.status_code(), 200, "{}", sys_only.text());
@@ -247,9 +247,9 @@ async fn list_for_tenant_resource_type_filter_narrows_results() {
             "system:attachment filter must not include the crm:contract row"
         );
 
-        // Unknown resource_type → 400.
+        // Unknown resourceType → 400.
         let bad = request
-            .get("/api/file-references?resource_type=not:a:real:type")
+            .get("/api/file-references?resourceType=not:a:real:type")
             .add_header(auth_key, auth_value)
             .await;
         assert_eq!(bad.status_code(), 400, "{}", bad.text());
@@ -257,7 +257,7 @@ async fn list_for_tenant_resource_type_filter_narrows_results() {
         assert_eq!(
             bad_body["error"].as_str(),
             Some("unknown_resource_type"),
-            "unknown resource_type should map to the typed error: {bad_body}"
+            "unknown resourceType should map to the typed error: {bad_body}"
         );
     })
     .await;

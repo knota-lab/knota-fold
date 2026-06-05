@@ -1,5 +1,4 @@
 use loco_openapi::prelude::*;
-use loco_rs::prelude::model::query;
 use loco_rs::prelude::*;
 use std::sync::OnceLock;
 
@@ -7,6 +6,7 @@ use crate::extractors::TenantContext;
 use crate::services::casbin_service::SharedEnforcer;
 use crate::services::permission_service;
 use crate::views::errors::parse_uuid;
+use crate::views::pagination::PaginationParams;
 use crate::views::permissions::{
     PermissionResponse, SyncPermissionsRequest, UpdatePermissionRequest,
 };
@@ -78,8 +78,9 @@ pub fn get_openapi_spec_ref() -> &'static utoipa::openapi::OpenApi {
 pub(crate) async fn list(
     _tc: TenantContext,
     State(ctx): State<AppContext>,
-    Query(pagination): Query<query::PaginationQuery>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Response> {
+    let pagination = pagination.into();
     let result = permission_service::list_permissions(&ctx.db, &pagination).await?;
 
     format::json(result)

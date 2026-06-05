@@ -22,11 +22,13 @@ use crate::services::{
 };
 use crate::views::audit_logs::AuditContext;
 use crate::views::file_references::{AttachReferenceRequest, FileReferenceResponse};
+use crate::views::pagination::PaginationParams;
 
 /// Optional query filter for sys cross-tenant list — same shape as the
 /// tenant version, but the route also takes `tenantCode` from the
 /// path (not the query string) per the sys convention.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SysListReferencesFilter {
     #[serde(default)]
     pub resource_type: Option<String>,
@@ -167,7 +169,7 @@ pub fn routes_root() -> Routes {
     get,
     path = "/api/sys/tenants/{tenantCode}/file-references",
     tag = "超管-文件引用",
-    description = "跨租户分页列出指定租户的全部活跃文件引用（join files），可选 ?resource_type=xxx 过滤",
+    description = "跨租户分页列出指定租户的全部活跃文件引用（join files），可选 ?resourceType=xxx 过滤",
     responses((status = 200, description = "Success"))
 )]
 #[debug_handler]
@@ -175,10 +177,11 @@ pub(crate) async fn sys_list_for_tenant(
     tc: TenantContext,
     State(ctx): State<AppContext>,
     Path(tenant_code): Path<String>,
-    Query(pagination): Query<loco_rs::prelude::model::query::PaginationQuery>,
+    Query(pagination): Query<PaginationParams>,
     Query(filter): Query<SysListReferencesFilter>,
 ) -> Result<Response> {
     require_super_admin(&tc)?;
+    let pagination = pagination.into();
     let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
     let resource_type_filter = match filter.resource_type.as_deref() {
         Some(s) if !s.is_empty() => Some(parse_resource_type(s)?),

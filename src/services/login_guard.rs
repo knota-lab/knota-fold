@@ -141,8 +141,7 @@ pub async fn get_lock_until(cache: &Arc<cache::Cache>, email: &str) -> Option<i6
 fn now_epoch() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
-        .unwrap_or(0)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
 // ── Pre-login gate ──────────────────────────────────────────────────────

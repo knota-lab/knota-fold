@@ -200,7 +200,7 @@ async fn flush_batch(
 /// Spawn periodic cleanup of expired logs.
 pub fn spawn_cleanup(retention_days: u32) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(3600));
+        let mut interval = tokio::time::interval(Duration::from_hours(1));
         loop {
             interval.tick().await;
             let Some(db) = log_db() else { continue };

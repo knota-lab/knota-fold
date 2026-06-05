@@ -47,7 +47,7 @@ use crate::views::i18n::{BundleResponse, BASE_LOCALE};
 
 use super::i18n_validation::{validate_locale, validate_namespace};
 
-const BUNDLE_CACHE_TTL: Duration = Duration::from_secs(300);
+const BUNDLE_CACHE_TTL: Duration = Duration::from_mins(5);
 
 // ── Cache keys ──────────────────────────────────────────────────────────────
 
