@@ -8,7 +8,7 @@ use crate::modules::knowledge_base::providers::parser::{
 
 pub struct MarkdownDirectParser;
 
-const SUPPORTED_TYPES: &[&str] = &["text/markdown"];
+const SUPPORTED_TYPES: &[&str] = &["text/markdown", "text/x-markdown"];
 
 #[async_trait]
 impl DocumentParser for MarkdownDirectParser {

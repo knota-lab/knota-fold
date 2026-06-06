@@ -89,6 +89,39 @@ pub async fn update_status(
     Ok(())
 }
 
+/// Mark a document as indexing before the worker starts expensive I/O.
+///
+/// This is intentionally idempotent for `pending` and `indexing` so retrying a
+/// queued worker does not fail before it can report the real indexing error.
+#[tracing::instrument(skip(db))]
+pub async fn start_indexing(
+    db: &DatabaseConnection,
+    document_id: Uuid,
+    tenant_id: Uuid,
+) -> loco_rs::Result<()> {
+    let doc = kb_documents::Entity::find_by_id(document_id)
+        .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .one(db)
+        .await
+        .db_err()?
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+
+    if !matches!(doc.status.as_str(), "pending" | "indexing") {
+        return Err(KnowledgeBaseError::IndexingError(format!(
+            "cannot start indexing from status '{}'",
+            doc.status
+        ))
+        .to_err());
+    }
+
+    let mut active: kd_models::ActiveModel = doc.into();
+    active.status = ActiveValue::Set("indexing".to_string());
+    active.error_message = ActiveValue::Set(None);
+    active.updated_at = ActiveValue::Set(Utc::now().naive_utc());
+    active.update(db).await.db_err()?;
+    Ok(())
+}
+
 /// Update `full_text` and set status to 'indexing'.
 #[tracing::instrument(skip(db, full_text))]
 pub async fn set_full_text(

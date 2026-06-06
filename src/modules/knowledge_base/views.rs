@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 pub struct CreateDocumentRequest {
     pub title: String,
     pub description: Option<String>,
-    /// Document source identifier: "`kb_upload`", "`chat_upload`", "api", "sync".
-    /// Defaults to "`kb_upload`" when omitted.
+    /// MIME type used by inline `content` parsing. For `fileId` documents the
+    /// worker uses the file record's `mimeType`.
+    /// Defaults to `text/plain` when inline `content` is present.
     pub source_type: Option<String>,
     /// Document visibility: "private" (only uploader) or "tenant" (shared in tenant).
     /// Defaults to "tenant" when omitted.

@@ -12,7 +12,7 @@ use crate::modules::knowledge_base::views::{
     CreateDocumentRequest, DocumentListQuery, DocumentResponse,
 };
 use crate::utils::error::IntoModelResult;
-use crate::views::errors::parse_uuid;
+use crate::views::errors::{err_bad_request, parse_uuid};
 use crate::views::pagination::PaginatedResponse;
 use crate::workers::indexing_worker::{IndexingWorker, IndexingWorkerArgs};
 
@@ -29,9 +29,20 @@ pub(crate) async fn create(
     State(ctx): State<AppContext>,
     Json(params): Json<CreateDocumentRequest>,
 ) -> Result<Response> {
-    let source_type = params
-        .source_type
-        .unwrap_or_else(|| "kb_upload".to_string());
+    if params.content.is_none() && params.file_id.is_none() {
+        return Err(err_bad_request(
+            "knowledge_base.document_source_required",
+            "content or fileId is required",
+        ));
+    }
+
+    let source_type = params.source_type.unwrap_or_else(|| {
+        if params.content.is_some() {
+            "text/plain".to_string()
+        } else {
+            "kb_upload".to_string()
+        }
+    });
 
     let scope = params.scope.unwrap_or_else(|| "tenant".to_string());
 

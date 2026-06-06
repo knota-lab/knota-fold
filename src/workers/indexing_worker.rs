@@ -1,11 +1,14 @@
 use loco_rs::prelude::*;
-use sea_orm::{ActiveValue, DatabaseConnection};
+use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncReadExt;
 use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::config::{AppSettings, ConfigExt};
 use crate::initializers::knowledge_base::{SharedParserChain, SharedSearchProvider};
+use crate::initializers::s3::SharedS3Client;
+use crate::models::_entities::{files, kb_documents};
 use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::models::{
     document_lines as dl_models, kb_chunks as kc_models,
@@ -18,6 +21,9 @@ use crate::modules::knowledge_base::service::{
 };
 use rig::client::EmbeddingsClient;
 use rig::embeddings::EmbeddingModel;
+
+const MAX_INDEX_FILE_BYTES: i64 = 50 * 1024 * 1024;
+const LEGACY_TEXT_SOURCE_TYPES: &[&str] = &["kb_upload", "chat_upload", "api", "sync"];
 
 pub struct IndexingWorker {
     pub ctx: AppContext,
@@ -101,13 +107,9 @@ async fn run_indexing_pipeline(
 
     // 2. Get document from DB
     let doc = document_service::get_document(db, document_id, tenant_id).await?;
+    document_service::start_indexing(db, document_id, tenant_id).await?;
 
-    // 3. Set status to 'indexing' and update full_text
-    let full_text = doc.full_text.clone().ok_or_else(|| {
-        KnowledgeBaseError::ParsingError("document has no full_text content".into())
-            .to_err()
-    })?;
-    document_service::set_full_text(db, document_id, &full_text).await?;
+    let input = load_pipeline_input(ctx, db, &doc).await?;
 
     // 4-11. Run pipeline; mark as error on failure
     if let Err(e) = execute_pipeline(
@@ -118,8 +120,9 @@ async fn run_indexing_pipeline(
             search_provider: &search_provider,
             document_id,
             tenant_id,
-            full_text: &full_text,
-            source_type: &doc.source_type,
+            input_bytes: &input.bytes,
+            mime_type: &input.mime_type,
+            source_name: &input.source_name,
             scope: &doc.scope,
             created_by: doc.created_by,
             config,
@@ -148,6 +151,98 @@ async fn run_indexing_pipeline(
     Ok(())
 }
 
+struct PipelineInput {
+    bytes: Vec<u8>,
+    mime_type: String,
+    source_name: String,
+}
+
+async fn load_pipeline_input(
+    ctx: &AppContext,
+    db: &DatabaseConnection,
+    doc: &kb_documents::Model,
+) -> Result<PipelineInput> {
+    if let Some(full_text) = &doc.full_text {
+        return Ok(PipelineInput {
+            bytes: full_text.as_bytes().to_vec(),
+            mime_type: normalise_source_mime(&doc.source_type),
+            source_name: doc.title.clone(),
+        });
+    }
+
+    let file_id = doc.file_id.ok_or_else(|| {
+        KnowledgeBaseError::ParsingError(
+            "document has neither content nor file_id".into(),
+        )
+        .to_err()
+    })?;
+
+    let file = files::Entity::find_by_id(file_id)
+        .filter(files::Column::TenantId.eq(doc.tenant_id))
+        .filter(files::Column::Status.eq("ACTIVE"))
+        .filter(files::Column::DeletedAt.is_null())
+        .one(db)
+        .await
+        .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_err())?
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+
+    if file.size > MAX_INDEX_FILE_BYTES {
+        return Err(KnowledgeBaseError::ParsingError(format!(
+            "file is too large to index synchronously: {} bytes > {} bytes",
+            file.size, MAX_INDEX_FILE_BYTES
+        ))
+        .to_err());
+    }
+
+    let s3_client = ctx.shared_store.get::<SharedS3Client>().ok_or_else(|| {
+        KnowledgeBaseError::ConfigError("S3 client not initialized".into()).to_err()
+    })?;
+    let bytes = read_file_bytes(&s3_client, &file).await?;
+
+    Ok(PipelineInput {
+        bytes,
+        mime_type: file.mime_type,
+        source_name: file.name,
+    })
+}
+
+fn normalise_source_mime(source_type: &str) -> String {
+    if LEGACY_TEXT_SOURCE_TYPES.contains(&source_type) {
+        "text/plain".to_string()
+    } else {
+        source_type.to_string()
+    }
+}
+
+async fn read_file_bytes(
+    s3_client: &SharedS3Client,
+    file: &files::Model,
+) -> Result<Vec<u8>> {
+    let response = s3_client
+        .get_object()
+        .bucket(&file.bucket)
+        .key(&file.storage_key)
+        .send()
+        .await
+        .map_err(|e| {
+            KnowledgeBaseError::ProviderError(format!(
+                "failed to fetch file object from storage: {e}"
+            ))
+            .to_err()
+        })?;
+
+    let capacity = usize::try_from(file.size.max(0)).unwrap_or_default();
+    let mut bytes = Vec::with_capacity(capacity);
+    let mut reader = response.body.into_async_read();
+    reader.read_to_end(&mut bytes).await.map_err(|e| {
+        KnowledgeBaseError::ProviderError(format!(
+            "failed to read file object from storage: {e}"
+        ))
+        .to_err()
+    })?;
+    Ok(bytes)
+}
+
 /// Parameters for [`execute_pipeline`].
 struct PipelineParams<'a> {
     parser_chain: &'a SharedParserChain,
@@ -155,8 +250,9 @@ struct PipelineParams<'a> {
     search_provider: &'a SharedSearchProvider,
     document_id: Uuid,
     tenant_id: Uuid,
-    full_text: &'a str,
-    source_type: &'a str,
+    input_bytes: &'a [u8],
+    mime_type: &'a str,
+    source_name: &'a str,
     scope: &'a str,
     created_by: Uuid,
     config: &'a crate::config::ChunkingConfig,
@@ -215,21 +311,22 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     let parser = p
         .parser_chain
         .iter()
-        .find(|pr| pr.supported_mime_types().contains(&p.source_type))
+        .find(|pr| pr.supported_mime_types().contains(&p.mime_type))
         .ok_or_else(|| {
             KnowledgeBaseError::UnsupportedFormat(format!(
                 "no parser found for content type '{}'",
-                p.source_type
+                p.mime_type
             ))
             .to_err()
         })?;
     let parsed = parser
-        .parse(p.full_text.as_bytes(), p.source_type, "document")
+        .parse(p.input_bytes, p.mime_type, p.source_name)
         .await
         .map_err(|e| {
             KnowledgeBaseError::ParsingError(format!("parsing failed: {e}")).to_err()
         })?;
     let markdown = &parsed.markdown;
+    document_service::set_full_text(db, p.document_id, markdown).await?;
 
     // 5. Chunk the markdown
     let chunks = chunking_service::chunk_markdown(
