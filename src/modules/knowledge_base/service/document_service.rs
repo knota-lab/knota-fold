@@ -143,6 +143,28 @@ pub async fn set_full_text(
     Ok(())
 }
 
+#[tracing::instrument(skip(db, full_text, metadata))]
+pub async fn set_parsed_content(
+    db: &DatabaseConnection,
+    document_id: Uuid,
+    full_text: &str,
+    metadata: serde_json::Value,
+) -> loco_rs::Result<()> {
+    let doc = kb_documents::Entity::find_by_id(document_id)
+        .one(db)
+        .await
+        .db_err()?
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+
+    let mut active: kd_models::ActiveModel = doc.into();
+    active.full_text = ActiveValue::Set(Some(full_text.to_string()));
+    active.metadata = ActiveValue::Set(Some(metadata));
+    active.status = ActiveValue::Set("indexing".to_string());
+    active.updated_at = ActiveValue::Set(Utc::now().naive_utc());
+    active.update(db).await.db_err()?;
+    Ok(())
+}
+
 /// Update `chunk_count` and `total_tokens`, set status to 'ready'.
 #[tracing::instrument(skip(db))]
 pub async fn mark_ready(

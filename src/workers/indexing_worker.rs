@@ -1,18 +1,24 @@
+use std::collections::HashMap;
+
 use loco_rs::prelude::*;
 use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::io::AsyncReadExt;
 use tracing::Instrument;
 use uuid::Uuid;
 
+use aws_sdk_s3::primitives::ByteStream;
+
 use crate::config::{AppSettings, ConfigExt};
 use crate::initializers::knowledge_base::{SharedParserChain, SharedSearchProvider};
-use crate::initializers::s3::SharedS3Client;
+use crate::initializers::s3::{SharedS3Client, SharedS3Config};
 use crate::models::_entities::{files, kb_documents};
 use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::models::{
     document_lines as dl_models, kb_chunks as kc_models,
 };
+use crate::modules::knowledge_base::providers::parser::ParsedAsset;
 use crate::modules::knowledge_base::providers::search::ChunkPoint;
 use crate::modules::knowledge_base::providers::SharedEmbeddingClient;
 use crate::modules::knowledge_base::service::numeric::embedding_vec_f64_to_f32;
@@ -89,6 +95,8 @@ async fn run_indexing_pipeline(
                 KnowledgeBaseError::ConfigError("Search provider not initialized".into())
                     .to_err()
             })?;
+    let s3_client = ctx.shared_store.get::<SharedS3Client>();
+    let s3_config = ctx.shared_store.get::<SharedS3Config>();
 
     // Read KB config
     let settings: AppSettings = ctx
@@ -109,28 +117,33 @@ async fn run_indexing_pipeline(
     let doc = document_service::get_document(db, document_id, tenant_id).await?;
     document_service::start_indexing(db, document_id, tenant_id).await?;
 
-    let input = load_pipeline_input(ctx, db, &doc).await?;
-
     // 4-11. Run pipeline; mark as error on failure
-    if let Err(e) = execute_pipeline(
-        db,
-        &PipelineParams {
-            parser_chain: &parser_chain,
-            embedding_client: &embedding_client,
-            search_provider: &search_provider,
-            document_id,
-            tenant_id,
-            input_bytes: &input.bytes,
-            mime_type: &input.mime_type,
-            source_name: &input.source_name,
-            scope: &doc.scope,
-            created_by: doc.created_by,
-            config,
-            embedding_model_name: &kb_config.embedding.model,
-        },
-    )
-    .await
-    {
+    let pipeline_result = async {
+        let input = load_pipeline_input(ctx, db, &doc).await?;
+        execute_pipeline(
+            db,
+            &PipelineParams {
+                parser_chain: &parser_chain,
+                embedding_client: &embedding_client,
+                search_provider: &search_provider,
+                document_id,
+                tenant_id,
+                input_bytes: &input.bytes,
+                mime_type: &input.mime_type,
+                source_name: &input.source_name,
+                s3_client: s3_client.as_ref(),
+                s3_bucket: s3_config.as_ref().map(|cfg| cfg.bucket.as_str()),
+                scope: &doc.scope,
+                created_by: doc.created_by,
+                config,
+                embedding_model_name: &kb_config.embedding.model,
+            },
+        )
+        .await
+    }
+    .await;
+
+    if let Err(e) = pipeline_result {
         let error_msg = format!("{e}");
         tracing::error!(
             document_id = %document_id,
@@ -253,6 +266,8 @@ struct PipelineParams<'a> {
     input_bytes: &'a [u8],
     mime_type: &'a str,
     source_name: &'a str,
+    s3_client: Option<&'a SharedS3Client>,
+    s3_bucket: Option<&'a str>,
     scope: &'a str,
     created_by: Uuid,
     config: &'a crate::config::ChunkingConfig,
@@ -325,12 +340,22 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
         .map_err(|e| {
             KnowledgeBaseError::ParsingError(format!("parsing failed: {e}")).to_err()
         })?;
-    let markdown = &parsed.markdown;
-    document_service::set_full_text(db, p.document_id, markdown).await?;
+    let ParsedMarkdown {
+        preview_markdown,
+        index_markdown,
+        asset_metadata,
+    } = prepare_parsed_markdown(p, &parsed.markdown, &parsed.assets).await?;
+    document_service::set_parsed_content(
+        db,
+        p.document_id,
+        &preview_markdown,
+        asset_metadata,
+    )
+    .await?;
 
     // 5. Chunk the markdown
     let chunks = chunking_service::chunk_markdown(
-        markdown,
+        &index_markdown,
         p.config.max_chunk_tokens,
         p.config.min_chunk_tokens,
         p.config.split_by_heading,
@@ -345,7 +370,7 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     }
 
     // 6. Split lines and insert
-    let raw_lines = line_splitting_service::split_lines(markdown);
+    let raw_lines = line_splitting_service::split_lines(&index_markdown);
     let line_models: Vec<dl_models::ActiveModel> = raw_lines
         .into_iter()
         .map(|line| dl_models::ActiveModel {
@@ -410,4 +435,228 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     );
 
     Ok(())
+}
+
+struct ParsedMarkdown {
+    preview_markdown: String,
+    index_markdown: String,
+    asset_metadata: serde_json::Value,
+}
+
+async fn prepare_parsed_markdown(
+    p: &PipelineParams<'_>,
+    markdown: &str,
+    assets: &[ParsedAsset],
+) -> Result<ParsedMarkdown> {
+    if assets.is_empty() {
+        return Ok(ParsedMarkdown {
+            preview_markdown: markdown.to_string(),
+            index_markdown: strip_markdown_images(markdown),
+            asset_metadata: json!({
+                "parser": {
+                    "mimeType": p.mime_type,
+                    "sourceName": p.source_name,
+                    "assets": []
+                }
+            }),
+        });
+    }
+
+    let s3_client = p.s3_client.ok_or_else(|| {
+        KnowledgeBaseError::ConfigError(
+            "S3 client is required to persist parsed document assets".into(),
+        )
+        .to_err()
+    })?;
+    let bucket = p.s3_bucket.ok_or_else(|| {
+        KnowledgeBaseError::ConfigError(
+            "S3 config is required to persist parsed document assets".into(),
+        )
+        .to_err()
+    })?;
+
+    let mut asset_refs = Vec::with_capacity(assets.len());
+    let mut asset_records = Vec::with_capacity(assets.len());
+    for asset in assets {
+        let asset_id = Uuid::now_v7();
+        let ext = extension_for_mime(&asset.mime_type);
+        let key = format!(
+            "kb-assets/{}/{}/{}.{}",
+            p.tenant_id, p.document_id, asset_id, ext
+        );
+        s3_client
+            .put_object()
+            .bucket(bucket)
+            .key(&key)
+            .content_type(asset.mime_type.clone())
+            .body(ByteStream::from(asset.data.clone()))
+            .send()
+            .await
+            .map_err(|e| {
+                KnowledgeBaseError::ProviderError(format!(
+                    "failed to upload parsed asset '{}': {e}",
+                    asset.name
+                ))
+                .to_err()
+            })?;
+
+        asset_refs.push((asset.name.clone(), key.clone()));
+        asset_records.push(json!({
+            "id": asset_id.to_string(),
+            "name": asset.name,
+            "mimeType": asset.mime_type,
+            "storageKey": key,
+            "size": asset.data.len()
+        }));
+    }
+
+    let preview_markdown = rewrite_markdown_image_targets(markdown, &asset_refs);
+    Ok(ParsedMarkdown {
+        index_markdown: strip_markdown_images(&preview_markdown),
+        preview_markdown,
+        asset_metadata: json!({
+            "parser": {
+                "mimeType": p.mime_type,
+                "sourceName": p.source_name,
+                "assets": asset_records
+            }
+        }),
+    })
+}
+
+fn rewrite_markdown_image_targets(
+    markdown: &str,
+    asset_refs: &[(String, String)],
+) -> String {
+    static IMAGE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = IMAGE_RE.get_or_init(|| {
+        regex::Regex::new(r#"!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)"#)
+            .expect("markdown image regex must compile")
+    });
+    let asset_keys = asset_refs
+        .iter()
+        .map(|(name, key)| (normalize_asset_target(name), key.as_str()))
+        .collect::<HashMap<_, _>>();
+
+    re.replace_all(markdown, |captures: &regex::Captures<'_>| {
+        let Some(target) = captures.get(2).map(|m| normalize_asset_target(m.as_str()))
+        else {
+            return captures[0].to_string();
+        };
+        let key = asset_keys.get(target.as_str()).or_else(|| {
+            asset_keys.iter().find_map(|(name, key)| {
+                target.ends_with(&format!("/{name}")).then_some(key)
+            })
+        });
+
+        key.map_or_else(
+            || captures[0].to_string(),
+            |storage_key| format!("![{}](kb-asset://{storage_key})", &captures[1]),
+        )
+    })
+    .to_string()
+}
+
+fn normalize_asset_target(target: &str) -> String {
+    target
+        .trim()
+        .trim_matches('"')
+        .replace('\\', "/")
+        .trim_start_matches("./")
+        .to_string()
+}
+
+fn strip_markdown_images(markdown: &str) -> String {
+    static IMAGE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = IMAGE_RE.get_or_init(|| {
+        regex::Regex::new(r"!\[([^\]]*)\]\([^)]+\)")
+            .expect("markdown image regex must compile")
+    });
+    re.replace_all(markdown, "$1").to_string()
+}
+
+fn extension_for_mime(mime_type: &str) -> &'static str {
+    match mime_type {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        "image/tiff" => "tiff",
+        _ => "bin",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        extension_for_mime, normalize_asset_target, rewrite_markdown_image_targets,
+        strip_markdown_images,
+    };
+
+    #[test]
+    fn rewrite_markdown_image_targets_replaces_only_image_links() {
+        let markdown = r#"
+正文里的 chart.png 不应该被替换。
+
+![图表](images/chart.png)
+![照片](./photo.jpg "标题")
+[普通链接](images/chart.png)
+"#;
+        let rewritten = rewrite_markdown_image_targets(
+            markdown,
+            &[
+                (
+                    "chart.png".to_string(),
+                    "kb-assets/t/doc/chart.png".to_string(),
+                ),
+                (
+                    "photo.jpg".to_string(),
+                    "kb-assets/t/doc/photo.jpg".to_string(),
+                ),
+            ],
+        );
+
+        assert!(rewritten.contains("正文里的 chart.png 不应该被替换。"));
+        assert!(rewritten.contains("![图表](kb-asset://kb-assets/t/doc/chart.png)"));
+        assert!(rewritten.contains("![照片](kb-asset://kb-assets/t/doc/photo.jpg)"));
+        assert!(rewritten.contains("[普通链接](images/chart.png)"));
+    }
+
+    #[test]
+    fn rewrite_markdown_image_targets_keeps_unknown_images() {
+        let markdown = "![missing](images/missing.png)";
+        let rewritten = rewrite_markdown_image_targets(
+            markdown,
+            &[(
+                "chart.png".to_string(),
+                "kb-assets/t/doc/chart.png".to_string(),
+            )],
+        );
+
+        assert_eq!(rewritten, markdown);
+    }
+
+    #[test]
+    fn strip_markdown_images_keeps_alt_text_for_indexing() {
+        let markdown = "前文\n![结构图](kb-asset://kb-assets/t/doc/a.png)\n后文";
+
+        assert_eq!(strip_markdown_images(markdown), "前文\n结构图\n后文");
+    }
+
+    #[test]
+    fn normalize_asset_target_handles_relative_windows_paths() {
+        assert_eq!(
+            normalize_asset_target(r#".\images\chart.png"#),
+            "images/chart.png"
+        );
+        assert_eq!(normalize_asset_target(r#""./chart.png""#), "chart.png");
+    }
+
+    #[test]
+    fn extension_for_mime_uses_supported_image_extensions() {
+        assert_eq!(extension_for_mime("image/png"), "png");
+        assert_eq!(extension_for_mime("image/jpeg"), "jpg");
+        assert_eq!(extension_for_mime("image/webp"), "webp");
+        assert_eq!(extension_for_mime("application/octet-stream"), "bin");
+    }
 }

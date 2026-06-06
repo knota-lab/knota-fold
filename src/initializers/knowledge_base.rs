@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::config::{AppSettings, ConfigExt};
 use crate::modules::knowledge_base::providers::parser::markdown_parser::MarkdownDirectParser;
+use crate::modules::knowledge_base::providers::parser::mineru_parser::MineruParser;
 use crate::modules::knowledge_base::providers::parser::plain_text_parser::PlainTextParser;
 use crate::modules::knowledge_base::providers::search::qdrant::QdrantSearchProvider;
 use crate::modules::knowledge_base::providers::search::SearchProvider;
@@ -66,8 +67,15 @@ impl Initializer for KnowledgeBaseInitializer {
         };
 
         // Create providers — parser chain ordered by specificity
-        let parser_chain: Vec<Box<dyn DocumentParser>> =
+        let mut parser_chain: Vec<Box<dyn DocumentParser>> =
             vec![Box::new(PlainTextParser), Box::new(MarkdownDirectParser)];
+        if kb_config.parser.mineru.enabled {
+            parser_chain.push(Box::new(
+                MineruParser::new(kb_config.parser.mineru.clone()).map_err(|e| {
+                    Error::Message(format!("MinerU parser init failed: {e}"))
+                })?,
+            ));
+        }
         let (embedding_client, qa_client) = create_rig_clients(kb_config);
         let search_provider = QdrantSearchProvider::new(
             &kb_config.qdrant.url,

@@ -67,6 +67,7 @@ dotenvy = "0.15"
 qdrant-client = "1.17"
 pulldown-cmark = "0.12"
 tiktoken-rs = "0.6"
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 
 [[bin]]
 name = "knota_fold-cli"

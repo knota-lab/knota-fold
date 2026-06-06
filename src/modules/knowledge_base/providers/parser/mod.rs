@@ -1,4 +1,5 @@
 pub mod markdown_parser;
+pub mod mineru_parser;
 pub mod plain_text_parser;
 
 use async_trait::async_trait;
@@ -13,7 +14,16 @@ pub struct ParsedDocument {
     pub source_name: String,
     pub mime_type: String,
     pub markdown: String,
+    #[serde(default)]
+    pub assets: Vec<ParsedAsset>,
     pub metadata: DocumentMetadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedAsset {
+    pub name: String,
+    pub mime_type: String,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -137,6 +137,15 @@ settings:
       apiKey: ""
       collectionName: kb_chunks
       chatCollectionName: chat_memory
+    parser:
+      mineru:
+        enabled: {{ get_env(name="MINERU_ENABLED", default="false") }}
+        baseUrl: {{ get_env(name="MINERU_BASE_URL", default="http://localhost:8000") }}
+        timeoutSecs: {{ get_env(name="MINERU_TIMEOUT_SECS", default="300") }}
+        maxFileBytes: {{ get_env(name="MINERU_MAX_FILE_BYTES", default="209715200") }}
+        backend: {{ get_env(name="MINERU_BACKEND", default="pipeline") }}
+        parseMethod: {{ get_env(name="MINERU_PARSE_METHOD", default="auto") }}
+        lang: {{ get_env(name="MINERU_LANG", default="ch") }}
     chunking:
       maxChunkTokens: 800
       minChunkTokens: 100

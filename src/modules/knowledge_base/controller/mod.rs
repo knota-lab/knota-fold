@@ -55,6 +55,17 @@ pub fn user_routes() -> Routes {
             "/documents/{id}/chunks",
             openapi(get(search::chunks), routes!(search::chunks)),
         )
+        .add(
+            "/documents/{id}/preview",
+            openapi(get(documents::preview), routes!(documents::preview)),
+        )
+        .add(
+            "/documents/{id}/assets/presign",
+            openapi(
+                post(documents::presign_assets),
+                routes!(documents::presign_assets),
+            ),
+        )
 }
 
 /// Chat session routes — JWT only (session CRUD).

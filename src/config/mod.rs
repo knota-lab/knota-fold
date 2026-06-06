@@ -119,6 +119,9 @@ pub struct KnowledgeBaseConfig {
     pub qdrant: QdrantConfig,
 
     #[serde(default)]
+    pub parser: ParserConfig,
+
+    #[serde(default)]
     pub chunking: ChunkingConfig,
 
     #[serde(default)]
@@ -126,6 +129,71 @@ pub struct KnowledgeBaseConfig {
 
     #[serde(default)]
     pub qa: QaConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParserConfig {
+    #[serde(default)]
+    pub mineru: MineruParserConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MineruParserConfig {
+    #[serde(default)]
+    pub enabled: bool,
+
+    #[serde(default = "default_mineru_base_url")]
+    pub base_url: String,
+
+    #[serde(default = "default_mineru_timeout_secs")]
+    pub timeout_secs: u64,
+
+    #[serde(default = "default_mineru_max_file_bytes")]
+    pub max_file_bytes: i64,
+
+    #[serde(default = "default_mineru_backend")]
+    pub backend: String,
+
+    #[serde(default = "default_mineru_parse_method")]
+    pub parse_method: String,
+
+    #[serde(default = "default_mineru_lang")]
+    pub lang: String,
+}
+
+impl Default for MineruParserConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            base_url: default_mineru_base_url(),
+            timeout_secs: default_mineru_timeout_secs(),
+            max_file_bytes: default_mineru_max_file_bytes(),
+            backend: default_mineru_backend(),
+            parse_method: default_mineru_parse_method(),
+            lang: default_mineru_lang(),
+        }
+    }
+}
+
+fn default_mineru_base_url() -> String {
+    "http://localhost:8000".to_string()
+}
+const fn default_mineru_timeout_secs() -> u64 {
+    300
+}
+const fn default_mineru_max_file_bytes() -> i64 {
+    200 * 1024 * 1024
+}
+fn default_mineru_backend() -> String {
+    "pipeline".to_string()
+}
+fn default_mineru_parse_method() -> String {
+    "auto".to_string()
+}
+fn default_mineru_lang() -> String {
+    "ch".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]

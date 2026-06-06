@@ -36,6 +36,12 @@ pub struct SearchRequest {
     pub document_ids: Option<Vec<uuid::Uuid>>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresignDocumentAssetsRequest {
+    pub asset_keys: Vec<String>,
+}
+
 // ---- Response types ----
 
 #[derive(Debug, Serialize)]
@@ -96,4 +102,37 @@ pub struct ChunkResponse {
     pub token_count: i32,
     pub char_start: Option<i32>,
     pub char_end: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentAssetResponse {
+    pub id: String,
+    pub name: String,
+    pub mime_type: String,
+    pub storage_key: String,
+    pub size: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentPreviewResponse {
+    pub document_id: String,
+    pub title: String,
+    pub markdown: String,
+    pub assets: Vec<DocumentAssetResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresignedDocumentAssetResponse {
+    pub asset_key: String,
+    pub url: String,
+    pub expires_in: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresignDocumentAssetsResponse {
+    pub items: Vec<PresignedDocumentAssetResponse>,
 }

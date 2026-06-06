@@ -48,6 +48,7 @@ impl DocumentParser for PlainTextParser {
             source_name: source_name.to_string(),
             mime_type: "text/plain".to_string(),
             markdown: normalised,
+            assets: Vec::new(),
             metadata: DocumentMetadata {
                 page_count: None,
                 char_count,

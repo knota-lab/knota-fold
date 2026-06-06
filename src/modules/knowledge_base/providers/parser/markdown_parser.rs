@@ -34,6 +34,7 @@ impl DocumentParser for MarkdownDirectParser {
             source_name: source_name.to_string(),
             mime_type: "text/markdown".to_string(),
             markdown,
+            assets: Vec::new(),
             metadata: DocumentMetadata {
                 page_count: None,
                 char_count,
