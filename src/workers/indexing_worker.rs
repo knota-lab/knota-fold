@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
 
+use futures_util::FutureExt;
 use loco_rs::prelude::*;
 use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
@@ -75,50 +77,54 @@ async fn run_indexing_pipeline(
     document_id: Uuid,
     tenant_id: Uuid,
 ) -> Result<()> {
-    let db = &ctx.db;
+    let pipeline_result = AssertUnwindSafe(async {
+        let db = &ctx.db;
 
-    // 1. Get dependencies from shared_store
-    let parser_chain = ctx.shared_store.get::<SharedParserChain>().ok_or_else(|| {
-        KnowledgeBaseError::ConfigError("Parser chain not initialized".into()).to_err()
-    })?;
-    let embedding_client =
-        ctx.shared_store
+        // 1. Get dependencies from shared_store
+        let parser_chain =
+            ctx.shared_store.get::<SharedParserChain>().ok_or_else(|| {
+                KnowledgeBaseError::ConfigError("Parser chain not initialized".into())
+                    .to_err()
+            })?;
+        let embedding_client = ctx
+            .shared_store
             .get::<SharedEmbeddingClient>()
             .ok_or_else(|| {
                 KnowledgeBaseError::ConfigError("Embedding client not initialized".into())
                     .to_err()
             })?;
-    let search_provider =
-        ctx.shared_store
-            .get::<SharedSearchProvider>()
-            .ok_or_else(|| {
-                KnowledgeBaseError::ConfigError("Search provider not initialized".into())
+        let search_provider =
+            ctx.shared_store
+                .get::<SharedSearchProvider>()
+                .ok_or_else(|| {
+                    KnowledgeBaseError::ConfigError(
+                        "Search provider not initialized".into(),
+                    )
                     .to_err()
+                })?;
+        let s3_client = ctx.shared_store.get::<SharedS3Client>();
+        let s3_config = ctx.shared_store.get::<SharedS3Config>();
+
+        // Read KB config
+        let settings: AppSettings = ctx
+            .config
+            .typed_settings()
+            .map_err(|e| {
+                KnowledgeBaseError::ConfigError(format!("invalid settings: {e}")).to_err()
+            })?
+            .ok_or_else(|| {
+                KnowledgeBaseError::ConfigError("settings missing".into()).to_err()
             })?;
-    let s3_client = ctx.shared_store.get::<SharedS3Client>();
-    let s3_config = ctx.shared_store.get::<SharedS3Config>();
-
-    // Read KB config
-    let settings: AppSettings = ctx
-        .config
-        .typed_settings()
-        .map_err(|e| {
-            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}")).to_err()
-        })?
-        .ok_or_else(|| {
-            KnowledgeBaseError::ConfigError("settings missing".into()).to_err()
+        let kb_config = settings.knowledge_base.as_ref().ok_or_else(|| {
+            KnowledgeBaseError::ConfigError("knowledge base config missing".into())
+                .to_err()
         })?;
-    let kb_config = settings.knowledge_base.as_ref().ok_or_else(|| {
-        KnowledgeBaseError::ConfigError("knowledge base config missing".into()).to_err()
-    })?;
-    let config = &kb_config.chunking;
+        let config = &kb_config.chunking;
 
-    // 2. Get document from DB
-    let doc = document_service::get_document(db, document_id, tenant_id).await?;
-    document_service::start_indexing(db, document_id, tenant_id).await?;
+        // 2. Get document from DB
+        let doc = document_service::get_document(db, document_id, tenant_id).await?;
+        document_service::start_indexing(db, document_id, tenant_id).await?;
 
-    // 4-11. Run pipeline; mark as error on failure
-    let pipeline_result = async {
         let input = load_pipeline_input(ctx, db, &doc).await?;
         execute_pipeline(
             db,
@@ -142,28 +148,80 @@ async fn run_indexing_pipeline(
             },
         )
         .await
-    }
+    })
+    .catch_unwind()
     .await;
 
-    if let Err(e) = pipeline_result {
-        let error_msg = format!("{e}");
+    match pipeline_result {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => {
+            mark_indexing_failed(
+                &ctx.db,
+                document_id,
+                tenant_id,
+                &indexing_error_message(&e),
+            )
+            .await;
+            Err(e)
+        }
+        Err(panic_payload) => {
+            let error_msg = panic_message(&panic_payload);
+            mark_indexing_failed(&ctx.db, document_id, tenant_id, &error_msg).await;
+            Err(loco_rs::Error::string(&error_msg))
+        }
+    }
+}
+
+async fn mark_indexing_failed(
+    db: &DatabaseConnection,
+    document_id: Uuid,
+    tenant_id: Uuid,
+    error_msg: &str,
+) {
+    tracing::error!(
+        document_id = %document_id,
+        error = %error_msg,
+        "indexing pipeline failed"
+    );
+    if let Err(update_err) =
+        document_service::mark_error(db, document_id, tenant_id, error_msg).await
+    {
         tracing::error!(
             document_id = %document_id,
-            error = %error_msg,
-            "indexing pipeline failed"
+            error = %update_err,
+            "failed to mark document indexing error"
         );
-        let _ = document_service::update_status(
-            db,
-            document_id,
-            tenant_id,
-            "error",
-            Some(&error_msg),
-        )
-        .await;
-        return Err(e);
+    }
+}
+
+fn indexing_error_message(error: &loco_rs::Error) -> String {
+    if let loco_rs::Error::CustomError(_, detail) = error {
+        if let Some(description) = detail.description.as_deref() {
+            return description.to_string();
+        }
+        if let Some(code) = detail.error.as_deref() {
+            return code.to_string();
+        }
     }
 
-    Ok(())
+    let display = error.to_string();
+    if display.is_empty() {
+        format!("{error:?}")
+    } else {
+        display
+    }
+}
+
+fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    payload.downcast_ref::<&str>().map_or_else(
+        || {
+            payload.downcast_ref::<String>().map_or_else(
+                || "indexing pipeline panicked".to_string(),
+                |message| format!("indexing pipeline panicked: {message}"),
+            )
+        },
+        |message| format!("indexing pipeline panicked: {message}"),
+    )
 }
 
 struct PipelineInput {

@@ -8,6 +8,7 @@ use std::time::Duration;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures_util::Stream;
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 use crate::config::{AppSettings, ConfigExt};
 use crate::extractors::TenantContext;
@@ -280,34 +281,36 @@ pub(crate) async fn qa_v3_stream(
     // sub-spans appear as children of the http.request span.
     let parent_span = tracing::Span::current();
 
-    tokio::spawn(async move {
-        let _guard = parent_span.enter();
-        let result =
-            crate::modules::knowledge_base::service::qa_v3_service::process_qa_v3_stream(
-                &db,
-                &deps.embedding_client,
-                &deps.qa_client,
-                &crate::modules::knowledge_base::service::qa_v3_service::QaStreamParams {
-                    search_provider: deps.search_provider,
-                    memory_store: deps.memory_store,
-                    request: params,
-                    tenant_id,
-                    user_id,
-                    config: qa_config,
-                    embedding_model_name: embedding_model,
-                    tx,
-                    session_locks: deps.session_locks,
-                    compaction_guard: deps.compaction_guard,
-                    broker: deps.broker,
-                },
-            )
-            .await;
+    tokio::spawn(
+        async move {
+            let result =
+                crate::modules::knowledge_base::service::qa_v3_service::process_qa_v3_stream(
+                    &db,
+                    &deps.embedding_client,
+                    &deps.qa_client,
+                    &crate::modules::knowledge_base::service::qa_v3_service::QaStreamParams {
+                        search_provider: deps.search_provider,
+                        memory_store: deps.memory_store,
+                        request: params,
+                        tenant_id,
+                        user_id,
+                        config: qa_config,
+                        embedding_model_name: embedding_model,
+                        tx,
+                        session_locks: deps.session_locks,
+                        compaction_guard: deps.compaction_guard,
+                        broker: deps.broker,
+                    },
+                )
+                .await;
 
-        if result == Err(()) {
-            tracing::error!("process_qa_v3_stream failed");
+            if result == Err(()) {
+                tracing::error!("process_qa_v3_stream failed");
+            }
+            // tx is dropped here, closing the channel
         }
-        // tx is dropped here, closing the channel
-    });
+        .instrument(parent_span),
+    );
 
     let stream = futures_util::stream::unfold(rx, |mut rx| async move {
         rx.recv()

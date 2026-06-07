@@ -90,6 +90,7 @@ settings:
       baseUrl: {{ get_env(name="EMBEDDING_BASE_URL", default="http://localhost:11434/v1") }}
       dimension: 1024
       cacheSize: 10000
+      timeoutSecs: {{ get_env(name="EMBEDDING_TIMEOUT_SECS", default="30") }}
     qdrant:
       url: {{ get_env(name="QDRANT_URL", default="http://localhost:6334") }}
       apiKey: ""

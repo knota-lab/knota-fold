@@ -10,7 +10,7 @@ use crate::config::{AppSettings, ConfigExt};
 use crate::extractors::TenantContext;
 use crate::initializers::knowledge_base::SharedSearchProvider;
 use crate::initializers::s3::{SharedS3Client, SharedS3Config};
-use crate::models::_entities::{document_lines, kb_chunks, kb_documents};
+use crate::models::_entities::{document_lines, files, kb_chunks, kb_documents};
 use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::service;
 use crate::modules::knowledge_base::views::{
@@ -19,7 +19,9 @@ use crate::modules::knowledge_base::views::{
     PresignDocumentAssetsResponse, PresignedDocumentAssetResponse,
 };
 use crate::utils::error::IntoModelResult;
-use crate::views::errors::{err_bad_request, err_forbidden, err_internal, parse_uuid};
+use crate::views::errors::{
+    err_bad_request, err_forbidden, err_internal, err_not_found, parse_uuid,
+};
 use crate::views::pagination::PaginatedResponse;
 use crate::workers::indexing_worker::{IndexingWorker, IndexingWorkerArgs};
 
@@ -62,6 +64,9 @@ pub(crate) async fn create(
     )
     .await
     .model_err()?;
+    if let Some(file_id) = params.file_id {
+        ensure_document_file_exists(&ctx.db, tc.tenant_id, file_id).await?;
+    }
 
     let doc = service::document_service::create_document(
         &ctx.db,
@@ -99,6 +104,26 @@ pub(crate) async fn create(
     .model_err()?;
 
     format::json(DocumentResponse::from_model(&doc))
+}
+
+async fn ensure_document_file_exists(
+    db: &DatabaseConnection,
+    tenant_id: uuid::Uuid,
+    file_id: uuid::Uuid,
+) -> Result<()> {
+    let exists = files::Entity::find_by_id(file_id)
+        .filter(files::Column::TenantId.eq(tenant_id))
+        .filter(files::Column::Status.eq("ACTIVE"))
+        .filter(files::Column::DeletedAt.is_null())
+        .one(db)
+        .await
+        .model_err()?
+        .is_some();
+    if exists {
+        Ok(())
+    } else {
+        Err(err_not_found("file.not_found", "文件不存在"))
+    }
 }
 
 #[utoipa::path(

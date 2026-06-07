@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::config::KnowledgeBaseConfig;
 
 // Newtype wrappers so shared_store (TypeId-based) can distinguish them.
@@ -24,11 +26,17 @@ pub fn create_rig_clients(
     tracing::info!(
         base_url = %config.embedding.base_url,
         model = %config.embedding.model,
+        timeout_secs = config.embedding.timeout_secs,
         "Creating embedding client"
     );
+    let embedding_http_client = rig::http_client::ReqwestClient::builder()
+        .timeout(Duration::from_secs(config.embedding.timeout_secs))
+        .build()
+        .expect("failed to create embedding HTTP client");
     let embedding_client = rig::providers::openai::Client::builder()
         .api_key(&config.embedding.api_key)
         .base_url(&config.embedding.base_url)
+        .http_client(embedding_http_client)
         .build()
         .expect("failed to create embedding client");
 

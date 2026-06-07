@@ -12,6 +12,7 @@ use rig::client::CompletionClient;
 use rig::streaming::{StreamedAssistantContent, StreamingChat};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use tokio::sync::mpsc;
+use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::config::QaConfig;
@@ -494,8 +495,7 @@ struct QaStreamCtx<'a> {
 }
 
 async fn prepare_session_and_history(ctx: &QaStreamCtx<'_>) -> Result<SessionPrep, ()> {
-    let session_span = tracing::info_span!("qa.session");
-    let session_guard = session_span.enter();
+    let session_span = tracing::Span::current();
     let session = match ctx.request.session_id {
         Some(sid) => chat_service::get_session(ctx.db, sid, ctx.tenant_id, ctx.user_id)
             .await
@@ -553,7 +553,6 @@ async fn prepare_session_and_history(ctx: &QaStreamCtx<'_>) -> Result<SessionPre
         session.id,
         history.len(),
     );
-    drop(session_guard);
     drop(session_guard_lock);
 
     let _ = session_id_str;
@@ -569,8 +568,7 @@ async fn prepare_materials(
     session: &chat_sessions::Model,
     history: &[chat_messages::Model],
 ) -> Result<MaterialPrep, ()> {
-    let material_span = tracing::info_span!("qa.material");
-    let material_guard = material_span.enter();
+    let material_span = tracing::Span::current();
     send_event(
         ctx.tx,
         QaEvent::PhaseChanged {
@@ -602,8 +600,6 @@ async fn prepare_materials(
         "Materials registered: count={}",
         material_count
     );
-    drop(material_guard);
-
     save_user_turn(ctx, session, history, inline_material_id.as_deref()).await?;
 
     Ok(MaterialPrep {
@@ -921,8 +917,7 @@ async fn prepare_compaction(
     session: &chat_sessions::Model,
     history: &[chat_messages::Model],
 ) -> CompactionPrep {
-    let compaction_span = tracing::info_span!("qa.compaction");
-    let compaction_span_guard = compaction_span.enter();
+    let compaction_span = tracing::Span::current();
     let history_tokens: usize = history.iter().map(estimate_message_tokens).sum();
     let token_threshold = usize::try_from(ctx.config.max_context_tokens)
         .unwrap_or_default()
@@ -956,7 +951,6 @@ async fn prepare_compaction(
     );
     compaction_span.record("triggered", needs_compaction);
     compaction_span.record("history_tokens", history_tokens);
-    drop(compaction_span_guard);
 
     let summary = load_cached_summary(ctx, session, needs_compaction, recent_start).await;
     maybe_spawn_compaction(ctx, session, history, needs_compaction, recent_start);
@@ -1125,13 +1119,10 @@ async fn recall_relevant_context(
     history: &[chat_messages::Model],
     recent_history: &[chat_messages::Model],
 ) -> Option<String> {
-    let recall_span =
-        tracing::info_span!("qa.recall", strategy = %ctx.config.history_strategy);
-    let recall_guard = recall_span.enter();
+    let recall_span = tracing::Span::current();
     let relevant_context =
         recall_relevant_context_inner(ctx, session, history, recent_history).await;
     recall_span.record("has_recall", relevant_context.is_some());
-    drop(recall_guard);
     relevant_context
 }
 
@@ -1230,35 +1221,38 @@ async fn stream_qa_turn(
         provider = %ctx.config.provider,
         system_prompt_tokens = turn_debug.system_prompt_tokens,
     );
-    let agent_guard = agent_span.enter();
-    send_event(
-        ctx.tx,
-        QaEvent::PhaseChanged {
-            phase: QaPhase::GeneratingAnswer,
-        },
-    )
-    .await?;
-    tracing::info!(
-        system_prompt_len = turn_debug.system_prompt.len(),
-        system_prompt_tokens = turn_debug.system_prompt_tokens,
-        chat_history_messages = turn_debug.chat_history.len(),
-        user_prompt_len = turn_debug.user_prompt.len(),
-        model = %ctx.config.model,
-        provider = %ctx.config.provider,
-        max_context_tokens = ctx.config.max_context_tokens,
-        "Agent: model={} provider={} prompt_tokens={} history_msgs={} user_len={}",
-        ctx.config.model,
-        ctx.config.provider,
-        turn_debug.system_prompt_tokens,
-        turn_debug.chat_history.len(),
-        turn_debug.user_prompt.len(),
-    );
-    let result =
-        run_agent_stream(ctx, session, materials, &records_hook, turn_debug).await;
-    agent_span.record("answer_len", result.final_answer.len());
-    agent_span.record("tool_call_count", result.tool_call_count);
-    drop(agent_guard);
-    Ok((result, records_hook))
+    async move {
+        send_event(
+            ctx.tx,
+            QaEvent::PhaseChanged {
+                phase: QaPhase::GeneratingAnswer,
+            },
+        )
+        .await?;
+        tracing::info!(
+            system_prompt_len = turn_debug.system_prompt.len(),
+            system_prompt_tokens = turn_debug.system_prompt_tokens,
+            chat_history_messages = turn_debug.chat_history.len(),
+            user_prompt_len = turn_debug.user_prompt.len(),
+            model = %ctx.config.model,
+            provider = %ctx.config.provider,
+            max_context_tokens = ctx.config.max_context_tokens,
+            "Agent: model={} provider={} prompt_tokens={} history_msgs={} user_len={}",
+            ctx.config.model,
+            ctx.config.provider,
+            turn_debug.system_prompt_tokens,
+            turn_debug.chat_history.len(),
+            turn_debug.user_prompt.len(),
+        );
+        let result =
+            run_agent_stream(ctx, session, materials, &records_hook, turn_debug).await;
+        let current_span = tracing::Span::current();
+        current_span.record("answer_len", result.final_answer.len());
+        current_span.record("tool_call_count", result.tool_call_count);
+        Ok((result, records_hook))
+    }
+    .instrument(agent_span)
+    .await
 }
 
 async fn prepare_turn_debug_data(
@@ -1269,7 +1263,12 @@ async fn prepare_turn_debug_data(
     compaction: &CompactionPrep,
 ) -> TurnDebugData {
     let relevant_context =
-        recall_relevant_context(ctx, session, history, &compaction.recent_history).await;
+        recall_relevant_context(ctx, session, history, &compaction.recent_history)
+            .instrument(tracing::info_span!(
+                "qa.recall",
+                strategy = %ctx.config.history_strategy
+            ))
+            .await;
     let system_prompt = build_system_prompt(
         ctx.request,
         &materials.registry,
@@ -1556,91 +1555,94 @@ async fn persist_successful_turn(
     turn_result: &QaTurnResult,
 ) -> Result<QaPersistResult, ()> {
     let persist_span = tracing::info_span!("qa.persist");
-    let persist_guard = persist_span.enter();
 
-    if turn_result.client_connected {
-        send_event(
-            ctx.tx,
-            QaEvent::PhaseChanged {
-                phase: QaPhase::Persisting,
+    async move {
+        if turn_result.client_connected {
+            send_event(
+                ctx.tx,
+                QaEvent::PhaseChanged {
+                    phase: QaPhase::Persisting,
+                },
+            )
+            .await?;
+        }
+
+        let tool_usage_json = collect_tool_usage_json(records_hook);
+        let citations = records_hook.take_citations();
+        let (prompt_tokens, completion_tokens, total_tokens) =
+            turn_result.captured_usage.map_or((0, 0, 0), |u| {
+                (
+                    i32::try_from(u.input_tokens).unwrap_or(i32::MAX),
+                    i32::try_from(u.output_tokens).unwrap_or(i32::MAX),
+                    i32::try_from(u.total_tokens).unwrap_or(i32::MAX),
+                )
+            });
+
+        let assistant_msg = chat_service::create_message(
+            ctx.db,
+            &CreateMessageParams {
+                session_id: session_prep.session.id,
+                tenant_id: ctx.tenant_id,
+                user_id: ctx.user_id,
+                role: "assistant".to_string(),
+                content: turn_result.final_answer.clone(),
+                material_refs: None,
+                intent: None,
+                strategy: None,
+                token_usage: tool_usage_json,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
             },
         )
-        .await?;
-    }
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to save assistant message");
+        })?;
 
-    let tool_usage_json = collect_tool_usage_json(records_hook);
-    let citations = records_hook.take_citations();
-    let (prompt_tokens, completion_tokens, total_tokens) =
-        turn_result.captured_usage.map_or((0, 0, 0), |u| {
-            (
-                i32::try_from(u.input_tokens).unwrap_or(i32::MAX),
-                i32::try_from(u.output_tokens).unwrap_or(i32::MAX),
-                i32::try_from(u.total_tokens).unwrap_or(i32::MAX),
+        spawn_index_message(
+            &ctx.params.memory_store,
+            ctx.embedding_client,
+            &SpawnIndexParams {
+                embedding_model_name: ctx.embedding_model_name.clone(),
+                session_id: session_prep.session.id,
+                tenant_id: ctx.tenant_id,
+                msg_id: assistant_msg.id,
+                role: "assistant".to_string(),
+                content: turn_result.final_answer.clone(),
+                has_material: false,
+                turn_index: i32::try_from(session_prep.history.len().saturating_add(1))
+                    .unwrap_or(i32::MAX)
+                    .saturating_add(1)
+                    / 2,
+            },
+        );
+
+        if session_prep.session.title.is_none() {
+            let title: String = ctx.request.instruction.chars().take(50).collect();
+            let _ = chat_service::update_session_title(
+                ctx.db,
+                session_prep.session.id,
+                ctx.tenant_id,
+                ctx.user_id,
+                &title,
             )
-        });
+            .await;
+        }
 
-    let assistant_msg = chat_service::create_message(
-        ctx.db,
-        &CreateMessageParams {
-            session_id: session_prep.session.id,
-            tenant_id: ctx.tenant_id,
-            user_id: ctx.user_id,
-            role: "assistant".to_string(),
-            content: turn_result.final_answer.clone(),
-            material_refs: None,
-            intent: None,
-            strategy: None,
-            token_usage: tool_usage_json,
+        let current_span = tracing::Span::current();
+        current_span.record("answer_len", turn_result.final_answer.len());
+        current_span.record("tool_call_count", turn_result.tool_call_count);
+
+        Ok(QaPersistResult {
+            citations,
             prompt_tokens,
             completion_tokens,
             total_tokens,
-        },
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "Failed to save assistant message");
-    })?;
-
-    spawn_index_message(
-        &ctx.params.memory_store,
-        ctx.embedding_client,
-        &SpawnIndexParams {
-            embedding_model_name: ctx.embedding_model_name.clone(),
-            session_id: session_prep.session.id,
-            tenant_id: ctx.tenant_id,
-            msg_id: assistant_msg.id,
-            role: "assistant".to_string(),
-            content: turn_result.final_answer.clone(),
-            has_material: false,
-            turn_index: i32::try_from(session_prep.history.len().saturating_add(1))
-                .unwrap_or(i32::MAX)
-                .saturating_add(1)
-                / 2,
-        },
-    );
-
-    if session_prep.session.title.is_none() {
-        let title: String = ctx.request.instruction.chars().take(50).collect();
-        let _ = chat_service::update_session_title(
-            ctx.db,
-            session_prep.session.id,
-            ctx.tenant_id,
-            ctx.user_id,
-            &title,
-        )
-        .await;
+        })
     }
-
-    persist_span.record("answer_len", turn_result.final_answer.len());
-    persist_span.record("tool_call_count", turn_result.tool_call_count);
-    drop(persist_guard);
-
-    Ok(QaPersistResult {
-        citations,
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-    })
+    .instrument(persist_span)
+    .await
 }
 
 async fn send_completed_event(
@@ -1712,11 +1714,17 @@ pub async fn process_qa_v3_stream(
 }
 
 async fn run_qa_pipeline(ctx: QaStreamCtx<'_>) -> Result<(), ()> {
-    let session_prep = prepare_session_and_history(&ctx).await?;
+    let session_prep = prepare_session_and_history(&ctx)
+        .instrument(tracing::info_span!("qa.session"))
+        .await?;
     let material_prep =
-        prepare_materials(&ctx, &session_prep.session, &session_prep.history).await?;
+        prepare_materials(&ctx, &session_prep.session, &session_prep.history)
+            .instrument(tracing::info_span!("qa.material"))
+            .await?;
     let compaction =
-        prepare_compaction(&ctx, &session_prep.session, &session_prep.history).await;
+        prepare_compaction(&ctx, &session_prep.session, &session_prep.history)
+            .instrument(tracing::info_span!("qa.compaction"))
+            .await;
     let (turn_result, records_hook) = stream_qa_turn(
         &ctx,
         &session_prep.session,

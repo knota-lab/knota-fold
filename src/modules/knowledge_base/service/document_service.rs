@@ -126,6 +126,37 @@ pub async fn start_indexing(
     Ok(())
 }
 
+/// Mark a document as error after a background indexing failure.
+///
+/// This intentionally accepts both `pending` and `indexing`: a worker may fail
+/// before or after flipping the status, and either way the UI should not be
+/// left with a permanently running document.
+#[tracing::instrument(skip(db))]
+pub async fn mark_error(
+    db: &DatabaseConnection,
+    document_id: Uuid,
+    tenant_id: Uuid,
+    error_message: &str,
+) -> loco_rs::Result<()> {
+    let doc = kb_documents::Entity::find_by_id(document_id)
+        .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .one(db)
+        .await
+        .db_err()?
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+
+    if !matches!(doc.status.as_str(), "pending" | "indexing") {
+        return Ok(());
+    }
+
+    let mut active: kd_models::ActiveModel = doc.into();
+    active.status = ActiveValue::Set("error".to_string());
+    active.error_message = ActiveValue::Set(Some(error_message.to_string()));
+    active.updated_at = ActiveValue::Set(Utc::now().naive_utc());
+    active.update(db).await.db_err()?;
+    Ok(())
+}
+
 /// Update `full_text` and set status to 'indexing'.
 #[tracing::instrument(skip(db, full_text))]
 pub async fn set_full_text(

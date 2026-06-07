@@ -215,6 +215,9 @@ pub struct EmbeddingConfig {
 
     #[serde(default = "default_cache_size")]
     pub cache_size: usize,
+
+    #[serde(default = "default_embedding_timeout_secs")]
+    pub timeout_secs: u64,
 }
 
 fn default_embedding_provider() -> String {
@@ -228,6 +231,9 @@ const fn default_embedding_dimension() -> usize {
 }
 const fn default_cache_size() -> usize {
     10000
+}
+const fn default_embedding_timeout_secs() -> u64 {
+    30
 }
 
 #[derive(Debug, Clone, Deserialize)]
