@@ -24,8 +24,8 @@ use crate::{
     models::_entities::{
         api_key_exchange_tokens, api_keys, audit_logs, dict_items, dict_types,
         file_references, file_upload_idempotency, file_upload_parts, file_uploads, files,
-        notification_recipients, notifications, permissions, role_menus,
-        role_permissions, roles, scheduled_worker_definitions,
+        kb_folders, kb_libraries, notification_recipients, notifications, permissions,
+        role_menus, role_permissions, roles, scheduled_worker_definitions,
         scheduled_worker_executions, scheduled_worker_schedules,
         scheduled_worker_tenant_grants, sys_configs, sys_menus, sys_role_template_menus,
         sys_role_template_permissions, sys_role_templates, tenant_menu_overrides,
@@ -186,6 +186,14 @@ impl Hooks for App {
             // Knowledge base — manage routes (Casbin-gated CRUD)
             .add_route(
                 crate::modules::knowledge_base::controller::manage_routes()
+                    .layer(authz_layer.clone()),
+            )
+            .add_route(
+                crate::modules::knowledge_base::controller::library_routes()
+                    .layer(authz_layer.clone()),
+            )
+            .add_route(
+                crate::modules::knowledge_base::controller::folder_routes()
                     .layer(authz_layer),
             )
             // Knowledge base — user routes (search + QA, JWT only)
@@ -278,6 +286,8 @@ impl Hooks for App {
         truncate_table(&ctx.db, api_key_exchange_tokens::Entity).await?;
         truncate_table(&ctx.db, notification_recipients::Entity).await?;
         truncate_table(&ctx.db, notifications::Entity).await?;
+        truncate_table(&ctx.db, kb_folders::Entity).await?;
+        truncate_table(&ctx.db, kb_libraries::Entity).await?;
         truncate_table(&ctx.db, tenants::Entity).await?;
         truncate_table(&ctx.db, sys_configs::Entity).await?;
         Ok(())

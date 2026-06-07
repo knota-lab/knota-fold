@@ -16,6 +16,8 @@ pub struct HybridSearchParams {
     pub tenant_id: Uuid,
     pub user_id: Uuid,
     pub limit: usize,
+    pub library_id: Option<Uuid>,
+    pub folder_id: Option<Uuid>,
     pub document_ids: Option<Vec<Uuid>>,
 }
 
@@ -41,6 +43,8 @@ pub async fn hybrid_search(
     // Build filter
     let filter = Some(SearchFilter {
         document_ids: params.document_ids.clone(),
+        library_id: params.library_id,
+        folder_id: params.folder_id,
         min_score: None,
         user_id: Some(params.user_id),
     });

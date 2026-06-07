@@ -29,6 +29,8 @@ pub struct ChunkPoint {
     pub char_end: Option<i32>,
     pub token_count: i32,
     pub embedding: Vec<f32>,
+    pub library_id: Option<Uuid>,
+    pub folder_id: Option<Uuid>,
     // Visibility fields for Qdrant payload
     pub scope: String,    // "private" | "tenant"
     pub created_by: Uuid, // uploader user_id
@@ -37,6 +39,8 @@ pub struct ChunkPoint {
 #[derive(Debug, Clone, Default)]
 pub struct SearchFilter {
     pub document_ids: Option<Vec<Uuid>>,
+    pub library_id: Option<Uuid>,
+    pub folder_id: Option<Uuid>,
     pub min_score: Option<f64>,
     pub user_id: Option<Uuid>, // for visibility filtering
 }

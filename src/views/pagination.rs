@@ -9,12 +9,35 @@ const fn default_page_size() -> u64 {
     20
 }
 
+fn deserialize_u64_from_query<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum U64QueryValue {
+        Number(u64),
+        String(String),
+    }
+
+    match U64QueryValue::deserialize(deserializer)? {
+        U64QueryValue::Number(value) => Ok(value),
+        U64QueryValue::String(value) => value.parse().map_err(serde::de::Error::custom),
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaginationParams {
-    #[serde(default = "default_page")]
+    #[serde(
+        default = "default_page",
+        deserialize_with = "deserialize_u64_from_query"
+    )]
     pub page: u64,
-    #[serde(default = "default_page_size")]
+    #[serde(
+        default = "default_page_size",
+        deserialize_with = "deserialize_u64_from_query"
+    )]
     pub page_size: u64,
 }
 

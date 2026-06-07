@@ -54,6 +54,14 @@ pub(crate) async fn create(
     });
 
     let scope = params.scope.unwrap_or_else(|| "tenant".to_string());
+    let location = service::resolve_document_location(
+        &ctx.db,
+        tc.tenant_id,
+        params.library_id,
+        params.folder_id,
+    )
+    .await
+    .model_err()?;
 
     let doc = service::document_service::create_document(
         &ctx.db,
@@ -61,6 +69,8 @@ pub(crate) async fn create(
             tenant_id: tc.tenant_id,
             title: params.title,
             description: params.description,
+            library_id: location.library_id,
+            folder_id: location.folder_id,
             source_type,
             scope,
             file_id: params.file_id,
@@ -116,6 +126,12 @@ pub(crate) async fn list(
 
     if let Some(ref scope) = params.scope {
         query = query.filter(kb_documents::Column::Scope.eq(scope));
+    }
+    if let Some(library_id) = params.library_id {
+        query = query.filter(kb_documents::Column::LibraryId.eq(library_id));
+    }
+    if let Some(folder_id) = params.folder_id {
+        query = query.filter(kb_documents::Column::FolderId.eq(folder_id));
     }
 
     let paginator = query

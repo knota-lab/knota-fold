@@ -172,6 +172,12 @@ fn build_filter(tenant_id: Uuid, filter: Option<&SearchFilter>) -> Filter {
         vec![tenant_cond, visibility.into()];
 
     if let Some(f) = filter {
+        if let Some(library_id) = f.library_id {
+            must.push(Condition::matches("library_id", library_id.to_string()));
+        }
+        if let Some(folder_id) = f.folder_id {
+            must.push(Condition::matches("folder_id", folder_id.to_string()));
+        }
         if let Some(doc_ids) = &f.document_ids {
             if !doc_ids.is_empty() {
                 let doc_conds: Vec<Condition> = doc_ids
@@ -224,7 +230,7 @@ impl SearchProvider for QdrantSearchProvider {
             let sparse_vec =
                 qdrant_client::qdrant::Vector::new_sparse(sparse_indices, sparse_values);
 
-            let payload: Payload = Payload::try_from(json!({
+            let mut payload_json = json!({
                 "tenant_id": tenant_id.to_string(),
                 "document_id": chunk.document_id.to_string(),
                 "scope": chunk.scope,
@@ -234,8 +240,15 @@ impl SearchProvider for QdrantSearchProvider {
                 "heading_path": chunk.heading_path,
                 "page_number": chunk.page_number,
                 "token_count": chunk.token_count,
-            }))
-            .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()))?;
+            });
+            if let Some(library_id) = chunk.library_id {
+                payload_json["library_id"] = json!(library_id.to_string());
+            }
+            if let Some(folder_id) = chunk.folder_id {
+                payload_json["folder_id"] = json!(folder_id.to_string());
+            }
+            let payload: Payload = Payload::try_from(payload_json)
+                .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()))?;
 
             let point = PointStruct::new(
                 chunk.chunk_id.to_string(),

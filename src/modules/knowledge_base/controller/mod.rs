@@ -1,5 +1,7 @@
 pub mod chat;
 pub mod documents;
+pub mod folders;
+pub mod libraries;
 pub mod search;
 
 use loco_openapi::prelude::*;
@@ -29,6 +31,42 @@ pub fn manage_routes() -> Routes {
         .add(
             "/{id}/promote",
             openapi(post(documents::promote), routes!(documents::promote)),
+        )
+}
+
+pub fn library_routes() -> Routes {
+    Routes::new()
+        .prefix("/api/kb-libraries")
+        .add(
+            "/",
+            openapi(post(libraries::create), routes!(libraries::create)),
+        )
+        .add("/", openapi(get(libraries::list), routes!(libraries::list)))
+        .add(
+            "/{id}",
+            openapi(put(libraries::update), routes!(libraries::update)),
+        )
+        .add(
+            "/{id}",
+            openapi(delete(libraries::delete), routes!(libraries::delete)),
+        )
+}
+
+pub fn folder_routes() -> Routes {
+    Routes::new()
+        .prefix("/api/kb-folders")
+        .add(
+            "/",
+            openapi(post(folders::create), routes!(folders::create)),
+        )
+        .add("/", openapi(get(folders::list), routes!(folders::list)))
+        .add(
+            "/{id}",
+            openapi(put(folders::update), routes!(folders::update)),
+        )
+        .add(
+            "/{id}",
+            openapi(delete(folders::delete), routes!(folders::delete)),
         )
 }
 

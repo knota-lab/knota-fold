@@ -1,4 +1,4 @@
-use crate::models::_entities::kb_documents;
+use crate::models::_entities::{kb_documents, kb_folders, kb_libraries};
 use serde::{Deserialize, Serialize};
 
 // ---- Request types ----
@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub struct CreateDocumentRequest {
     pub title: String,
     pub description: Option<String>,
+    pub library_id: Option<uuid::Uuid>,
+    pub folder_id: Option<uuid::Uuid>,
     /// MIME type used by inline `content` parsing. For `fileId` documents the
     /// worker uses the file record's `mimeType`.
     /// Defaults to `text/plain` when inline `content` is present.
@@ -24,6 +26,8 @@ pub struct CreateDocumentRequest {
 pub struct DocumentListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
+    pub library_id: Option<uuid::Uuid>,
+    pub folder_id: Option<uuid::Uuid>,
     pub status: Option<String>,
     pub scope: Option<String>,
 }
@@ -33,6 +37,8 @@ pub struct DocumentListQuery {
 pub struct SearchRequest {
     pub query: String,
     pub limit: Option<usize>,
+    pub library_id: Option<uuid::Uuid>,
+    pub folder_id: Option<uuid::Uuid>,
     pub document_ids: Option<Vec<uuid::Uuid>>,
 }
 
@@ -40,6 +46,49 @@ pub struct SearchRequest {
 #[serde(rename_all = "camelCase")]
 pub struct PresignDocumentAssetsRequest {
     pub asset_keys: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateLibraryRequest {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateLibraryRequest {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderListQuery {
+    pub library_id: uuid::Uuid,
+    pub parent_id: Option<uuid::Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateFolderRequest {
+    pub library_id: uuid::Uuid,
+    pub parent_id: Option<uuid::Uuid>,
+    pub name: String,
+    #[serde(default)]
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateFolderRequest {
+    pub name: String,
+    #[serde(default)]
+    pub sort_order: i32,
 }
 
 // ---- Response types ----
@@ -50,6 +99,8 @@ pub struct DocumentResponse {
     pub id: String,
     pub title: String,
     pub description: Option<String>,
+    pub library_id: Option<String>,
+    pub folder_id: Option<String>,
     pub source_type: String,
     pub scope: String,
     pub file_id: Option<String>,
@@ -68,6 +119,8 @@ impl DocumentResponse {
             id: m.id.to_string(),
             title: m.title.clone(),
             description: m.description.clone(),
+            library_id: m.library_id.map(|id| id.to_string()),
+            folder_id: m.folder_id.map(|id| id.to_string()),
             source_type: m.source_type.clone(),
             scope: m.scope.clone(),
             file_id: m.file_id.map(|id| id.to_string()),
@@ -75,6 +128,66 @@ impl DocumentResponse {
             chunk_count: m.chunk_count,
             total_tokens: m.total_tokens,
             error_message: m.error_message.clone(),
+            created_at: m.created_at.and_utc().to_rfc3339(),
+            updated_at: m.updated_at.and_utc().to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryResponse {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub sort_order: i32,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl LibraryResponse {
+    #[must_use]
+    pub fn from_model(m: &kb_libraries::Model) -> Self {
+        Self {
+            id: m.id.to_string(),
+            name: m.name.clone(),
+            description: m.description.clone(),
+            sort_order: m.sort_order,
+            created_by: m.created_by.to_string(),
+            created_at: m.created_at.and_utc().to_rfc3339(),
+            updated_at: m.updated_at.and_utc().to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderResponse {
+    pub id: String,
+    pub library_id: String,
+    pub parent_id: Option<String>,
+    pub name: String,
+    pub path: String,
+    pub depth: i32,
+    pub sort_order: i32,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl FolderResponse {
+    #[must_use]
+    pub fn from_model(m: &kb_folders::Model) -> Self {
+        Self {
+            id: m.id.to_string(),
+            library_id: m.library_id.to_string(),
+            parent_id: m.parent_id.map(|id| id.to_string()),
+            name: m.name.clone(),
+            path: m.path.clone(),
+            depth: m.depth,
+            sort_order: m.sort_order,
+            created_by: m.created_by.to_string(),
             created_at: m.created_at.and_utc().to_rfc3339(),
             updated_at: m.updated_at.and_utc().to_rfc3339(),
         }

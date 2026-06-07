@@ -6,14 +6,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, m: &SchemaManager) -> Result<(), DbErr> {
-        // 1. Add `scope` column to kb_documents
-        m.get_connection()
-            .execute_unprepared(
-                "ALTER TABLE kb_documents ADD COLUMN scope VARCHAR(16) NOT NULL DEFAULT 'tenant'",
-            )
-            .await?;
-
-        // 2. chat_sessions table
+        // 1. chat_sessions table
         m.create_table(
             Table::create()
                 .table(ChatSessions::Table)
@@ -43,7 +36,7 @@ impl MigrationTrait for Migration {
         )
         .await?;
 
-        // 3. chat_messages table
+        // 2. chat_messages table
         m.create_table(
             Table::create()
                 .table(ChatMessages::Table)
@@ -81,7 +74,7 @@ impl MigrationTrait for Migration {
         )
         .await?;
 
-        // 4. Indexes via raw SQL
+        // 3. Indexes via raw SQL
         m.get_connection()
             .execute_unprepared(
                 "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions (tenant_id, user_id)",
@@ -92,32 +85,16 @@ impl MigrationTrait for Migration {
                 "CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages (session_id, created_at)",
             )
             .await?;
-        m.get_connection()
-            .execute_unprepared(
-                "CREATE INDEX IF NOT EXISTS idx_kb_docs_scope ON kb_documents (tenant_id, scope, created_by)",
-            )
-            .await?;
-
         Ok(())
     }
 
     async fn down(&self, m: &SchemaManager) -> Result<(), DbErr> {
-        // 1. Drop index
-        m.get_connection()
-            .execute_unprepared("DROP INDEX IF EXISTS idx_kb_docs_scope")
-            .await?;
-
-        // 2. Drop chat_messages
+        // 1. Drop chat_messages
         m.drop_table(Table::drop().table(ChatMessages::Table).to_owned())
             .await?;
 
-        // 3. Drop chat_sessions
+        // 2. Drop chat_sessions
         m.drop_table(Table::drop().table(ChatSessions::Table).to_owned())
-            .await?;
-
-        // 4. Drop scope column from kb_documents
-        m.get_connection()
-            .execute_unprepared("ALTER TABLE kb_documents DROP COLUMN scope")
             .await?;
 
         Ok(())

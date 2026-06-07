@@ -135,6 +135,8 @@ async fn run_indexing_pipeline(
                 s3_bucket: s3_config.as_ref().map(|cfg| cfg.bucket.as_str()),
                 scope: &doc.scope,
                 created_by: doc.created_by,
+                library_id: doc.library_id,
+                folder_id: doc.folder_id,
                 config,
                 embedding_model_name: &kb_config.embedding.model,
             },
@@ -270,6 +272,8 @@ struct PipelineParams<'a> {
     s3_bucket: Option<&'a str>,
     scope: &'a str,
     created_by: Uuid,
+    library_id: Option<Uuid>,
+    folder_id: Option<Uuid>,
     config: &'a crate::config::ChunkingConfig,
     embedding_model_name: &'a str,
 }
@@ -299,6 +303,8 @@ fn build_chunk_points_and_models(
             char_end: Some(chunk.char_end),
             token_count: chunk.token_count,
             embedding: embedding_f32,
+            library_id: p.library_id,
+            folder_id: p.folder_id,
             scope: p.scope.to_string(),
             created_by: p.created_by,
         });

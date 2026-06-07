@@ -4,28 +4,15 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "kb_documents")]
+#[sea_orm(table_name = "kb_libraries")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub tenant_id: Uuid,
-    pub title: String,
+    pub name: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
-    pub library_id: Option<Uuid>,
-    pub folder_id: Option<Uuid>,
-    pub source_type: String,
-    pub file_id: Option<Uuid>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub full_text: Option<String>,
-    pub status: String,
-    pub scope: String,
-    pub chunk_count: i32,
-    pub total_tokens: i32,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub metadata: Option<Json>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub error_message: Option<String>,
+    pub sort_order: i32,
     pub created_by: Uuid,
     pub created_at: DateTime,
     pub updated_at: DateTime,

@@ -136,6 +136,8 @@ impl Tool for SearchKnowledgeBaseTool {
                 tenant_id: self.tenant_id,
                 user_id: self.user_id,
                 limit: top_k as usize,
+                library_id: None,
+                folder_id: None,
                 document_ids: None,
             },
         )

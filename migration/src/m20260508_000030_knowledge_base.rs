@@ -6,7 +6,84 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, m: &SchemaManager) -> Result<(), DbErr> {
-        // 1. kb_documents table
+        // 1. kb_libraries table
+        m.create_table(
+            Table::create()
+                .table(KbLibraries::Table)
+                .if_not_exists()
+                .col(
+                    ColumnDef::new(KbLibraries::Id)
+                        .uuid()
+                        .not_null()
+                        .primary_key(),
+                )
+                .col(ColumnDef::new(KbLibraries::TenantId).uuid().not_null())
+                .col(ColumnDef::new(KbLibraries::Name).string_len(128).not_null())
+                .col(ColumnDef::new(KbLibraries::Description).text().null())
+                .col(
+                    ColumnDef::new(KbLibraries::SortOrder)
+                        .integer()
+                        .not_null()
+                        .default(0),
+                )
+                .col(ColumnDef::new(KbLibraries::CreatedBy).uuid().not_null())
+                .col(
+                    ColumnDef::new(KbLibraries::CreatedAt)
+                        .date_time()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .col(
+                    ColumnDef::new(KbLibraries::UpdatedAt)
+                        .date_time()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .to_owned(),
+        )
+        .await?;
+
+        // 2. kb_folders table
+        m.create_table(
+            Table::create()
+                .table(KbFolders::Table)
+                .if_not_exists()
+                .col(
+                    ColumnDef::new(KbFolders::Id)
+                        .uuid()
+                        .not_null()
+                        .primary_key(),
+                )
+                .col(ColumnDef::new(KbFolders::TenantId).uuid().not_null())
+                .col(ColumnDef::new(KbFolders::LibraryId).uuid().not_null())
+                .col(ColumnDef::new(KbFolders::ParentId).uuid().null())
+                .col(ColumnDef::new(KbFolders::Name).string_len(128).not_null())
+                .col(ColumnDef::new(KbFolders::Path).text().not_null())
+                .col(ColumnDef::new(KbFolders::Depth).integer().not_null())
+                .col(
+                    ColumnDef::new(KbFolders::SortOrder)
+                        .integer()
+                        .not_null()
+                        .default(0),
+                )
+                .col(ColumnDef::new(KbFolders::CreatedBy).uuid().not_null())
+                .col(
+                    ColumnDef::new(KbFolders::CreatedAt)
+                        .date_time()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .col(
+                    ColumnDef::new(KbFolders::UpdatedAt)
+                        .date_time()
+                        .not_null()
+                        .default(Expr::current_timestamp()),
+                )
+                .to_owned(),
+        )
+        .await?;
+
+        // 3. kb_documents table
         m.create_table(
             Table::create()
                 .table(KbDocuments::Table)
@@ -18,6 +95,8 @@ impl MigrationTrait for Migration {
                         .primary_key(),
                 )
                 .col(ColumnDef::new(KbDocuments::TenantId).uuid().not_null())
+                .col(ColumnDef::new(KbDocuments::LibraryId).uuid().null())
+                .col(ColumnDef::new(KbDocuments::FolderId).uuid().null())
                 .col(
                     ColumnDef::new(KbDocuments::Title)
                         .string_len(512)
@@ -31,6 +110,12 @@ impl MigrationTrait for Migration {
                 )
                 .col(ColumnDef::new(KbDocuments::FileId).uuid().null())
                 .col(ColumnDef::new(KbDocuments::FullText).text().null())
+                .col(
+                    ColumnDef::new(KbDocuments::Scope)
+                        .string_len(16)
+                        .not_null()
+                        .default("tenant"),
+                )
                 .col(
                     ColumnDef::new(KbDocuments::Status)
                         .string_len(16)
@@ -68,7 +153,7 @@ impl MigrationTrait for Migration {
         )
         .await?;
 
-        // 2. kb_chunks table
+        // 4. kb_chunks table
         m.create_table(
             Table::create()
                 .table(KbChunks::Table)
@@ -93,7 +178,7 @@ impl MigrationTrait for Migration {
         )
         .await?;
 
-        // 3. Unique index on kb_chunks(document_id, chunk_index)
+        // 5. Unique index on kb_chunks(document_id, chunk_index)
         m.create_index(
             Index::create()
                 .if_not_exists()
@@ -106,7 +191,7 @@ impl MigrationTrait for Migration {
         )
         .await?;
 
-        // 4. document_lines table
+        // 6. document_lines table
         //    Composite PK order: (tenant_id, document_id, line_number)
         //    matches the design doc and the window index prefix.
         m.create_table(
@@ -147,7 +232,32 @@ impl MigrationTrait for Migration {
         )
         .await?;
 
-        // 5. Indexes
+        // 7. Indexes
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE INDEX IF NOT EXISTS idx_kb_libraries_tenant ON kb_libraries (tenant_id, sort_order, created_at)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_libraries_name_unique ON kb_libraries (tenant_id, name)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE INDEX IF NOT EXISTS idx_kb_folders_library_parent ON kb_folders (tenant_id, library_id, parent_id, sort_order, created_at)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_folders_name_unique ON kb_folders (tenant_id, library_id, parent_id, name)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE INDEX IF NOT EXISTS idx_kb_folders_path ON kb_folders (tenant_id, library_id, path)",
+            )
+            .await?;
         m.get_connection()
             .execute_unprepared(
                 "CREATE INDEX IF NOT EXISTS idx_kb_docs_tenant ON kb_documents (tenant_id)",
@@ -156,6 +266,16 @@ impl MigrationTrait for Migration {
         m.get_connection()
             .execute_unprepared(
                 "CREATE INDEX IF NOT EXISTS idx_kb_docs_status ON kb_documents (tenant_id, status)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE INDEX IF NOT EXISTS idx_kb_docs_scope ON kb_documents (tenant_id, scope, created_by)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
+                "CREATE INDEX IF NOT EXISTS idx_kb_docs_library_folder ON kb_documents (tenant_id, library_id, folder_id)",
             )
             .await?;
         m.get_connection()
@@ -184,8 +304,41 @@ impl MigrationTrait for Migration {
             .await?;
         m.drop_table(Table::drop().table(KbDocuments::Table).to_owned())
             .await?;
+        m.drop_table(Table::drop().table(KbFolders::Table).to_owned())
+            .await?;
+        m.drop_table(Table::drop().table(KbLibraries::Table).to_owned())
+            .await?;
         Ok(())
     }
+}
+
+#[derive(Iden)]
+enum KbLibraries {
+    Table,
+    Id,
+    TenantId,
+    Name,
+    Description,
+    SortOrder,
+    CreatedBy,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(Iden)]
+enum KbFolders {
+    Table,
+    Id,
+    TenantId,
+    LibraryId,
+    ParentId,
+    Name,
+    Path,
+    Depth,
+    SortOrder,
+    CreatedBy,
+    CreatedAt,
+    UpdatedAt,
 }
 
 #[derive(Iden)]
@@ -193,11 +346,14 @@ enum KbDocuments {
     Table,
     Id,
     TenantId,
+    LibraryId,
+    FolderId,
     Title,
     Description,
     SourceType,
     FileId,
     FullText,
+    Scope,
     Status,
     ChunkCount,
     TotalTokens,

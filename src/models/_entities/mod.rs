@@ -21,6 +21,8 @@ pub mod i18n_supported_locales;
 pub mod i18n_translations;
 pub mod kb_chunks;
 pub mod kb_documents;
+pub mod kb_folders;
+pub mod kb_libraries;
 pub mod notification_recipients;
 pub mod notifications;
 pub mod permissions;

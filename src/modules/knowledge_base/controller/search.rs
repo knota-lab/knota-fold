@@ -85,6 +85,8 @@ pub(crate) async fn search(
             tenant_id: tc.tenant_id,
             user_id: tc.user_id,
             limit,
+            library_id: params.library_id,
+            folder_id: params.folder_id,
             document_ids: params.document_ids,
         },
     )

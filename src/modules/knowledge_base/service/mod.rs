@@ -1,6 +1,7 @@
 pub mod chat_service;
 pub mod chunking_service;
 pub mod document_service;
+pub mod library_service;
 pub mod line_splitting_service;
 pub mod memory_service;
 pub(crate) mod numeric;
@@ -19,6 +20,12 @@ pub use chunking_service::{chunk_markdown, RawChunk};
 pub use document_service::{
     create_document, get_document, insert_chunks, insert_lines, mark_ready,
     promote_document, set_full_text, update_status, CreateDocumentParams,
+};
+pub use library_service::{
+    create_folder, create_library, delete_folder, delete_library, get_folder,
+    get_library, list_folders, list_libraries, resolve_document_location, update_folder,
+    update_library, CreateFolderParams, CreateLibraryParams, DocumentLocation,
+    UpdateFolderParams, UpdateLibraryParams,
 };
 pub use line_splitting_service::{split_lines, RawLine};
 pub use qa_stream_types::{QaEvent, QaPhase, QaStreamResponse};
