@@ -269,10 +269,12 @@ async fn attach_in_txn_inner<C: ConnectionTrait>(
         .one(txn)
         .await
         .map_err(|e| AttachError::Loco(Error::Any(e.into())))?
-        .ok_or(AttachError::Loco(crate::views::errors::err_not_found(
-            "file.not_found",
-            "文件不存在",
-        )))?;
+        .ok_or_else(|| {
+            AttachError::Loco(crate::views::errors::err_not_found(
+                "file.not_found",
+                "文件不存在",
+            ))
+        })?;
 
     let display = req
         .display_name

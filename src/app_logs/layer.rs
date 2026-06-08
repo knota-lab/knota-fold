@@ -359,9 +359,9 @@ fn inject_preferred_location(
     event: &Event<'_>,
     fields: &mut std::collections::BTreeMap<String, String>,
 ) {
-    let caller_file = fields.get("caller_file").cloned();
-    let caller_line = fields.get("caller_line").cloned();
-    let caller_column = fields.get("caller_column").cloned();
+    let caller_file = fields.remove("caller_file");
+    let caller_line = fields.remove("caller_line");
+    let caller_column = fields.remove("caller_column");
     match (caller_file, caller_line, caller_column) {
         (Some(file), Some(line), column) => {
             let location = column.as_ref().map_or_else(
