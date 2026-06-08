@@ -1729,6 +1729,13 @@ async fn run_qa_pipeline(ctx: QaStreamCtx<'_>) -> Result<(), ()> {
     let session_prep = prepare_session_and_history(&ctx)
         .instrument(tracing::info_span!("qa.session"))
         .await?;
+    send_event(
+        ctx.tx,
+        QaEvent::Started {
+            session_id: session_prep.session_id_str.clone(),
+        },
+    )
+    .await?;
     let material_prep =
         prepare_materials(&ctx, &session_prep.session, &session_prep.history)
             .instrument(tracing::info_span!("qa.material"))
