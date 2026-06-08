@@ -267,6 +267,12 @@ fn markdown_material_lines(refs: &serde_json::Value) -> Vec<String> {
     if refs.get("documentIds").is_some() {
         material_lines.push("- 文档（详见上方消息内容）".to_string());
     }
+    if let Some(library_id) = refs.get("libraryId").and_then(|v| v.as_str()) {
+        material_lines.push(format!("- 知识库范围: {library_id}"));
+    }
+    if let Some(folder_id) = refs.get("folderId").and_then(|v| v.as_str()) {
+        material_lines.push(format!("- 目录范围: {folder_id}"));
+    }
     if refs.get("fileIds").is_some() {
         material_lines.push("- 文件".to_string());
     }

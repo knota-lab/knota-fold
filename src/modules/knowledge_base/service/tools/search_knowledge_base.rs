@@ -52,6 +52,9 @@ pub struct SearchKnowledgeBaseTool {
     pub embedding_model_name: String,
     pub tenant_id: Uuid,
     pub user_id: Uuid,
+    pub library_id: Option<Uuid>,
+    pub folder_id: Option<Uuid>,
+    pub document_ids: Option<Vec<Uuid>>,
 }
 
 impl fmt::Debug for SearchKnowledgeBaseTool {
@@ -60,6 +63,9 @@ impl fmt::Debug for SearchKnowledgeBaseTool {
             .field("embedding_model_name", &self.embedding_model_name)
             .field("tenant_id", &self.tenant_id)
             .field("user_id", &self.user_id)
+            .field("library_id", &self.library_id)
+            .field("folder_id", &self.folder_id)
+            .field("document_ids", &self.document_ids)
             .finish_non_exhaustive()
     }
 }
@@ -72,6 +78,9 @@ impl Clone for SearchKnowledgeBaseTool {
             embedding_model_name: self.embedding_model_name.clone(),
             tenant_id: self.tenant_id,
             user_id: self.user_id,
+            library_id: self.library_id,
+            folder_id: self.folder_id,
+            document_ids: self.document_ids.clone(),
         }
     }
 }
@@ -100,9 +109,12 @@ impl Tool for SearchKnowledgeBaseTool {
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
+        let scope_description = self.scope_description();
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "在知识库已上传的文档中进行语义搜索。返回最相关的文档片段。当你需要查找材料中没有的信息时使用此工具。".to_string(),
+            description: format!(
+                "在知识库已上传的文档中进行语义搜索。返回最相关的文档片段。当你需要查找材料中没有的信息时使用此工具。{scope_description}"
+            ),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -136,9 +148,9 @@ impl Tool for SearchKnowledgeBaseTool {
                 tenant_id: self.tenant_id,
                 user_id: self.user_id,
                 limit: top_k as usize,
-                library_id: None,
-                folder_id: None,
-                document_ids: None,
+                library_id: self.library_id,
+                folder_id: self.folder_id,
+                document_ids: self.document_ids.clone(),
             },
         )
         .await
@@ -186,5 +198,24 @@ impl Tool for SearchKnowledgeBaseTool {
         }
 
         Ok(output.join("\n"))
+    }
+}
+
+impl SearchKnowledgeBaseTool {
+    fn scope_description(&self) -> String {
+        if self
+            .document_ids
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
+        {
+            return "当前搜索范围已限定为用户指定的文档集合。".to_string();
+        }
+        if self.folder_id.is_some() {
+            return "当前搜索范围已限定为用户指定目录下的直接文档。".to_string();
+        }
+        if self.library_id.is_some() {
+            return "当前搜索范围已限定为用户指定知识库。".to_string();
+        }
+        "当前搜索范围为租户内可见知识库文档。".to_string()
     }
 }

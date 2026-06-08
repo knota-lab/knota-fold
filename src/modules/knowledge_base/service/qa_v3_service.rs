@@ -878,6 +878,8 @@ fn build_material_refs_json(
     inline_material_id: Option<&str>,
 ) -> Option<serde_json::Value> {
     if request.material.inline.is_none()
+        && request.material.library_id.is_none()
+        && request.material.folder_id.is_none()
         && request.material.file_ids.is_empty()
         && request.material.document_ids.is_empty()
     {
@@ -885,6 +887,12 @@ fn build_material_refs_json(
     }
 
     let mut refs = serde_json::json!({});
+    if let Some(library_id) = request.material.library_id {
+        refs["libraryId"] = serde_json::json!(library_id.to_string());
+    }
+    if let Some(folder_id) = request.material.folder_id {
+        refs["folderId"] = serde_json::json!(folder_id.to_string());
+    }
     if let Some(ref inline_text) = request.material.inline {
         refs["inline"] = serde_json::json!({
             "type": "inline",
@@ -1320,6 +1328,10 @@ async fn run_agent_stream(
             embedding_model_name: ctx.embedding_model_name.clone(),
             tenant_id: ctx.tenant_id,
             user_id: ctx.user_id,
+            library_id: ctx.request.material.library_id,
+            folder_id: ctx.request.material.folder_id,
+            document_ids: (!ctx.request.material.document_ids.is_empty())
+                .then(|| ctx.request.material.document_ids.clone()),
         });
 
     let conversation_db = std::sync::Arc::new(ctx.db.clone());

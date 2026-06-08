@@ -42,6 +42,8 @@ pub struct QaRequest {
 #[serde(rename_all = "camelCase")]
 pub struct MaterialInput {
     pub inline: Option<String>,
+    pub library_id: Option<uuid::Uuid>,
+    pub folder_id: Option<uuid::Uuid>,
     #[serde(default)]
     pub file_ids: Vec<uuid::Uuid>,
     #[serde(default)]
