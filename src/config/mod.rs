@@ -604,3 +604,20 @@ impl ConfigExt for loco_rs::config::Config {
             .transpose()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ChunkingConfig;
+
+    #[test]
+    fn chunking_config_defaults_are_stable() {
+        let config = ChunkingConfig::default();
+
+        assert_eq!(config.max_chunk_tokens, 800);
+        assert_eq!(config.min_chunk_tokens, 100);
+        assert_eq!(config.overlap_sentences, 2);
+        assert!(config.split_by_heading);
+        assert_eq!(config.min_heading_level, 1);
+        assert_eq!(config.max_heading_level, 4);
+    }
+}

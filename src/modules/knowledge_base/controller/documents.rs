@@ -9,7 +9,7 @@ use sea_orm::{
 };
 
 use crate::config::{AppSettings, ConfigExt};
-use crate::extractors::TenantContext;
+use crate::extractors::{RequestMeta, TenantContext};
 use crate::initializers::knowledge_base::SharedSearchProvider;
 use crate::initializers::s3::{SharedS3Client, SharedS3Config};
 use crate::models::_entities::{document_lines, files, kb_chunks, kb_documents};
@@ -41,6 +41,7 @@ const ASSET_PRESIGN_TTL_SECONDS: u64 = 3600;
 )]
 #[debug_handler]
 pub(crate) async fn create(
+    meta: RequestMeta,
     tc: TenantContext,
     State(ctx): State<AppContext>,
     Json(params): Json<CreateDocumentRequest>,
@@ -137,8 +138,9 @@ pub(crate) async fn create(
         IndexingWorkerArgs {
             document_id: doc.id,
             tenant_id: tc.tenant_id,
-            trace_id: None,
-            parent_span_id: None,
+            trace_id: Some(meta.trace_id),
+            parent_span_id: tracing::Span::current()
+                .with_subscriber(|(id, _)| id.into_u64().to_string()),
         },
     )
     .await
@@ -543,6 +545,7 @@ pub(crate) async fn promote(
 )]
 #[debug_handler]
 pub(crate) async fn reindex(
+    meta: RequestMeta,
     tc: TenantContext,
     State(ctx): State<AppContext>,
     Path(id): Path<String>,
@@ -620,8 +623,9 @@ pub(crate) async fn reindex(
         IndexingWorkerArgs {
             document_id: doc_id,
             tenant_id: tc.tenant_id,
-            trace_id: None,
-            parent_span_id: None,
+            trace_id: Some(meta.trace_id),
+            parent_span_id: tracing::Span::current()
+                .with_subscriber(|(id, _)| id.into_u64().to_string()),
         },
     )
     .await

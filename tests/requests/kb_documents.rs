@@ -1,6 +1,11 @@
 use knota_fold::app::App;
+use knota_fold::models::_entities::{kb_documents, kb_libraries};
 use loco_rs::testing::prelude::*;
+use sea_orm::{ActiveModelTrait, ActiveValue};
 use serial_test::serial;
+use uuid::Uuid;
+
+use super::prepare_data;
 
 #[tokio::test]
 #[serial]
@@ -97,6 +102,118 @@ async fn can_list_documents() {
         );
     })
     .await;
+}
+
+#[tokio::test]
+#[serial]
+async fn document_list_rejects_cross_tenant_library_scope() {
+    request::<App, _, _>(|request, ctx| async move {
+        let super_admin = prepare_data::login_super_admin(&request, &ctx).await;
+        let tenant_b = prepare_data::create_tenant_and_login_admin(
+            &request,
+            &super_admin.token,
+            "KB Isolation B",
+            "KB_ISOL_B",
+            "kb-isol-b@test.com",
+            "admin1234",
+            "KB Isolation B Admin",
+        )
+        .await;
+
+        let tenant_b_id = Uuid::parse_str(&tenant_b.tenant_id).unwrap();
+        let user_id = Uuid::nil();
+        let library_b_id = Uuid::now_v7();
+        insert_library(
+            &ctx.db,
+            tenant_b_id,
+            library_b_id,
+            "tenant-b-library",
+            user_id,
+        )
+        .await;
+        insert_document(
+            &ctx.db,
+            tenant_b_id,
+            Uuid::now_v7(),
+            library_b_id,
+            "tenant-b-document",
+            user_id,
+        )
+        .await;
+
+        let (key, value) = prepare_data::auth_header(&super_admin.token);
+        let response = request
+            .get(&format!(
+                "/api/kb-documents?page=1&pageSize=20&libraryId={library_b_id}"
+            ))
+            .add_header(key, value)
+            .await;
+
+        assert_eq!(
+            response.status_code(),
+            200,
+            "Cross-tenant library list should not fail: {}",
+            response.text()
+        );
+        let body: serde_json::Value = serde_json::from_str(&response.text()).unwrap();
+        assert_eq!(body["totalItems"].as_i64(), Some(0));
+        assert_eq!(body["items"].as_array().map(Vec::len), Some(0));
+    })
+    .await;
+}
+
+async fn insert_library(
+    db: &sea_orm::DatabaseConnection,
+    tenant_id: Uuid,
+    library_id: Uuid,
+    name: &str,
+    user_id: Uuid,
+) {
+    kb_libraries::ActiveModel {
+        id: ActiveValue::Set(library_id),
+        tenant_id: ActiveValue::Set(tenant_id),
+        name: ActiveValue::Set(name.to_string()),
+        description: ActiveValue::Set(None),
+        sort_order: ActiveValue::Set(0),
+        created_by: ActiveValue::Set(user_id),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+}
+
+async fn insert_document(
+    db: &sea_orm::DatabaseConnection,
+    tenant_id: Uuid,
+    document_id: Uuid,
+    library_id: Uuid,
+    title: &str,
+    user_id: Uuid,
+) {
+    kb_documents::ActiveModel {
+        id: ActiveValue::Set(document_id),
+        tenant_id: ActiveValue::Set(tenant_id),
+        title: ActiveValue::Set(title.to_string()),
+        description: ActiveValue::Set(None),
+        library_id: ActiveValue::Set(Some(library_id)),
+        folder_id: ActiveValue::Set(None),
+        source_type: ActiveValue::Set("text/plain".to_string()),
+        file_id: ActiveValue::Set(None),
+        file_reference_id: ActiveValue::Set(None),
+        full_text: ActiveValue::Set(Some("cross tenant content".to_string())),
+        status: ActiveValue::Set("ready".to_string()),
+        scope: ActiveValue::Set("tenant".to_string()),
+        chunk_count: ActiveValue::Set(1),
+        total_tokens: ActiveValue::Set(3),
+        metadata: ActiveValue::Set(None),
+        error_message: ActiveValue::Set(None),
+        created_by: ActiveValue::Set(user_id),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

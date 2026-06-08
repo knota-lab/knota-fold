@@ -383,3 +383,55 @@ impl SearchProvider for QdrantSearchProvider {
         "qdrant"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::build_filter;
+    use crate::modules::knowledge_base::providers::search::SearchFilter;
+    use uuid::Uuid;
+
+    #[test]
+    fn build_filter_always_scopes_to_tenant() {
+        let tenant_id = Uuid::now_v7();
+        let filter = build_filter(tenant_id, None);
+        let debug = format!("{filter:?}");
+
+        assert!(debug.contains("tenant_id"));
+        assert!(debug.contains(&tenant_id.to_string()));
+        assert!(debug.contains("scope"));
+        assert!(debug.contains("tenant"));
+    }
+
+    #[test]
+    fn build_filter_includes_requested_knowledge_scope() {
+        let tenant_id = Uuid::now_v7();
+        let user_id = Uuid::now_v7();
+        let library_id = Uuid::now_v7();
+        let folder_id = Uuid::now_v7();
+        let document_id = Uuid::now_v7();
+        let filter = build_filter(
+            tenant_id,
+            Some(&SearchFilter {
+                document_ids: Some(vec![document_id]),
+                library_id: Some(library_id),
+                folder_id: Some(folder_id),
+                min_score: None,
+                user_id: Some(user_id),
+            }),
+        );
+        let debug = format!("{filter:?}");
+
+        for expected in [
+            tenant_id.to_string(),
+            user_id.to_string(),
+            library_id.to_string(),
+            folder_id.to_string(),
+            document_id.to_string(),
+        ] {
+            assert!(
+                debug.contains(&expected),
+                "filter should contain {expected}"
+            );
+        }
+    }
+}

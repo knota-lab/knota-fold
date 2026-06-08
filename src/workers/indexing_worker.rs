@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
+use std::time::Instant;
 
 use futures_util::FutureExt;
 use loco_rs::prelude::*;
@@ -439,7 +440,7 @@ struct PipelineParams<'a> {
 }
 
 fn build_chunk_points_and_models(
-    chunks: &[crate::modules::knowledge_base::service::chunking_service::RawChunk],
+    chunks: &[chunking_service::RawChunk],
     embeddings: &[rig::embeddings::Embedding],
     p: &PipelineParams<'_>,
 ) -> (Vec<ChunkPoint>, Vec<kc_models::ActiveModel>, i32) {
@@ -488,6 +489,8 @@ fn build_chunk_points_and_models(
 }
 
 async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Result<()> {
+    let pipeline_started_at = Instant::now();
+
     // 4. Parse document — select parser by MIME type from source_type
     let parser = p
         .parser_chain
@@ -500,67 +503,164 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
             ))
             .to_err()
         })?;
-    let parsed = parser
-        .parse(p.input_bytes, p.mime_type, p.source_name)
-        .await
-        .map_err(|e| {
-            KnowledgeBaseError::ParsingError(format!("parsing failed: {e}")).to_err()
-        })?;
+    let parsed = async {
+        parser
+            .parse(p.input_bytes, p.mime_type, p.source_name)
+            .await
+            .map_err(|e| {
+                KnowledgeBaseError::ParsingError(format!("parsing failed: {e}")).to_err()
+            })
+    }
+    .instrument(tracing::info_span!(
+        "kb.index.parse",
+        document_id = %p.document_id,
+        mime_type = p.mime_type,
+        source_name = p.source_name,
+        input_bytes = p.input_bytes.len(),
+    ))
+    .await?;
+
     let ParsedMarkdown {
         preview_markdown,
         index_markdown,
         asset_metadata,
-    } = prepare_parsed_markdown(p, &parsed.markdown, &parsed.assets).await?;
-    document_service::set_parsed_content(
-        db,
-        p.document_id,
-        &preview_markdown,
-        asset_metadata,
-    )
+    } = prepare_parsed_markdown(p, &parsed.markdown, &parsed.assets)
+        .instrument(tracing::info_span!(
+            "kb.index.assets",
+            document_id = %p.document_id,
+            asset_count = parsed.assets.len(),
+        ))
+        .await?;
+
+    async {
+        document_service::set_parsed_content(
+            db,
+            p.document_id,
+            &preview_markdown,
+            asset_metadata,
+        )
+        .await
+    }
+    .instrument(tracing::info_span!(
+        "kb.index.save_parsed",
+        document_id = %p.document_id,
+        preview_chars = preview_markdown.chars().count(),
+        index_chars = index_markdown.chars().count(),
+    ))
     .await?;
 
     // 5. Chunk the markdown
-    let chunks = chunking_service::chunk_markdown(
-        &index_markdown,
-        chunking_service::ChunkMarkdownOptions {
-            max_tokens: p.config.max_chunk_tokens,
-            min_tokens: p.config.min_chunk_tokens,
-            overlap_sentences: p.config.overlap_sentences,
-            split_by_heading: p.config.split_by_heading,
-            min_heading_level: p.config.min_heading_level,
-            max_heading_level: p.config.max_heading_level,
-        },
+    let chunks = chunk_index_markdown(p, &index_markdown)?;
+
+    // 6. Split lines and insert
+    insert_document_lines(db, p, &index_markdown).await?;
+
+    // 7. Generate embeddings
+    let embeddings = generate_embeddings(p, &chunks).await?;
+
+    // 8-10. Build chunks, save chunks and upsert vectors
+    let total_tokens = persist_chunks_and_vectors(db, p, &chunks, &embeddings).await?;
+
+    // 11. Mark document as ready
+    mark_document_ready(db, p, chunks.len(), total_tokens).await?;
+
+    tracing::info!(
+        document_id = %p.document_id,
+        chunk_count = chunks.len(),
+        total_tokens = total_tokens,
+        elapsed_ms = elapsed_ms(pipeline_started_at),
+        "indexing pipeline completed"
     );
+
+    Ok(())
+}
+
+fn chunk_index_markdown(
+    p: &PipelineParams<'_>,
+    index_markdown: &str,
+) -> Result<Vec<chunking_service::RawChunk>> {
+    let chunk_span = tracing::info_span!(
+        "kb.index.chunk",
+        document_id = %p.document_id,
+        chunk_count = tracing::field::Empty,
+        total_tokens = tracing::field::Empty,
+    );
+    let chunks = {
+        let _guard = chunk_span.enter();
+        chunking_service::chunk_markdown(
+            index_markdown,
+            chunking_service::ChunkMarkdownOptions {
+                max_tokens: p.config.max_chunk_tokens,
+                min_tokens: p.config.min_chunk_tokens,
+                overlap_sentences: p.config.overlap_sentences,
+                split_by_heading: p.config.split_by_heading,
+                min_heading_level: p.config.min_heading_level,
+                max_heading_level: p.config.max_heading_level,
+            },
+        )
+    };
     if chunks.is_empty() {
         return Err(KnowledgeBaseError::IndexingError(
             "chunking produced no chunks".into(),
         )
         .to_err());
     }
+    let chunk_tokens: i32 = chunks.iter().map(|chunk| chunk.token_count).sum();
+    chunk_span.record("chunk_count", chunks.len());
+    chunk_span.record("total_tokens", chunk_tokens);
+    Ok(chunks)
+}
 
-    // 6. Split lines and insert
-    let raw_lines = line_splitting_service::split_lines(&index_markdown);
-    let line_models: Vec<dl_models::ActiveModel> = raw_lines
-        .into_iter()
-        .map(|line| dl_models::ActiveModel {
-            tenant_id: ActiveValue::Set(p.tenant_id),
-            document_id: ActiveValue::Set(p.document_id),
-            line_number: ActiveValue::Set(line.line_number),
-            line_text: ActiveValue::Set(line.line_text),
-            line_chars: ActiveValue::Set(line.line_chars),
-            cumulative_chars: ActiveValue::Set(line.cumulative_chars),
-            ..Default::default()
-        })
-        .collect();
-    document_service::insert_lines(db, line_models).await?;
+async fn insert_document_lines(
+    db: &DatabaseConnection,
+    p: &PipelineParams<'_>,
+    index_markdown: &str,
+) -> Result<()> {
+    let line_span = tracing::info_span!(
+        "kb.index.lines",
+        document_id = %p.document_id,
+        line_count = tracing::field::Empty,
+    );
+    let line_span_for_record = line_span.clone();
+    async {
+        let raw_lines = line_splitting_service::split_lines(index_markdown);
+        line_span_for_record.record("line_count", raw_lines.len());
+        let line_models: Vec<dl_models::ActiveModel> = raw_lines
+            .into_iter()
+            .map(|line| dl_models::ActiveModel {
+                tenant_id: ActiveValue::Set(p.tenant_id),
+                document_id: ActiveValue::Set(p.document_id),
+                line_number: ActiveValue::Set(line.line_number),
+                line_text: ActiveValue::Set(line.line_text),
+                line_chars: ActiveValue::Set(line.line_chars),
+                cumulative_chars: ActiveValue::Set(line.cumulative_chars),
+                ..Default::default()
+            })
+            .collect();
+        document_service::insert_lines(db, line_models).await
+    }
+    .instrument(line_span)
+    .await
+}
 
-    // 7. Generate embeddings
+async fn generate_embeddings(
+    p: &PipelineParams<'_>,
+    chunks: &[chunking_service::RawChunk],
+) -> Result<Vec<rig::embeddings::Embedding>> {
     let model = p.embedding_client.0.embedding_model(p.embedding_model_name);
     let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
-    let embeddings: Vec<rig::embeddings::Embedding> =
+    let embeddings: Vec<rig::embeddings::Embedding> = async {
         model.embed_texts(texts).await.map_err(|e| {
             KnowledgeBaseError::EmbeddingError(format!("embedding failed: {e}")).to_err()
-        })?;
+        })
+    }
+    .instrument(tracing::info_span!(
+        "kb.index.embedding",
+        document_id = %p.document_id,
+        chunk_count = chunks.len(),
+        model = p.embedding_model_name,
+    ))
+    .await?;
 
     if embeddings.len() != chunks.len() {
         return Err(KnowledgeBaseError::EmbeddingError(format!(
@@ -570,40 +670,80 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
         ))
         .to_err());
     }
+    Ok(embeddings)
+}
 
-    // 8. Build ChunkPoints + kb_chunks ActiveModels
-    let (chunk_points, chunk_models, total_tokens) =
-        build_chunk_points_and_models(&chunks, &embeddings, p);
+async fn persist_chunks_and_vectors(
+    db: &DatabaseConnection,
+    p: &PipelineParams<'_>,
+    chunks: &[chunking_service::RawChunk],
+    embeddings: &[rig::embeddings::Embedding],
+) -> Result<i32> {
+    let build_span = tracing::info_span!(
+        "kb.index.build_chunks",
+        document_id = %p.document_id,
+        chunk_count = tracing::field::Empty,
+        total_tokens = tracing::field::Empty,
+    );
+    let (chunk_points, chunk_models, total_tokens) = {
+        let _guard = build_span.enter();
+        build_chunk_points_and_models(chunks, embeddings, p)
+    };
+    build_span.record("chunk_count", chunk_points.len());
+    build_span.record("total_tokens", total_tokens);
 
     // 9. Write chunks to PG
-    document_service::insert_chunks(db, chunk_models).await?;
+    async { document_service::insert_chunks(db, chunk_models).await }
+        .instrument(tracing::info_span!(
+            "kb.index.save_chunks",
+            document_id = %p.document_id,
+            chunk_count = chunk_points.len(),
+        ))
+        .await?;
 
     // 10. Write vectors to Qdrant
-    p.search_provider
-        .upsert_chunks(&chunk_points, p.tenant_id)
-        .await
-        .map_err(|e| {
-            KnowledgeBaseError::IndexingError(format!("Qdrant upsert failed: {e}"))
-                .to_err()
-        })?;
-
-    // 11. Mark document as ready
-    document_service::mark_ready(
-        db,
-        p.document_id,
-        i32::try_from(chunks.len()).unwrap_or(i32::MAX),
-        total_tokens,
-    )
-    .await?;
-
-    tracing::info!(
+    async {
+        p.search_provider
+            .upsert_chunks(&chunk_points, p.tenant_id)
+            .await
+            .map_err(|e| {
+                KnowledgeBaseError::IndexingError(format!("Qdrant upsert failed: {e}"))
+                    .to_err()
+            })
+    }
+    .instrument(tracing::info_span!(
+        "kb.index.upsert_vectors",
         document_id = %p.document_id,
-        chunk_count = chunks.len(),
-        total_tokens = total_tokens,
-        "indexing pipeline completed"
-    );
+        chunk_count = chunk_points.len(),
+    ))
+    .await
+    .map(|()| total_tokens)
+}
 
-    Ok(())
+async fn mark_document_ready(
+    db: &DatabaseConnection,
+    p: &PipelineParams<'_>,
+    chunk_count: usize,
+    total_tokens: i32,
+) -> Result<()> {
+    async {
+        document_service::mark_ready(
+            db,
+            p.document_id,
+            i32::try_from(chunk_count).unwrap_or(i32::MAX),
+            total_tokens,
+        )
+        .await
+    }
+    .instrument(tracing::info_span!(
+        "kb.index.mark_ready",
+        document_id = %p.document_id,
+    ))
+    .await
+}
+
+fn elapsed_ms(started_at: Instant) -> u64 {
+    u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 struct ParsedMarkdown {
@@ -758,9 +898,12 @@ fn extension_for_mime(mime_type: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        extension_for_mime, normalize_asset_target, rewrite_markdown_image_targets,
-        strip_markdown_images,
+        extension_for_mime, indexing_error_message, normalize_asset_target,
+        resolve_file_document_mime, resolve_reference_document_mime,
+        rewrite_markdown_image_targets, strip_markdown_images,
     };
+    use crate::models::_entities::{file_references, files};
+    use uuid::Uuid;
 
     #[test]
     fn rewrite_markdown_image_targets_replaces_only_image_links() {
@@ -827,5 +970,89 @@ mod tests {
         assert_eq!(extension_for_mime("image/jpeg"), "jpg");
         assert_eq!(extension_for_mime("image/webp"), "webp");
         assert_eq!(extension_for_mime("application/octet-stream"), "bin");
+    }
+
+    #[test]
+    fn document_mime_prefers_reference_mime_type() {
+        let file = file_model("stored.bin", "application/octet-stream");
+        let reference = file_reference_model(Some("application/pdf"));
+
+        assert_eq!(
+            resolve_reference_document_mime("kb_upload", &reference, &file),
+            "application/pdf"
+        );
+    }
+
+    #[test]
+    fn document_mime_falls_back_to_file_name_when_stored_as_octet_stream() {
+        let file = file_model("知识库-v4.pdf", "application/octet-stream");
+        let reference = file_reference_model(None);
+
+        assert_eq!(
+            resolve_reference_document_mime("kb_upload", &reference, &file),
+            "application/pdf"
+        );
+        assert_eq!(
+            resolve_file_document_mime("kb_upload", &file),
+            "application/pdf"
+        );
+    }
+
+    #[test]
+    fn indexing_error_message_keeps_custom_description() {
+        let err =
+            crate::modules::knowledge_base::errors::KnowledgeBaseError::EmbeddingError(
+                "embedding request timed out".to_string(),
+            )
+            .to_err();
+
+        assert_eq!(
+            indexing_error_message(&err),
+            "嵌入生成失败: embedding request timed out"
+        );
+    }
+
+    fn file_model(name: &str, mime_type: &str) -> files::Model {
+        let now = chrono::Utc::now().fixed_offset();
+        files::Model {
+            id: Uuid::now_v7(),
+            tenant_id: Uuid::now_v7(),
+            name: name.to_string(),
+            mime_type: mime_type.to_string(),
+            size: 1,
+            content_hash: "hash".to_string(),
+            content_hash_algo: "b3".to_string(),
+            content_hash_fast: None,
+            storage_backend: "minio".to_string(),
+            bucket: "bucket".to_string(),
+            storage_key: "key".to_string(),
+            multipart_upload_id: None,
+            status: "ACTIVE".to_string(),
+            status_reason: None,
+            deleted_at: None,
+            purge_at: None,
+            deleted_by: None,
+            uploaded_by: Uuid::now_v7(),
+            created_at: now,
+            updated_at: now,
+            created_by: Uuid::now_v7(),
+            updated_by: Uuid::now_v7(),
+        }
+    }
+
+    fn file_reference_model(mime_type: Option<&str>) -> file_references::Model {
+        file_references::Model {
+            id: Uuid::now_v7(),
+            tenant_id: Uuid::now_v7(),
+            file_id: Uuid::now_v7(),
+            resource_type: "knowledge_base:document".to_string(),
+            resource_id: Uuid::now_v7().to_string(),
+            field_name: String::new(),
+            display_name: Some("uploaded-name.pdf".to_string()),
+            mime_type: mime_type.map(str::to_string),
+            created_by: Uuid::now_v7(),
+            created_at: chrono::Utc::now().fixed_offset(),
+            deleted_at: None,
+        }
     }
 }
