@@ -1,4 +1,5 @@
 pub mod config;
+pub mod format;
 pub mod layer;
 pub mod routes;
 pub mod schema;
@@ -39,10 +40,8 @@ pub fn init_logger(ctx: &AppContext) -> Result<bool> {
     // Note: intentionally NOT using FmtSpan::CLOSE because loco-rs's built-in
     // logger middleware uses `tracing::error_span!` for request spans, which
     // would cause every request to print an ERROR-level span-close line.
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_target(true)
-        .with_file(true)
-        .with_line_number(true);
+    let fmt_layer =
+        tracing_subscriber::fmt::layer().event_format(format::BusinessLocationFormat);
 
     // Build filter: RUST_LOG > config override_filter > config level + whitelist.
     // Rust module paths use underscores, which is also what CARGO_CRATE_NAME

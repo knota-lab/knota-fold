@@ -333,13 +333,7 @@ where
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
 
-        // Inject source location from event metadata (tracing natively tracks file/line)
-        if let (Some(file), Some(line)) =
-            (event.metadata().file(), event.metadata().line())
-        {
-            visitor.fields.insert("file".to_string(), file.to_string());
-            visitor.fields.insert("line".to_string(), line.to_string());
-        }
+        inject_preferred_location(event, &mut visitor.fields);
 
         let fields_json = if visitor.fields.is_empty() {
             None
@@ -358,6 +352,38 @@ where
                 fields_json,
             ),
         );
+    }
+}
+
+fn inject_preferred_location(
+    event: &Event<'_>,
+    fields: &mut std::collections::BTreeMap<String, String>,
+) {
+    let caller_file = fields.get("caller_file").cloned();
+    let caller_line = fields.get("caller_line").cloned();
+    let caller_column = fields.get("caller_column").cloned();
+    match (caller_file, caller_line, caller_column) {
+        (Some(file), Some(line), column) => {
+            let location = column.as_ref().map_or_else(
+                || format!("{file}:{line}"),
+                |column| format!("{file}:{line}:{column}"),
+            );
+            fields.insert("file".to_string(), file);
+            fields.insert("line".to_string(), line);
+            if let Some(column) = column {
+                fields.insert("column".to_string(), column);
+            }
+            fields.insert("location".to_string(), location);
+        }
+        _ => {
+            if let (Some(file), Some(line)) =
+                (event.metadata().file(), event.metadata().line())
+            {
+                fields.insert("file".to_string(), file.to_string());
+                fields.insert("line".to_string(), line.to_string());
+                fields.insert("location".to_string(), format!("{file}:{line}"));
+            }
+        }
     }
 }
 

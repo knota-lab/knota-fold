@@ -24,6 +24,12 @@ macro_rules! log_error {
             ::tracing::error!(
                 code = $code,
                 status = __status,
+                location = %format_args!(
+                    "{}:{}:{}",
+                    __caller.file(),
+                    __caller.line(),
+                    __caller.column()
+                ),
                 caller_file = __caller.file(),
                 caller_line = __caller.line(),
                 caller_column = __caller.column(),
@@ -34,6 +40,12 @@ macro_rules! log_error {
             ::tracing::warn!(
                 code = $code,
                 status = __status,
+                location = %format_args!(
+                    "{}:{}:{}",
+                    __caller.file(),
+                    __caller.line(),
+                    __caller.column()
+                ),
                 caller_file = __caller.file(),
                 caller_line = __caller.line(),
                 caller_column = __caller.column(),
