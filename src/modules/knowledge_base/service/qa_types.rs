@@ -41,6 +41,8 @@ pub struct QaRequest {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MaterialInput {
+    #[serde(default = "default_use_knowledge_base")]
+    pub use_knowledge_base: bool,
     pub inline: Option<String>,
     pub library_id: Option<uuid::Uuid>,
     pub folder_id: Option<uuid::Uuid>,
@@ -48,6 +50,10 @@ pub struct MaterialInput {
     pub file_ids: Vec<uuid::Uuid>,
     #[serde(default)]
     pub document_ids: Vec<uuid::Uuid>,
+}
+
+const fn default_use_knowledge_base() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1321,8 +1321,10 @@ async fn run_agent_stream(
         })
         .tool(SearchMaterialTool {
             registry: materials.registry.clone(),
-        })
-        .tool(SearchKnowledgeBaseTool {
+        });
+
+    if ctx.request.material.use_knowledge_base {
+        agent_builder = agent_builder.tool(SearchKnowledgeBaseTool {
             embedding_client: ctx.embedding_client.clone(),
             search_provider: ctx.search_provider.clone(),
             embedding_model_name: ctx.embedding_model_name.clone(),
@@ -1333,6 +1335,7 @@ async fn run_agent_stream(
             document_ids: (!ctx.request.material.document_ids.is_empty())
                 .then(|| ctx.request.material.document_ids.clone()),
         });
+    }
 
     let conversation_db = std::sync::Arc::new(ctx.db.clone());
     agent_builder = agent_builder
