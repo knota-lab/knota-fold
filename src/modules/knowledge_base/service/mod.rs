@@ -16,7 +16,7 @@ pub use chat_service::{
     create_message, create_session, delete_session, get_session, get_session_messages,
     list_sessions, update_session_title, CreateMessageParams,
 };
-pub use chunking_service::{chunk_markdown, RawChunk};
+pub use chunking_service::{chunk_markdown, ChunkMarkdownOptions, RawChunk};
 pub use document_service::{
     create_document, get_document, insert_chunks, insert_lines, mark_ready,
     promote_document, set_full_text, update_status, CreateDocumentParams,

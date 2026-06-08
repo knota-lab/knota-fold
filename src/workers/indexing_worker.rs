@@ -522,11 +522,14 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     // 5. Chunk the markdown
     let chunks = chunking_service::chunk_markdown(
         &index_markdown,
-        p.config.max_chunk_tokens,
-        p.config.min_chunk_tokens,
-        p.config.split_by_heading,
-        p.config.min_heading_level,
-        p.config.max_heading_level,
+        chunking_service::ChunkMarkdownOptions {
+            max_tokens: p.config.max_chunk_tokens,
+            min_tokens: p.config.min_chunk_tokens,
+            overlap_sentences: p.config.overlap_sentences,
+            split_by_heading: p.config.split_by_heading,
+            min_heading_level: p.config.min_heading_level,
+            max_heading_level: p.config.max_heading_level,
+        },
     );
     if chunks.is_empty() {
         return Err(KnowledgeBaseError::IndexingError(

@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use tiktoken_rs::cl100k_base_singleton;
 
@@ -10,23 +12,22 @@ pub struct RawChunk {
     pub token_count: i32,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ChunkMarkdownOptions {
+    pub max_tokens: i32,
+    pub min_tokens: i32,
+    pub overlap_sentences: i32,
+    pub split_by_heading: bool,
+    pub min_heading_level: i32,
+    pub max_heading_level: i32,
+}
+
 /// Split a Markdown document into chunks, optionally splitting at heading boundaries.
 ///
 /// * `markdown` – source text (UTF-8)
-/// * `max_tokens` – flush a chunk once its estimated token count exceeds this
-/// * `min_tokens` – avoid flushing below this threshold (unless a heading forces a split)
-/// * `split_by_heading` – whether to start a new chunk at qualifying headings
-/// * `min_heading_level` / `max_heading_level` – inclusive range of heading levels that
-///   trigger a split (1 = H1 … 6 = H6)
+/// * `options` – token budget, heading split range and overlap behavior
 #[must_use]
-pub fn chunk_markdown(
-    markdown: &str,
-    max_tokens: i32,
-    min_tokens: i32,
-    split_by_heading: bool,
-    min_heading_level: i32,
-    max_heading_level: i32,
-) -> Vec<RawChunk> {
+pub fn chunk_markdown(markdown: &str, options: ChunkMarkdownOptions) -> Vec<RawChunk> {
     if markdown.is_empty() {
         return Vec::new();
     }
@@ -41,106 +42,154 @@ pub fn chunk_markdown(
     let mut chunk_index: i32 = 0;
     let mut current_content = String::new();
     let mut chunk_byte_start: usize = 0;
+    let mut has_new_content_since_flush = false;
 
     for (event, range) in &events {
-        match event {
-            Event::Start(Tag::Heading { level, .. }) => {
-                let level_u8 = *level as u8;
-
-                // Decide whether this heading triggers a new chunk.
-                let should_split = split_by_heading
-                    && i32::from(level_u8) >= min_heading_level
-                    && i32::from(level_u8) <= max_heading_level;
-
-                if should_split && !current_content.is_empty() {
-                    let tokens = count_tokens(&current_content);
-                    if tokens > min_tokens {
-                        flush_chunk(
-                            &mut chunks,
-                            &mut chunk_index,
-                            &mut current_content,
-                            markdown,
-                            chunk_byte_start,
-                            &heading_map,
-                        );
-                        chunk_byte_start = range.start;
-                    }
-                }
-
-                // If this is the very first content, record start.
-                if current_content.is_empty()
-                    && chunk_byte_start == 0
-                    && chunks.is_empty()
-                {
-                    chunk_byte_start = range.start;
-                }
-
-                // Append the heading marker text (the `#` markers are included in the
-                // original source but not in the event text, so we reconstruct from
-                // the source slice for fidelity).
-                let source_slice = &markdown[range.start..range.end];
-                current_content.push_str(source_slice);
-            }
-
-            Event::End(TagEnd::Heading(_)) => {}
-
-            Event::Text(text) | Event::Code(text) => {
-                current_content.push_str(text.as_ref());
-            }
-
-            Event::SoftBreak | Event::HardBreak => {
-                current_content.push('\n');
-            }
-
-            Event::Html(html) => {
-                current_content.push_str(html.as_ref());
-            }
-
-            Event::Start(tag) => {
-                // For container tags that have source representations, include them.
-                let rendered = render_start_tag(tag);
-                current_content.push_str(&rendered);
-            }
-
-            Event::End(tag_end) => {
-                let rendered = render_end_tag(*tag_end);
-                current_content.push_str(&rendered);
-            }
-
-            _ => {}
+        if heading_triggers_split(
+            event,
+            options.split_by_heading,
+            options.min_heading_level,
+            options.max_heading_level,
+        ) && !current_content.is_empty()
+            && count_tokens(&current_content) > options.min_tokens
+        {
+            let _ = flush_chunk(
+                &mut chunks,
+                &mut chunk_index,
+                &mut current_content,
+                markdown,
+                chunk_byte_start,
+                &heading_map,
+                0,
+            );
+            chunk_byte_start = range.start;
         }
+
+        append_event(
+            markdown,
+            event,
+            range,
+            chunks.is_empty(),
+            &mut chunk_byte_start,
+            &mut current_content,
+            &mut has_new_content_since_flush,
+        );
 
         // Check size after accumulation.
         if !current_content.is_empty() {
-            let tokens = count_tokens(&current_content);
-            if tokens > max_tokens {
-                flush_chunk(
+            while count_tokens(&current_content) > options.max_tokens {
+                let Some((head, tail)) =
+                    split_at_token_budget(&current_content, options.max_tokens)
+                else {
+                    let overlap = flush_chunk(
+                        &mut chunks,
+                        &mut chunk_index,
+                        &mut current_content,
+                        markdown,
+                        chunk_byte_start,
+                        &heading_map,
+                        options.overlap_sentences,
+                    );
+                    chunk_byte_start = range.end;
+                    current_content = overlap;
+                    has_new_content_since_flush = false;
+                    break;
+                };
+
+                let overlap = push_chunk(
                     &mut chunks,
                     &mut chunk_index,
-                    &mut current_content,
+                    head,
                     markdown,
                     chunk_byte_start,
                     &heading_map,
+                    options.overlap_sentences,
                 );
-                // Next chunk starts after this event.
+                let tail = tail.trim_start();
                 chunk_byte_start = range.end;
+                current_content = if tail.is_empty() {
+                    overlap
+                } else {
+                    format!("{overlap}{tail}")
+                };
+                has_new_content_since_flush = !tail.is_empty();
+                if tail.is_empty() {
+                    break;
+                }
             }
         }
     }
 
     // Flush remaining content.
-    if !current_content.is_empty() {
-        flush_chunk(
+    if !current_content.is_empty() && has_new_content_since_flush {
+        let _ = flush_chunk(
             &mut chunks,
             &mut chunk_index,
             &mut current_content,
             markdown,
             chunk_byte_start,
             &heading_map,
+            0,
         );
     }
 
     chunks
+}
+
+fn heading_triggers_split(
+    event: &Event<'_>,
+    split_by_heading: bool,
+    min_heading_level: i32,
+    max_heading_level: i32,
+) -> bool {
+    let Event::Start(Tag::Heading { level, .. }) = event else {
+        return false;
+    };
+    let level = i32::from(*level as u8);
+    split_by_heading && level >= min_heading_level && level <= max_heading_level
+}
+
+fn append_event(
+    markdown: &str,
+    event: &Event<'_>,
+    range: &Range<usize>,
+    chunks_is_empty: bool,
+    chunk_byte_start: &mut usize,
+    current_content: &mut String,
+    has_new_content_since_flush: &mut bool,
+) {
+    match event {
+        Event::Start(Tag::Heading { .. }) => {
+            if current_content.is_empty() && *chunk_byte_start == 0 && chunks_is_empty {
+                *chunk_byte_start = range.start;
+            }
+            current_content.push_str(&markdown[range.start..range.end]);
+            *has_new_content_since_flush = true;
+        }
+        Event::End(TagEnd::Heading(_)) => {}
+        Event::Text(text) | Event::Code(text) => {
+            current_content.push_str(text.as_ref());
+            if !text.trim().is_empty() {
+                *has_new_content_since_flush = true;
+            }
+        }
+        Event::SoftBreak | Event::HardBreak => current_content.push('\n'),
+        Event::Html(html) => {
+            current_content.push_str(html.as_ref());
+            if !html.trim().is_empty() {
+                *has_new_content_since_flush = true;
+            }
+        }
+        Event::Start(tag) => {
+            let rendered = render_start_tag(tag);
+            current_content.push_str(&rendered);
+            if !rendered.trim().is_empty() {
+                *has_new_content_since_flush = true;
+            }
+        }
+        Event::End(tag_end) => current_content.push_str(&render_end_tag(*tag_end)),
+        _ => {}
+    }
 }
 
 fn flush_chunk(
@@ -150,23 +199,47 @@ fn flush_chunk(
     markdown: &str,
     byte_start: usize,
     heading_map: &[(usize, u8, String)],
-) {
+    overlap_sentences: i32,
+) -> String {
+    let chunk_content = std::mem::take(content);
+    push_chunk(
+        chunks,
+        chunk_index,
+        chunk_content,
+        markdown,
+        byte_start,
+        heading_map,
+        overlap_sentences,
+    )
+}
+
+fn push_chunk(
+    chunks: &mut Vec<RawChunk>,
+    chunk_index: &mut i32,
+    content: String,
+    markdown: &str,
+    byte_start: usize,
+    heading_map: &[(usize, u8, String)],
+    overlap_sentences: i32,
+) -> String {
     let char_start =
         i32::try_from(byte_to_char(markdown, byte_start)).unwrap_or(i32::MAX);
     let content_chars = i32::try_from(content.chars().count()).unwrap_or(i32::MAX);
     let char_end = char_start.saturating_add(content_chars);
-    let token_count = count_tokens(content);
+    let token_count = count_tokens(&content);
     let heading_path = resolve_heading_path(byte_start, heading_map);
+    let overlap = trailing_sentences(&content, overlap_sentences);
 
     chunks.push(RawChunk {
         chunk_index: *chunk_index,
-        content: std::mem::take(content),
+        content,
         heading_path,
         char_start,
         char_end,
         token_count,
     });
     *chunk_index += 1;
+    overlap
 }
 
 /// Build a sorted list of `(byte_offset, level, heading_text)` from the markdown.
@@ -259,6 +332,98 @@ fn byte_to_char(text: &str, byte_offset: usize) -> usize {
     text[..boundary].chars().count()
 }
 
+fn split_at_token_budget(text: &str, max_tokens: i32) -> Option<(String, String)> {
+    if text.is_empty() || count_tokens(text) <= max_tokens {
+        return None;
+    }
+
+    let mut candidates = sentence_boundaries(text);
+    candidates.extend(paragraph_boundaries(text));
+    candidates.sort_unstable();
+    candidates.dedup();
+
+    let mut best = None;
+    for boundary in candidates {
+        if boundary == 0 || boundary >= text.len() {
+            continue;
+        }
+        let prefix = text[..boundary].trim();
+        if prefix.is_empty() {
+            continue;
+        }
+        if count_tokens(prefix) <= max_tokens {
+            best = Some(boundary);
+        } else {
+            break;
+        }
+    }
+
+    let boundary = best.unwrap_or_else(|| fallback_char_boundary(text));
+    if boundary == 0 || boundary >= text.len() {
+        return None;
+    }
+
+    let head = text[..boundary].trim().to_string();
+    let tail = text[boundary..].trim_start().to_string();
+    if head.is_empty() || tail.is_empty() {
+        None
+    } else {
+        Some((head, tail))
+    }
+}
+
+fn sentence_boundaries(text: &str) -> Vec<usize> {
+    text.char_indices()
+        .filter_map(|(idx, ch)| {
+            matches!(ch, '.' | '!' | '?' | '。' | '！' | '？')
+                .then_some(idx + ch.len_utf8())
+        })
+        .collect()
+}
+
+fn paragraph_boundaries(text: &str) -> Vec<usize> {
+    text.match_indices("\n\n")
+        .map(|(idx, boundary)| idx + boundary.len())
+        .collect()
+}
+
+fn fallback_char_boundary(text: &str) -> usize {
+    let midpoint = text.len() / 2;
+    text.char_indices()
+        .map(|(idx, _)| idx)
+        .take_while(|idx| *idx <= midpoint)
+        .last()
+        .unwrap_or(0)
+}
+
+fn trailing_sentences(text: &str, count: i32) -> String {
+    let Ok(count) = usize::try_from(count) else {
+        return String::new();
+    };
+    if count == 0 || text.trim().is_empty() {
+        return String::new();
+    }
+
+    let mut boundaries = Vec::new();
+    for (idx, ch) in text.char_indices() {
+        if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？') {
+            boundaries.push(idx + ch.len_utf8());
+        }
+    }
+
+    let start = if boundaries.len() > count {
+        boundaries[boundaries.len() - count - 1]
+    } else {
+        0
+    };
+    let overlap = text[start..].trim();
+    if overlap.is_empty() {
+        String::new()
+    } else {
+        format!("{overlap}\n\n")
+    }
+}
+
 /// Count tokens using the `cl100k_base` tokenizer.
 fn count_tokens(text: &str) -> i32 {
     let bpe = cl100k_base_singleton();
@@ -324,16 +489,27 @@ fn render_end_tag(tag_end: TagEnd) -> String {
 mod tests {
     use super::*;
 
+    fn test_options() -> ChunkMarkdownOptions {
+        ChunkMarkdownOptions {
+            max_tokens: 800,
+            min_tokens: 100,
+            overlap_sentences: 0,
+            split_by_heading: true,
+            min_heading_level: 1,
+            max_heading_level: 4,
+        }
+    }
+
     #[test]
     fn chunk_markdown_empty_input() {
-        let chunks = chunk_markdown("", 800, 100, true, 1, 4);
+        let chunks = chunk_markdown("", test_options());
         assert!(chunks.is_empty());
     }
 
     #[test]
     fn chunk_markdown_single_paragraph() {
         let md = "Hello world, this is a simple paragraph.";
-        let chunks = chunk_markdown(md, 800, 100, true, 1, 4);
+        let chunks = chunk_markdown(md, test_options());
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].chunk_index, 0);
         assert!(chunks[0].content.contains("Hello world"));
@@ -351,7 +527,13 @@ Content of chapter one.
 
 Content of chapter two.";
 
-        let chunks = chunk_markdown(md, 800, 10, true, 1, 4);
+        let chunks = chunk_markdown(
+            md,
+            ChunkMarkdownOptions {
+                min_tokens: 10,
+                ..test_options()
+            },
+        );
         assert!(
             chunks.len() >= 2,
             "Should split into at least 2 chunks at H1 headings, got {}",
@@ -370,7 +552,14 @@ Some intro text here that provides enough content for the first chunk to be spli
 
 Some detail text here that adds more content under the sub section heading.";
 
-        let chunks = chunk_markdown(md, 20, 5, true, 1, 4);
+        let chunks = chunk_markdown(
+            md,
+            ChunkMarkdownOptions {
+                max_tokens: 20,
+                min_tokens: 5,
+                ..test_options()
+            },
+        );
         // With low max_tokens, should split at headings
         let sub_chunk = chunks.iter().find(|c| {
             c.heading_path
@@ -395,7 +584,13 @@ Content one.
 
 Content two.";
 
-        let chunks = chunk_markdown(md, 800, 100, false, 1, 4);
+        let chunks = chunk_markdown(
+            md,
+            ChunkMarkdownOptions {
+                split_by_heading: false,
+                ..test_options()
+            },
+        );
         assert_eq!(
             chunks.len(),
             1,
@@ -422,7 +617,16 @@ Content two.";
         );
 
         // Only split on H3 (level 3), not H1 (level 1)
-        let chunks = chunk_markdown(&md, 30, 5, true, 3, 3);
+        let chunks = chunk_markdown(
+            &md,
+            ChunkMarkdownOptions {
+                max_tokens: 30,
+                min_tokens: 5,
+                min_heading_level: 3,
+                max_heading_level: 3,
+                ..test_options()
+            },
+        );
         // H1 headings should NOT trigger splits since they're outside [3,3]
         // H3 heading SHOULD trigger a split
         assert!(
@@ -435,7 +639,7 @@ Content two.";
     #[test]
     fn chunk_markdown_token_count_positive() {
         let md = "This is a simple test document with some text.";
-        let chunks = chunk_markdown(md, 800, 100, true, 1, 4);
+        let chunks = chunk_markdown(md, test_options());
         assert_eq!(chunks.len(), 1);
         assert!(
             chunks[0].token_count > 0,
@@ -446,7 +650,13 @@ Content two.";
     #[test]
     fn chunk_markdown_char_offsets_valid() {
         let md = "# Intro\n\nHello world.\n\n## Details\n\nMore text.";
-        let chunks = chunk_markdown(md, 800, 10, true, 1, 4);
+        let chunks = chunk_markdown(
+            md,
+            ChunkMarkdownOptions {
+                min_tokens: 10,
+                ..test_options()
+            },
+        );
         for chunk in &chunks {
             assert!(
                 chunk.char_start >= 0,
@@ -465,7 +675,14 @@ Content two.";
         // Build a large document that exceeds max_tokens
         let paragraph = "This is a paragraph with some content. ".repeat(100);
         let md = format!("# Title\n\n{paragraph}");
-        let chunks = chunk_markdown(&md, 50, 10, true, 1, 4);
+        let chunks = chunk_markdown(
+            &md,
+            ChunkMarkdownOptions {
+                max_tokens: 50,
+                min_tokens: 10,
+                ..test_options()
+            },
+        );
         assert!(
             chunks.len() > 1,
             "Large document should produce multiple chunks"
@@ -480,6 +697,39 @@ Content two.";
     }
 
     #[test]
+    fn chunk_markdown_overlaps_when_token_budget_splits() {
+        let md = "\
+# Title
+
+First sentence. Second sentence.
+
+Third sentence. Fourth sentence.
+
+Fifth sentence. Sixth sentence.";
+
+        let chunks = chunk_markdown(
+            md,
+            ChunkMarkdownOptions {
+                max_tokens: 12,
+                min_tokens: 1,
+                overlap_sentences: 1,
+                split_by_heading: false,
+                ..test_options()
+            },
+        );
+        assert!(
+            chunks.len() > 1,
+            "Document should split into multiple chunks"
+        );
+        assert!(
+            chunks
+                .windows(2)
+                .any(|pair| pair[1].content.contains("Second sentence.")),
+            "Next chunk should include the previous trailing sentence"
+        );
+    }
+
+    #[test]
     fn chunk_markdown_code_block_preserved() {
         let md = "\
 # Code Example
@@ -490,7 +740,13 @@ fn main() {
 }
 ```";
 
-        let chunks = chunk_markdown(md, 800, 10, true, 1, 4);
+        let chunks = chunk_markdown(
+            md,
+            ChunkMarkdownOptions {
+                min_tokens: 10,
+                ..test_options()
+            },
+        );
         assert!(!chunks.is_empty());
         let combined: String = chunks.iter().map(|c| c.content.as_str()).collect();
         assert!(
@@ -502,7 +758,13 @@ fn main() {
     #[test]
     fn chunk_markdown_chinese_content() {
         let md = "# 中文标题\n\n这是中文内容，用于测试分块功能是否正常工作。";
-        let chunks = chunk_markdown(md, 800, 10, true, 1, 4);
+        let chunks = chunk_markdown(
+            md,
+            ChunkMarkdownOptions {
+                min_tokens: 10,
+                ..test_options()
+            },
+        );
         assert_eq!(chunks.len(), 1);
         assert!(chunks[0].content.contains("中文内容"));
     }
