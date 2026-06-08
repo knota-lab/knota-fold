@@ -55,6 +55,7 @@ fn attach_to_service_request(
         resource_id: payload.resource_id,
         field_name: payload.field_name.unwrap_or_default(),
         display_name: payload.display_name,
+        mime_type: payload.mime_type,
     })
 }
 
@@ -102,6 +103,7 @@ pub(crate) async fn small_upload(
     // operation (atomic for Insert + Revive paths; sequenced in a
     // follow-up txn for the dedup-active path — see service docs).
     let mut attach_payload: Option<AttachReferenceRequest> = None;
+    let mut mime_type_hint: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.map_err(|err| {
         tracing::error!(error = ?err, "could not read multipart field");
@@ -161,6 +163,15 @@ pub(crate) async fn small_upload(
                     })?;
                 attach_payload = Some(parsed);
             }
+            "mimeTypeHint" => {
+                mime_type_hint = Some(field.text().await.map_err(|err| {
+                    tracing::error!(error = ?err, "could not read mimeTypeHint text");
+                    err_bad_request(
+                        "upload.mime_type_hint_read_failed",
+                        "无法读取 mimeTypeHint 字段",
+                    )
+                })?);
+            }
             _ => {}
         }
     }
@@ -178,7 +189,7 @@ pub(crate) async fn small_upload(
     };
     let params = SmallUploadRequest {
         name: file_name,
-        mime_type_hint: None,
+        mime_type_hint,
         attach_to: None,
     };
 

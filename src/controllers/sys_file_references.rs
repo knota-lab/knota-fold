@@ -20,6 +20,7 @@ use crate::extractors::{RequestMeta, TenantContext};
 use crate::services::{
     file_reference_service, file_service, resource_types::ResourceType, tenant_service,
 };
+use crate::utils::error::IntoModelResult;
 use crate::views::audit_logs::AuditContext;
 use crate::views::file_references::{AttachReferenceRequest, FileReferenceResponse};
 use crate::views::pagination::PaginationParams;
@@ -95,6 +96,7 @@ pub(crate) async fn sys_attach(
         resource_id: payload.resource_id,
         field_name: payload.field_name.unwrap_or_default(),
         display_name: payload.display_name,
+        mime_type: payload.mime_type,
     };
     let row = file_reference_service::attach(&ctx.db, &audit_ctx, req).await?;
     format::json(FileReferenceResponse::from(row))
@@ -114,7 +116,9 @@ pub(crate) async fn sys_list_by_file(
     Path((tenant_code, file_id)): Path<(String, Uuid)>,
 ) -> Result<Response> {
     require_super_admin(&tc)?;
-    let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
+    let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code)
+        .await
+        .model_err()?;
     let rows = file_reference_service::list_by_file(&ctx.db, tenant.id, file_id).await?;
     let response: Vec<FileReferenceResponse> =
         rows.into_iter().map(FileReferenceResponse::from).collect();
@@ -193,6 +197,7 @@ pub(crate) async fn sys_list_for_tenant(
         resource_type_filter,
         &pagination,
     )
-    .await?;
+    .await
+    .model_err()?;
     format::json(response)
 }

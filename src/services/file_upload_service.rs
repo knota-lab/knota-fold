@@ -131,7 +131,7 @@ struct CompleteUploadRequest<'a> {
     upload_id: Uuid,
     idempotency_key: Option<&'a str>,
     audit_ctx: &'a AuditContext,
-    attach: Option<Box<file_reference_service::AttachRequest>>,
+    attach: Box<file_reference_service::AttachRequest>,
 }
 
 mod complete;
@@ -1477,7 +1477,7 @@ pub fn complete_upload<'a>(
     upload_id: Uuid,
     idempotency_key: Option<&'a str>,
     audit_ctx: &'a AuditContext,
-    attach: Option<file_reference_service::AttachRequest>,
+    attach: file_reference_service::AttachRequest,
 ) -> Pin<Box<dyn Future<Output = loco_rs::Result<JsonEndpointResponse>> + Send + 'a>> {
     Box::pin(complete::complete_upload_inner(CompleteUploadRequest {
         ctx,
@@ -1486,7 +1486,7 @@ pub fn complete_upload<'a>(
         upload_id,
         idempotency_key,
         audit_ctx,
-        attach: attach.map(Box::new),
+        attach: Box::new(attach),
     }))
 }
 pub async fn abort_upload(

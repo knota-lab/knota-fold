@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter,
+    ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, QueryFilter,
 };
 use uuid::Uuid;
 
@@ -23,6 +23,7 @@ pub struct CreateDocumentParams {
     pub source_type: String,
     pub scope: String,
     pub file_id: Option<Uuid>,
+    pub file_reference_id: Option<Uuid>,
     pub created_by: Uuid,
 }
 
@@ -30,7 +31,7 @@ pub struct CreateDocumentParams {
 /// Returns the created model.
 #[tracing::instrument(skip(db))]
 pub async fn create_document(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     params: &CreateDocumentParams,
 ) -> loco_rs::Result<kb_documents::Model> {
     let model = kd_models::ActiveModel {
@@ -42,6 +43,7 @@ pub async fn create_document(
         source_type: ActiveValue::Set(params.source_type.clone()),
         scope: ActiveValue::Set(params.scope.clone()),
         file_id: ActiveValue::Set(params.file_id),
+        file_reference_id: ActiveValue::Set(params.file_reference_id),
         full_text: ActiveValue::Set(None),
         status: ActiveValue::Set("pending".to_string()),
         chunk_count: ActiveValue::Set(0),
@@ -52,6 +54,29 @@ pub async fn create_document(
         ..Default::default()
     };
     model.insert(db).await.db_err()
+}
+
+/// Attach a file reference id to an existing document.
+///
+/// # Errors
+///
+/// Returns a DB error if the document cannot be updated.
+#[tracing::instrument(skip(db))]
+pub async fn set_file_reference(
+    db: &impl ConnectionTrait,
+    document_id: Uuid,
+    tenant_id: Uuid,
+    file_reference_id: Uuid,
+) -> loco_rs::Result<kb_documents::Model> {
+    let doc = kb_documents::Entity::find_by_id(document_id)
+        .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .one(db)
+        .await
+        .db_err()?
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+    let mut active: kd_models::ActiveModel = doc.into();
+    active.file_reference_id = ActiveValue::Set(Some(file_reference_id));
+    active.update(db).await.db_err()
 }
 
 /// Update document status. Validates allowed transitions:

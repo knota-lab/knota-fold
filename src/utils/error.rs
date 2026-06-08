@@ -19,10 +19,14 @@ macro_rules! log_error {
     // With extra key=value fields: log_error!(code, status, "msg", raw_error = %e)
     ($code:expr, $status:expr, $kind:expr, $($key:ident = $($val:tt)+),* $(,)?) => {
         let __status: u16 = $status;
+        let __caller = ::std::panic::Location::caller();
         if __status >= 500 {
             ::tracing::error!(
                 code = $code,
                 status = __status,
+                caller_file = __caller.file(),
+                caller_line = __caller.line(),
+                caller_column = __caller.column(),
                 $($key = $($val)+,)*
                 $kind,
             );
@@ -30,6 +34,9 @@ macro_rules! log_error {
             ::tracing::warn!(
                 code = $code,
                 status = __status,
+                caller_file = __caller.file(),
+                caller_line = __caller.line(),
+                caller_column = __caller.column(),
                 $($key = $($val)+,)*
                 $kind,
             );
@@ -97,7 +104,7 @@ where
 #[track_caller]
 pub fn db_err_into(err: &DbErr) -> Error {
     let (status, code, desc) = classify_db_err(err);
-    log_error!(code, status.as_u16(), "db error classified (bare)");
+    log_error!(code, status.as_u16(), "db error classified (bare)", raw_error = %err);
     Error::CustomError(status, ErrorDetail::new(code, desc))
 }
 
@@ -167,7 +174,6 @@ fn classify_db_err(err: &DbErr) -> (StatusCode, &'static str, &'static str) {
             );
         }
     }
-    tracing::error!(error = %err, "unclassified database error");
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         crate::error_info::common::DB_ERROR.code(),
@@ -228,7 +234,12 @@ impl<T> IntoModelResult<T> for Result<T, loco_rs::model::ModelError> {
             }
             Err(loco_rs::model::ModelError::DbErr(ref db_err)) => {
                 let (status, code, desc) = classify_db_err(db_err);
-                log_error!(code, status.as_u16(), "ModelError::DbErr classified");
+                log_error!(
+                    code,
+                    status.as_u16(),
+                    "ModelError::DbErr classified",
+                    raw_error = %db_err
+                );
                 Err(Error::CustomError(status, ErrorDetail::new(code, desc)))
             }
             Err(loco_rs::model::ModelError::Any(inner)) => {
@@ -238,7 +249,8 @@ impl<T> IntoModelResult<T> for Result<T, loco_rs::model::ModelError> {
                     log_error!(
                         code,
                         status.as_u16(),
-                        "ModelError::Any(DbErr) classified"
+                        "ModelError::Any(DbErr) classified",
+                        raw_error = %db_err
                     );
                     return Err(Error::CustomError(status, ErrorDetail::new(code, desc)));
                 }
@@ -283,7 +295,12 @@ impl<T> IntoModelResult<T> for Result<T, DbErr> {
             Ok(v) => Ok(v),
             Err(e) => {
                 let (status, code, desc) = classify_db_err(&e);
-                log_error!(code, status.as_u16(), "DbErr classified via .model_err()");
+                log_error!(
+                    code,
+                    status.as_u16(),
+                    "DbErr classified via .model_err()",
+                    raw_error = %e
+                );
                 Err(Error::CustomError(status, ErrorDetail::new(code, desc)))
             }
         }
@@ -296,7 +313,20 @@ impl<T> IntoModelResult<T> for Result<T, DbErr> {
 impl<T> IntoModelResult<T> for Result<T, Error> {
     #[track_caller]
     fn model_err(self) -> Self {
-        self
+        match self {
+            Ok(v) => Ok(v),
+            Err(Error::DB(ref db_err)) => {
+                let (status, code, desc) = classify_db_err(db_err);
+                log_error!(
+                    code,
+                    status.as_u16(),
+                    "loco Error::DB classified via .model_err()",
+                    raw_error = %db_err
+                );
+                Err(Error::CustomError(status, ErrorDetail::new(code, desc)))
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 

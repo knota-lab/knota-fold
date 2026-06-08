@@ -57,7 +57,7 @@ use uuid::Uuid;
 
 use crate::models::_entities::{file_references, files};
 use crate::services::resource_types::ResourceType;
-use crate::utils::error::{IntoAppError, OptionErrInto};
+use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
 use crate::utils::id::generate_id;
 use crate::views::audit_logs::AuditContext;
 use crate::views::file_references::{
@@ -80,6 +80,9 @@ pub struct AttachRequest {
     /// UI snapshot label. `None` falls back to the file's `name` at
     /// attach time so consumers always have something to render.
     pub display_name: Option<String>,
+    /// Business MIME snapshot. `None` falls back to the physical file's
+    /// recorded MIME at attach time.
+    pub mime_type: Option<String>,
 }
 
 /// Sentinel value for [`AttachRequest::resource_id`] meaning "use the new row's own primary key".
@@ -116,6 +119,7 @@ pub fn default_self_attach() -> AttachRequest {
         resource_id: SELF_RESOURCE_ID_SENTINEL.to_owned(),
         field_name: String::new(),
         display_name: None,
+        mime_type: None,
     }
 }
 
@@ -275,6 +279,11 @@ async fn attach_in_txn_inner<C: ConnectionTrait>(
         .clone()
         .filter(|s| !s.trim().is_empty())
         .or_else(|| Some(file.name.clone()));
+    let mime_type = req
+        .mime_type
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| Some(file.mime_type.clone()));
 
     let now = Utc::now().fixed_offset();
 
@@ -326,6 +335,7 @@ async fn attach_in_txn_inner<C: ConnectionTrait>(
         am.created_by = ActiveValue::Set(user_id);
         am.created_at = ActiveValue::Set(now);
         am.display_name = ActiveValue::Set(display);
+        am.mime_type = ActiveValue::Set(mime_type);
         let revived = am
             .update(txn)
             .await
@@ -344,6 +354,7 @@ async fn attach_in_txn_inner<C: ConnectionTrait>(
         resource_id: ActiveValue::Set(resource_id_resolved),
         field_name: ActiveValue::Set(req.field_name.clone()),
         display_name: ActiveValue::Set(display),
+        mime_type: ActiveValue::Set(mime_type),
         created_by: ActiveValue::Set(user_id),
         created_at: ActiveValue::Set(now),
         deleted_at: ActiveValue::Set(None),
@@ -544,7 +555,9 @@ pub async fn list_for_tenant_paginated(
     }
     let base = base.order_by_desc(file_references::Column::CreatedAt);
 
-    let page_response = query::paginate(db, base, None, pagination).await?;
+    let page_response = query::paginate(db, base, None, pagination)
+        .await
+        .model_err()?;
 
     // Step 2: bulk-load files for this page (deleted files included so
     // the UI can still show "this file was hard-deleted but a stale

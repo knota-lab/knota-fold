@@ -48,6 +48,11 @@ pub enum ResourceType {
     ///    and hard-deletes the S3 object + DB row.
     #[serde(rename = "system:attachment")]
     SystemAttachment,
+    /// Knowledge-base document source file. The reference stores the
+    /// filename and MIME observed when the document was created, while
+    /// the physical `files` row remains object-storage metadata only.
+    #[serde(rename = "knowledge_base:document")]
+    KnowledgeBaseDocument,
     /// Placeholder for the future CRM contract module. Registered ahead
     /// of the actual feature so integration tests can exercise multi-type
     /// filter / detach paths against `file_references`. Will be promoted
@@ -69,6 +74,7 @@ impl ResourceType {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SystemAttachment => "system:attachment",
+            Self::KnowledgeBaseDocument => "knowledge_base:document",
             Self::CrmContract => "crm:contract",
         }
     }
@@ -83,6 +89,7 @@ impl ResourceType {
     pub fn parse(s: &str) -> Result<Self, UnknownResourceType> {
         match s {
             "system:attachment" => Ok(Self::SystemAttachment),
+            "knowledge_base:document" => Ok(Self::KnowledgeBaseDocument),
             "crm:contract" => Ok(Self::CrmContract),
             other => Err(UnknownResourceType(other.to_owned())),
         }
@@ -125,7 +132,11 @@ mod tests {
     /// written by one path become unparseable by the other.
     #[test]
     fn as_str_matches_serde_rename() {
-        for variant in [ResourceType::SystemAttachment, ResourceType::CrmContract] {
+        for variant in [
+            ResourceType::SystemAttachment,
+            ResourceType::KnowledgeBaseDocument,
+            ResourceType::CrmContract,
+        ] {
             let serialized = serde_json::to_string(&variant).expect("serialize");
             // serde_json wraps strings in quotes
             let unquoted = serialized.trim_matches('"');
@@ -139,7 +150,11 @@ mod tests {
 
     #[test]
     fn parse_roundtrips() {
-        for variant in [ResourceType::SystemAttachment, ResourceType::CrmContract] {
+        for variant in [
+            ResourceType::SystemAttachment,
+            ResourceType::KnowledgeBaseDocument,
+            ResourceType::CrmContract,
+        ] {
             assert_eq!(ResourceType::parse(variant.as_str()), Ok(variant));
         }
     }

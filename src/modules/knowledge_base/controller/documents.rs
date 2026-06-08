@@ -4,7 +4,9 @@ use std::time::Duration;
 use aws_sdk_s3::presigning::PresigningConfig;
 use loco_openapi::prelude::*;
 use loco_rs::prelude::*;
-use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
+};
 
 use crate::config::{AppSettings, ConfigExt};
 use crate::extractors::TenantContext;
@@ -18,7 +20,10 @@ use crate::modules::knowledge_base::views::{
     DocumentPreviewResponse, DocumentResponse, PresignDocumentAssetsRequest,
     PresignDocumentAssetsResponse, PresignedDocumentAssetResponse,
 };
+use crate::services::file_reference_service::{self, AttachRequest};
+use crate::services::resource_types::ResourceType;
 use crate::utils::error::IntoModelResult;
+use crate::views::audit_logs::AuditContext;
 use crate::views::errors::{
     err_bad_request, err_forbidden, err_internal, err_not_found, parse_uuid,
 };
@@ -47,14 +52,6 @@ pub(crate) async fn create(
         ));
     }
 
-    let source_type = params.source_type.unwrap_or_else(|| {
-        if params.content.is_some() {
-            "text/plain".to_string()
-        } else {
-            "kb_upload".to_string()
-        }
-    });
-
     let scope = params.scope.unwrap_or_else(|| "tenant".to_string());
     let location = service::resolve_document_location(
         &ctx.db,
@@ -64,26 +61,70 @@ pub(crate) async fn create(
     )
     .await
     .model_err()?;
-    if let Some(file_id) = params.file_id {
-        ensure_document_file_exists(&ctx.db, tc.tenant_id, file_id).await?;
-    }
+    let file = if let Some(file_id) = params.file_id {
+        Some(load_document_file(&ctx.db, tc.tenant_id, file_id).await?)
+    } else {
+        None
+    };
+    let source_type = resolve_document_source_type(
+        params.source_type.as_deref(),
+        params.content.as_deref(),
+        file.as_ref(),
+        &params.title,
+    );
 
-    let doc = service::document_service::create_document(
-        &ctx.db,
+    let txn = ctx.db.begin().await.model_err()?;
+    let mut doc = service::document_service::create_document(
+        &txn,
         &service::document_service::CreateDocumentParams {
             tenant_id: tc.tenant_id,
-            title: params.title,
+            title: params.title.clone(),
             description: params.description,
             library_id: location.library_id,
             folder_id: location.folder_id,
-            source_type,
+            source_type: source_type.clone(),
             scope,
             file_id: params.file_id,
+            file_reference_id: None,
             created_by: tc.user_id,
         },
     )
     .await
     .model_err()?;
+
+    if let Some(file_id) = params.file_id {
+        let reference = file_reference_service::attach_in_txn(
+            &txn,
+            &AuditContext {
+                trace_id: None,
+                request_id: None,
+                tenant_id: tc.tenant_id,
+                user_id: Some(tc.user_id),
+                ip_address: None,
+                user_agent: None,
+            },
+            AttachRequest {
+                file_id,
+                resource_type: ResourceType::KnowledgeBaseDocument,
+                resource_id: doc.id.to_string(),
+                field_name: String::new(),
+                display_name: Some(params.title.clone()),
+                mime_type: Some(source_type),
+            },
+        )
+        .await
+        .model_err()?;
+        doc = service::document_service::set_file_reference(
+            &txn,
+            doc.id,
+            tc.tenant_id,
+            reference.id,
+        )
+        .await
+        .model_err()?;
+    }
+
+    txn.commit().await.model_err()?;
 
     if let Some(ref content) = params.content {
         service::set_full_text(&ctx.db, doc.id, content)
@@ -106,24 +147,67 @@ pub(crate) async fn create(
     format::json(DocumentResponse::from_model(&doc))
 }
 
-async fn ensure_document_file_exists(
+async fn load_document_file(
     db: &DatabaseConnection,
     tenant_id: uuid::Uuid,
     file_id: uuid::Uuid,
-) -> Result<()> {
-    let exists = files::Entity::find_by_id(file_id)
+) -> Result<files::Model> {
+    files::Entity::find_by_id(file_id)
         .filter(files::Column::TenantId.eq(tenant_id))
         .filter(files::Column::Status.eq("ACTIVE"))
         .filter(files::Column::DeletedAt.is_null())
         .one(db)
         .await
         .model_err()?
-        .is_some();
-    if exists {
-        Ok(())
-    } else {
-        Err(err_not_found("file.not_found", "文件不存在"))
+        .ok_or_else(|| err_not_found("file.not_found", "文件不存在"))
+}
+
+fn resolve_document_source_type(
+    requested_source_type: Option<&str>,
+    content: Option<&str>,
+    file: Option<&files::Model>,
+    title: &str,
+) -> String {
+    if let Some(source_type) =
+        requested_source_type.filter(|value| !value.trim().is_empty())
+    {
+        return source_type.to_string();
     }
+
+    if content.is_some() {
+        return "text/plain".to_string();
+    }
+
+    if let Some(file) = file {
+        if file.mime_type != "application/octet-stream" {
+            return file.mime_type.clone();
+        }
+    }
+
+    infer_mime_from_name(title).unwrap_or_else(|| "kb_upload".to_string())
+}
+
+fn infer_mime_from_name(name: &str) -> Option<String> {
+    let extension = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    let mime = match extension.as_str() {
+        "md" | "markdown" => "text/markdown",
+        "txt" => "text/plain",
+        "pdf" => "application/pdf",
+        "docx" => {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+        "pptx" => {
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        }
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "tif" | "tiff" => "image/tiff",
+        _ => return None,
+    };
+    Some(mime.to_string())
 }
 
 #[utoipa::path(

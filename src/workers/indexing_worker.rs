@@ -15,7 +15,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use crate::config::{AppSettings, ConfigExt};
 use crate::initializers::knowledge_base::{SharedParserChain, SharedSearchProvider};
 use crate::initializers::s3::{SharedS3Client, SharedS3Config};
-use crate::models::_entities::{files, kb_documents};
+use crate::models::_entities::{file_references, files, kb_documents};
 use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::models::{
     document_lines as dl_models, kb_chunks as kc_models,
@@ -27,6 +27,7 @@ use crate::modules::knowledge_base::service::numeric::embedding_vec_f64_to_f32;
 use crate::modules::knowledge_base::service::{
     chunking_service, document_service, line_splitting_service,
 };
+use crate::services::resource_types::ResourceType;
 use rig::client::EmbeddingsClient;
 use rig::embeddings::EmbeddingModel;
 
@@ -243,26 +244,12 @@ async fn load_pipeline_input(
         });
     }
 
-    let file_id = doc.file_id.ok_or_else(|| {
-        KnowledgeBaseError::ParsingError(
-            "document has neither content nor file_id".into(),
-        )
-        .to_err()
-    })?;
+    let file_input = load_document_file_input(db, doc).await?;
 
-    let file = files::Entity::find_by_id(file_id)
-        .filter(files::Column::TenantId.eq(doc.tenant_id))
-        .filter(files::Column::Status.eq("ACTIVE"))
-        .filter(files::Column::DeletedAt.is_null())
-        .one(db)
-        .await
-        .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_err())?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
-
-    if file.size > MAX_INDEX_FILE_BYTES {
+    if file_input.file.size > MAX_INDEX_FILE_BYTES {
         return Err(KnowledgeBaseError::ParsingError(format!(
             "file is too large to index synchronously: {} bytes > {} bytes",
-            file.size, MAX_INDEX_FILE_BYTES
+            file_input.file.size, MAX_INDEX_FILE_BYTES
         ))
         .to_err());
     }
@@ -270,13 +257,78 @@ async fn load_pipeline_input(
     let s3_client = ctx.shared_store.get::<SharedS3Client>().ok_or_else(|| {
         KnowledgeBaseError::ConfigError("S3 client not initialized".into()).to_err()
     })?;
-    let bytes = read_file_bytes(&s3_client, &file).await?;
+    let bytes = read_file_bytes(&s3_client, &file_input.file).await?;
 
     Ok(PipelineInput {
         bytes,
-        mime_type: file.mime_type,
-        source_name: file.name,
+        mime_type: file_input.mime_type,
+        source_name: file_input.source_name,
     })
+}
+
+struct FileInput {
+    file: files::Model,
+    mime_type: String,
+    source_name: String,
+}
+
+async fn load_document_file_input(
+    db: &DatabaseConnection,
+    doc: &kb_documents::Model,
+) -> Result<FileInput> {
+    if let Some(reference_id) = doc.file_reference_id {
+        let reference = file_references::Entity::find_by_id(reference_id)
+            .filter(file_references::Column::TenantId.eq(doc.tenant_id))
+            .filter(
+                file_references::Column::ResourceType
+                    .eq(ResourceType::KnowledgeBaseDocument.as_str()),
+            )
+            .filter(file_references::Column::ResourceId.eq(doc.id.to_string()))
+            .filter(file_references::Column::DeletedAt.is_null())
+            .one(db)
+            .await
+            .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_err())?
+            .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        let file = load_active_file(db, doc.tenant_id, reference.file_id).await?;
+        return Ok(FileInput {
+            mime_type: resolve_reference_document_mime(
+                &doc.source_type,
+                &reference,
+                &file,
+            ),
+            source_name: reference.display_name.unwrap_or_else(|| file.name.clone()),
+            file,
+        });
+    }
+
+    let file_id = doc.file_id.ok_or_else(|| {
+        KnowledgeBaseError::ParsingError(
+            "document has neither content nor file_id".into(),
+        )
+        .to_err()
+    })?;
+
+    let file = load_active_file(db, doc.tenant_id, file_id).await?;
+    Ok(FileInput {
+        mime_type: resolve_file_document_mime(&doc.source_type, &file),
+        source_name: file.name.clone(),
+        file,
+    })
+}
+
+async fn load_active_file(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    file_id: Uuid,
+) -> Result<files::Model> {
+    files::Entity::find_by_id(file_id)
+        .filter(files::Column::TenantId.eq(tenant_id))
+        .filter(files::Column::Status.eq("ACTIVE"))
+        .filter(files::Column::DeletedAt.is_null())
+        .one(db)
+        .await
+        .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_err())?
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())
 }
 
 fn normalise_source_mime(source_type: &str) -> String {
@@ -285,6 +337,56 @@ fn normalise_source_mime(source_type: &str) -> String {
     } else {
         source_type.to_string()
     }
+}
+
+fn resolve_file_document_mime(source_type: &str, file: &files::Model) -> String {
+    if !LEGACY_TEXT_SOURCE_TYPES.contains(&source_type) {
+        return source_type.to_string();
+    }
+
+    if file.mime_type != "application/octet-stream" {
+        return file.mime_type.clone();
+    }
+
+    infer_mime_from_name(&file.name).unwrap_or_else(|| file.mime_type.clone())
+}
+
+fn resolve_reference_document_mime(
+    source_type: &str,
+    reference: &file_references::Model,
+    file: &files::Model,
+) -> String {
+    reference
+        .mime_type
+        .as_deref()
+        .filter(|mime| !mime.trim().is_empty())
+        .map_or_else(
+            || resolve_file_document_mime(source_type, file),
+            str::to_string,
+        )
+}
+
+fn infer_mime_from_name(name: &str) -> Option<String> {
+    let extension = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    let mime = match extension.as_str() {
+        "md" | "markdown" => "text/markdown",
+        "txt" => "text/plain",
+        "pdf" => "application/pdf",
+        "docx" => {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+        "pptx" => {
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        }
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "tif" | "tiff" => "image/tiff",
+        _ => return None,
+    };
+    Some(mime.to_string())
 }
 
 async fn read_file_bytes(

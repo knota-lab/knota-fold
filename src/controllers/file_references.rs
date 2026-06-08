@@ -70,6 +70,7 @@ pub(crate) async fn attach(
         resource_id: payload.resource_id,
         field_name: payload.field_name.unwrap_or_default(),
         display_name: payload.display_name,
+        mime_type: payload.mime_type,
     };
     let row = file_reference_service::attach(&ctx.db, &audit_ctx, req).await?;
     format::json(FileReferenceResponse::from(row))

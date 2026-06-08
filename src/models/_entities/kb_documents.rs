@@ -16,6 +16,7 @@ pub struct Model {
     pub folder_id: Option<Uuid>,
     pub source_type: String,
     pub file_id: Option<Uuid>,
+    pub file_reference_id: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub full_text: Option<String>,
     pub status: String,

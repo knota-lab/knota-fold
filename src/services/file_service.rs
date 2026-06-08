@@ -338,6 +338,16 @@ fn validate_small_upload_params(
         ));
     }
 
+    if let Some(mime_type_hint) = params.mime_type_hint.as_deref() {
+        if is_blacklisted(mime_type_hint) {
+            return Err(crate::views::errors::err_custom(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "unsupported_media_type",
+                "mimeTypeHint is blocked for upload",
+            ));
+        }
+    }
+
     Ok(())
 }
 
@@ -745,6 +755,12 @@ async fn handle_inserted_file(
     if let Some(attach_req) = attach {
         let mut req = attach_req.clone();
         req.file_id = inserted.id;
+        if req.mime_type.is_none() {
+            req.mime_type = params
+                .mime_type_hint
+                .clone()
+                .or_else(|| Some(inserted.mime_type.clone()));
+        }
         if let Err(attach_err) =
             file_reference_service::attach_in_txn(&txn, audit_ctx, req).await
         {
@@ -792,6 +808,17 @@ async fn handle_conflict_dedup(
         })?;
 
     if winner.deleted_at.is_none() {
+        if let Some(attach_req) = attach {
+            let mut req = attach_req.clone();
+            req.file_id = winner.id;
+            if req.mime_type.is_none() {
+                req.mime_type = params
+                    .mime_type_hint
+                    .clone()
+                    .or_else(|| Some(winner.mime_type.clone()));
+            }
+            file_reference_service::attach(&ctx.db, actor.audit_ctx, req).await?;
+        }
         return Ok(winner);
     }
 
@@ -845,6 +872,12 @@ async fn handle_conflict_dedup(
     if let Some(attach_req) = attach {
         let mut req = attach_req.clone();
         req.file_id = revived.id;
+        if req.mime_type.is_none() {
+            req.mime_type = params
+                .mime_type_hint
+                .clone()
+                .or_else(|| Some(revived.mime_type.clone()));
+        }
         if let Err(attach_err) =
             file_reference_service::attach_in_txn(&revive_txn, actor.audit_ctx, req).await
         {

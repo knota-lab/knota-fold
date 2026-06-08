@@ -10,8 +10,8 @@ pub struct CreateDocumentRequest {
     pub description: Option<String>,
     pub library_id: Option<uuid::Uuid>,
     pub folder_id: Option<uuid::Uuid>,
-    /// MIME type used by inline `content` parsing. For `fileId` documents the
-    /// worker uses the file record's `mimeType`.
+    /// MIME type observed by the business flow. For file-backed documents it is
+    /// copied into the file reference snapshot instead of mutating `files`.
     /// Defaults to `text/plain` when inline `content` is present.
     pub source_type: Option<String>,
     /// Document visibility: "private" (only uploader) or "tenant" (shared in tenant).
@@ -104,6 +104,7 @@ pub struct DocumentResponse {
     pub source_type: String,
     pub scope: String,
     pub file_id: Option<String>,
+    pub file_reference_id: Option<String>,
     pub status: String,
     pub chunk_count: i32,
     pub total_tokens: i32,
@@ -124,6 +125,7 @@ impl DocumentResponse {
             source_type: m.source_type.clone(),
             scope: m.scope.clone(),
             file_id: m.file_id.map(|id| id.to_string()),
+            file_reference_id: m.file_reference_id.map(|id| id.to_string()),
             status: m.status.clone(),
             chunk_count: m.chunk_count,
             total_tokens: m.total_tokens,

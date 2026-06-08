@@ -55,6 +55,7 @@ fn attach_to_service_request(
         resource_id: payload.resource_id,
         field_name: payload.field_name.unwrap_or_default(),
         display_name: payload.display_name,
+        mime_type: payload.mime_type,
     })
 }
 
@@ -262,8 +263,8 @@ pub(crate) async fn sys_complete(
     let _tenant = ensure_active_tenant_by_id(&ctx, tenant_id).await?;
     let audit_ctx = target_audit_context(&tc, &meta, tenant_id);
     let attach = match params.attach_to {
-        Some(payload) => Some(attach_to_service_request(payload)?),
-        None => Some(file_reference_service::default_self_attach()),
+        Some(payload) => attach_to_service_request(payload)?,
+        None => file_reference_service::default_self_attach(),
     };
     let response = file_upload_service::complete_upload(
         &ctx,

@@ -727,34 +727,33 @@ async fn attach_inserted_completion(
     final_key: &str,
     file_id: Uuid,
 ) -> loco_rs::Result<DatabaseTransaction> {
-    if let Some(req_attach) = req.attach.as_deref() {
-        let req_attach = file_reference_service::AttachRequest {
-            file_id,
-            ..req_attach.clone()
-        };
-        if let Err(err) =
-            file_reference_service::attach_in_txn(&txn, req.audit_ctx, req_attach).await
-        {
-            let _ = txn.rollback().await;
-            cleanup_complete_failure(
-                s3_client,
-                &upload.bucket,
-                upload.id,
-                &upload.temp_key,
-                Some(final_key),
-            )
-            .await;
-            best_effort_terminalize_upload_row(
-                &req.ctx.db,
-                req.upload_id,
-                req.user_id,
-                STATUS_COMPLETING,
-                COMPLETE_DB_FAILED_REASON,
-                false,
-            )
-            .await;
-            return Err(err);
-        }
+    let mut req_attach = (*req.attach).clone();
+    req_attach.file_id = file_id;
+    if req_attach.mime_type.is_none() {
+        req_attach.mime_type = upload.mime_type_hint.clone();
+    }
+    if let Err(err) =
+        file_reference_service::attach_in_txn(&txn, req.audit_ctx, req_attach).await
+    {
+        let _ = txn.rollback().await;
+        cleanup_complete_failure(
+            s3_client,
+            &upload.bucket,
+            upload.id,
+            &upload.temp_key,
+            Some(final_key),
+        )
+        .await;
+        best_effort_terminalize_upload_row(
+            &req.ctx.db,
+            req.upload_id,
+            req.user_id,
+            STATUS_COMPLETING,
+            COMPLETE_DB_FAILED_REASON,
+            false,
+        )
+        .await;
+        return Err(err);
     }
 
     Ok(txn)
@@ -963,35 +962,33 @@ async fn attach_dedup_completion(
     s3_client: &SharedS3Client,
     file_id: Uuid,
 ) -> loco_rs::Result<DatabaseTransaction> {
-    if let Some(req_attach) = req.attach.as_deref() {
-        let req_attach = file_reference_service::AttachRequest {
-            file_id,
-            ..req_attach.clone()
-        };
-        if let Err(err) =
-            file_reference_service::attach_in_txn(&reuse_txn, req.audit_ctx, req_attach)
-                .await
-        {
-            let _ = reuse_txn.rollback().await;
-            best_effort_terminalize_upload_row(
-                &req.ctx.db,
-                req.upload_id,
-                req.user_id,
-                STATUS_ABORTED,
-                COMPLETE_DB_FAILED_REASON,
-                true,
-            )
-            .await;
-            cleanup_complete_failure(
-                s3_client,
-                &upload.bucket,
-                upload.id,
-                &upload.temp_key,
-                None,
-            )
-            .await;
-            return Err(err);
-        }
+    let mut req_attach = (*req.attach).clone();
+    req_attach.file_id = file_id;
+    if req_attach.mime_type.is_none() {
+        req_attach.mime_type = upload.mime_type_hint.clone();
+    }
+    if let Err(err) =
+        file_reference_service::attach_in_txn(&reuse_txn, req.audit_ctx, req_attach).await
+    {
+        let _ = reuse_txn.rollback().await;
+        best_effort_terminalize_upload_row(
+            &req.ctx.db,
+            req.upload_id,
+            req.user_id,
+            STATUS_ABORTED,
+            COMPLETE_DB_FAILED_REASON,
+            true,
+        )
+        .await;
+        cleanup_complete_failure(
+            s3_client,
+            &upload.bucket,
+            upload.id,
+            &upload.temp_key,
+            None,
+        )
+        .await;
+        return Err(err);
     }
 
     Ok(reuse_txn)

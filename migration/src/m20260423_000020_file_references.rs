@@ -54,6 +54,15 @@ impl MigrationTrait for Migration {
                         .string_len(512)
                         .null(),
                 )
+                // Per-reference MIME snapshot. The physical files row records
+                // object-storage metadata; business consumers need the MIME
+                // observed at attach time so deduped objects do not inherit a
+                // stale or overly-generic content type.
+                .col(
+                    ColumnDef::new(FileReferences::MimeType)
+                        .string_len(255)
+                        .null(),
+                )
                 .col(
                     ColumnDef::new(FileReferences::CreatedAt)
                         .timestamp_with_time_zone()
@@ -148,6 +157,7 @@ enum FileReferences {
     ResourceId,
     FieldName,
     DisplayName,
+    MimeType,
     CreatedBy,
     CreatedAt,
     DeletedAt,

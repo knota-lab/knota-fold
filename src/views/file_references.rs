@@ -40,6 +40,8 @@ pub struct AttachReferenceRequest {
     pub field_name: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub mime_type: Option<String>,
 }
 
 /// Response shape for a single `file_references` row. Active rows only;
@@ -55,6 +57,7 @@ pub struct FileReferenceResponse {
     pub resource_id: String,
     pub field_name: String,
     pub display_name: Option<String>,
+    pub mime_type: Option<String>,
     pub created_by: Uuid,
     pub created_at: DateTime<FixedOffset>,
 }
@@ -69,6 +72,7 @@ impl From<file_references::Model> for FileReferenceResponse {
             resource_id: m.resource_id,
             field_name: m.field_name,
             display_name: m.display_name,
+            mime_type: m.mime_type,
             created_by: m.created_by,
             created_at: m.created_at,
         }

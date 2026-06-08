@@ -105,10 +105,11 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(KbDocuments::Description).text().null())
                 .col(
                     ColumnDef::new(KbDocuments::SourceType)
-                        .string_len(32)
+                        .string_len(255)
                         .not_null(),
                 )
                 .col(ColumnDef::new(KbDocuments::FileId).uuid().null())
+                .col(ColumnDef::new(KbDocuments::FileReferenceId).uuid().null())
                 .col(ColumnDef::new(KbDocuments::FullText).text().null())
                 .col(
                     ColumnDef::new(KbDocuments::Scope)
@@ -352,6 +353,7 @@ enum KbDocuments {
     Description,
     SourceType,
     FileId,
+    FileReferenceId,
     FullText,
     Scope,
     Status,

@@ -14,6 +14,7 @@ pub struct Model {
     pub resource_id: String,
     pub field_name: String,
     pub display_name: Option<String>,
+    pub mime_type: Option<String>,
     pub created_by: Uuid,
     pub created_at: DateTimeWithTimeZone,
     pub deleted_at: Option<DateTimeWithTimeZone>,

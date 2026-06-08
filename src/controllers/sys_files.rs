@@ -45,78 +45,23 @@ fn attach_to_service_request(
         resource_id: payload.resource_id,
         field_name: payload.field_name.unwrap_or_default(),
         display_name: payload.display_name,
+        mime_type: payload.mime_type,
     })
 }
 
-#[utoipa::path(get, path = "/api/sys/tenants/{tenantCode}/files", tag = "超管-文件管理", description = "跨租户分页查询",
-    responses((status = 200, description = "Success")))]
-#[debug_handler]
-pub(crate) async fn sys_list(
-    tc: TenantContext,
-    State(ctx): State<AppContext>,
-    Path(tenant_code): Path<String>,
-    Query(pagination): Query<PaginationParams>,
-) -> Result<Response> {
-    if !tc.is_super_admin {
-        return crate::views::errors::authz::super_admin_required();
-    }
-    let pagination = pagination.into();
-    let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
-    let response =
-        file_service::sys_list_paginated(&ctx.db, tenant.id, &pagination).await?;
-    format::json(response)
+struct SmallUploadMultipartParts {
+    file_name: String,
+    file_bytes: bytes::Bytes,
+    attach_payload: Option<AttachReferenceRequest>,
+    mime_type_hint: Option<String>,
 }
 
-#[utoipa::path(get, path = "/api/sys/tenants/{tenantCode}/files/{id}", tag = "超管-文件管理", description = "跨租户查询单个",
-    responses((status = 200, description = "Success")))]
-#[debug_handler]
-pub(crate) async fn sys_get_one(
-    tc: TenantContext,
-    State(ctx): State<AppContext>,
-    Path((tenant_code, id)): Path<(String, Uuid)>,
-) -> Result<Response> {
-    if !tc.is_super_admin {
-        return crate::views::errors::authz::super_admin_required();
-    }
-    let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
-    let response = file_service::sys_get_by_id(&ctx.db, tenant.id, id).await?;
-    format::json(crate::views::files::FileResponse::from(response))
-}
-
-#[utoipa::path(post, path = "/api/sys/tenants/{tenantCode}/files", tag = "超管-文件管理", description = "跨租户直接上传（multipart/form-data，设计 §8.1 L579-598）",
-    responses((status = 200, description = "Success")))]
-#[debug_handler]
-pub(crate) async fn sys_small_upload(
-    tc: TenantContext,
-    meta: RequestMeta,
-    State(ctx): State<AppContext>,
-    Path(tenant_code): Path<String>,
+async fn parse_small_upload_multipart(
     mut multipart: Multipart,
-) -> Result<Response> {
-    if !tc.is_super_admin {
-        return crate::views::errors::authz::super_admin_required();
-    }
-
-    // Resolve the target tenant via the shared Wave 2d helper so that
-    // missing-tenant lookups consistently return the structured
-    // `404 { error: "tenant_not_found" }` response, and so that real
-    // backend failures still surface as 5xx (rather than being flattened
-    // by the legacy direct `find_tenant_by_code` call site).
-    let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
-    let audit_ctx = AuditContext {
-        trace_id: Some(meta.trace_id.clone()),
-        request_id: meta.request_id.clone(),
-        tenant_id: tenant.id,
-        user_id: Some(tc.user_id),
-        ip_address: meta.ip_address.clone(),
-        user_agent: meta.user_agent.clone(),
-    };
-
+) -> Result<SmallUploadMultipartParts> {
     let mut upload: Option<(String, bytes::Bytes)> = None;
-    // Wave 5 D4b: optional sidecar field (same shape as user-side
-    // `attachTo`) so super-admin tooling can also create file + binding
-    // in one request.
     let mut attach_payload: Option<AttachReferenceRequest> = None;
+    let mut mime_type_hint: Option<String> = None;
     while let Some(field) = multipart.next_field().await.map_err(|err| {
         tracing::error!(error = ?err, "could not read multipart field");
         err_bad_request(
@@ -166,6 +111,15 @@ pub(crate) async fn sys_small_upload(
                     })?;
                 attach_payload = Some(parsed);
             }
+            "mimeTypeHint" => {
+                mime_type_hint = Some(field.text().await.map_err(|err| {
+                    tracing::error!(error = ?err, "could not read mimeTypeHint text");
+                    err_bad_request(
+                        "upload.mime_type_hint_read_failed",
+                        "无法读取 mimeTypeHint 字段",
+                    )
+                })?);
+            }
             _ => {}
         }
     }
@@ -176,13 +130,86 @@ pub(crate) async fn sys_small_upload(
             "multipart 字段 `file` 是必需的",
         )
     })?;
-    let attach = match attach_payload {
+    Ok(SmallUploadMultipartParts {
+        file_name,
+        file_bytes,
+        attach_payload,
+        mime_type_hint,
+    })
+}
+
+#[utoipa::path(get, path = "/api/sys/tenants/{tenantCode}/files", tag = "超管-文件管理", description = "跨租户分页查询",
+    responses((status = 200, description = "Success")))]
+#[debug_handler]
+pub(crate) async fn sys_list(
+    tc: TenantContext,
+    State(ctx): State<AppContext>,
+    Path(tenant_code): Path<String>,
+    Query(pagination): Query<PaginationParams>,
+) -> Result<Response> {
+    if !tc.is_super_admin {
+        return crate::views::errors::authz::super_admin_required();
+    }
+    let pagination = pagination.into();
+    let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
+    let response =
+        file_service::sys_list_paginated(&ctx.db, tenant.id, &pagination).await?;
+    format::json(response)
+}
+
+#[utoipa::path(get, path = "/api/sys/tenants/{tenantCode}/files/{id}", tag = "超管-文件管理", description = "跨租户查询单个",
+    responses((status = 200, description = "Success")))]
+#[debug_handler]
+pub(crate) async fn sys_get_one(
+    tc: TenantContext,
+    State(ctx): State<AppContext>,
+    Path((tenant_code, id)): Path<(String, Uuid)>,
+) -> Result<Response> {
+    if !tc.is_super_admin {
+        return crate::views::errors::authz::super_admin_required();
+    }
+    let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
+    let response = file_service::sys_get_by_id(&ctx.db, tenant.id, id).await?;
+    format::json(crate::views::files::FileResponse::from(response))
+}
+
+#[utoipa::path(post, path = "/api/sys/tenants/{tenantCode}/files", tag = "超管-文件管理", description = "跨租户直接上传（multipart/form-data，设计 §8.1 L579-598）",
+    responses((status = 200, description = "Success")))]
+#[debug_handler]
+pub(crate) async fn sys_small_upload(
+    tc: TenantContext,
+    meta: RequestMeta,
+    State(ctx): State<AppContext>,
+    Path(tenant_code): Path<String>,
+    multipart: Multipart,
+) -> Result<Response> {
+    if !tc.is_super_admin {
+        return crate::views::errors::authz::super_admin_required();
+    }
+
+    // Resolve the target tenant via the shared Wave 2d helper so that
+    // missing-tenant lookups consistently return the structured
+    // `404 { error: "tenant_not_found" }` response, and so that real
+    // backend failures still surface as 5xx (rather than being flattened
+    // by the legacy direct `find_tenant_by_code` call site).
+    let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
+    let audit_ctx = AuditContext {
+        trace_id: Some(meta.trace_id.clone()),
+        request_id: meta.request_id.clone(),
+        tenant_id: tenant.id,
+        user_id: Some(tc.user_id),
+        ip_address: meta.ip_address.clone(),
+        user_agent: meta.user_agent.clone(),
+    };
+
+    let parts = parse_small_upload_multipart(multipart).await?;
+    let attach = match parts.attach_payload {
         Some(payload) => Some(attach_to_service_request(payload)?),
         None => Some(file_reference_service::default_self_attach()),
     };
     let params = SmallUploadRequest {
-        name: file_name,
-        mime_type_hint: None,
+        name: parts.file_name,
+        mime_type_hint: parts.mime_type_hint,
         attach_to: None,
     };
     let response = file_service::sys_small_upload(
@@ -192,7 +219,7 @@ pub(crate) async fn sys_small_upload(
             tc: &tc,
             tenant_code: &tenant_code,
             params: &params,
-            bytes: file_bytes,
+            bytes: parts.file_bytes,
             audit_ctx: &audit_ctx,
             attach,
         },
