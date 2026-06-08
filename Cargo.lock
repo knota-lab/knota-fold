@@ -3687,7 +3687,6 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sha2 0.10.9",
- "snafu",
  "sqlx",
  "tiktoken-rs",
  "tokio",
@@ -6791,27 +6790,6 @@ dependencies = [
  "serde",
  "static_assertions",
  "version_check",
-]
-
-[[package]]
-name = "snafu"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e84b3f4eacbf3a1ce05eac6763b4d629d60cbc94d632e4092c54ade71f1e1a2"
-dependencies = [
- "snafu-derive",
-]
-
-[[package]]
-name = "snafu-derive"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
-dependencies = [
- "heck 0.5.0",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]

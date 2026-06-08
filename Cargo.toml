@@ -56,7 +56,6 @@ tree_magic_mini = { version = "3" }
 # Stateless CAPTCHA for login (image + JWT-encoded answer, no server-side state)
 captcha-rs = { version = "0.5", features = ["stateless"] }
 flume = "0.11"
-snafu = "0.8"
 sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "derive"] }
 base64 = "0.22"
 cron = "0.15"
