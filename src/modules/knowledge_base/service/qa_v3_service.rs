@@ -4,13 +4,12 @@
 //! QA pipeline that can read materials, search documents, and answer questions
 //! in a multi-turn conversation.
 
-use std::{fmt::Write, sync::Arc};
+use std::sync::Arc;
 
 use futures_util::StreamExt;
 use rig::agent::{MultiTurnStreamItem, StreamingResult};
 use rig::client::CompletionClient;
 use rig::streaming::{StreamedAssistantContent, StreamingChat};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use tokio::sync::mpsc;
 use tracing::Instrument;
 use uuid::Uuid;
@@ -19,7 +18,7 @@ use crate::config::QaConfig;
 use crate::initializers::knowledge_base::{
     CompactionGuard, SessionLockMap, SharedMemoryStore, SharedSearchProvider,
 };
-use crate::models::_entities::{chat_messages, chat_sessions, kb_documents};
+use crate::models::_entities::{chat_messages, chat_sessions};
 use crate::modules::knowledge_base::providers::{SharedEmbeddingClient, SharedQaClient};
 
 use super::chat_service;
@@ -33,55 +32,21 @@ use super::qa_stream_types::{QaEvent, QaPhase, QaStreamResponse};
 use super::qa_types::{Citation, QaRequest, TokenUsage};
 use super::tools::qa_v3_hook::QaV3Hook;
 use super::tools::{
-    DocumentContent, FrontendToolStub, InlineText, ListConversationHistoryTool,
-    ListMaterialsTool, MaterialRegistry, ReadConversationTurnTool, ReadMaterialTool,
-    SearchKnowledgeBaseTool, SearchMaterialTool, ToolResultBroker,
+    ListConversationHistoryTool, ListKnowledgeBaseDocumentsTool,
+    ListKnowledgeBaseScopeTool, ListMaterialsTool, MaterialRegistry,
+    ReadConversationTurnTool, ReadMaterialTool, SearchKnowledgeBaseTool,
+    SearchMaterialTool, ToolResultBroker,
 };
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+mod materials;
+pub(crate) mod prompt;
 
-const BASE_SYSTEM_PROMPT: &str = "\
-你是一个智能知识库问答助手。你可以通过工具访问用户提供的参考材料和知识库文档。
-
-## 工作方式
-
-1. 回答任何与材料/文档相关的问题时，你**必须**遵守以下流程：
-   - **先调用 `list_materials`** 确认当前会话中有哪些可用材料
-   - 材料在多轮对话中**持续可用**，即使本轮用户没有新提交材料
-   - **不要假设材料不可用**——必须先查看再下结论
-   - 然后调用 `read_material` 读取材料的指定部分
-   - 可以调用 `search_material` 在材料中搜索关键词
-   - 可以调用 `search_knowledge_base` 在知识库文档中搜索
-
-2. 选择正确的材料：
-   - `list_materials` 按提交顺序排列，第 1 份是最早提交的
-   - 根据材料的**预览内容**判断哪份与用户问题相关，只读取相关材料
-   - 当用户说\"第一份\"或\"第二份\"材料时，对应列表中的第 1 项或第 2 项
-   - 如果用户本轮新提交了材料且提到\"这份材料\"，优先读取本轮新增的那份
-
-3. 回答问题时：
-   - 优先参考用户直接提供的材料
-   - 可以分多次读取长材料（每次最多 500 行）
-   - 引用材料内容时标注来源和行号
-   - **如果在所有材料中都找不到相关信息，明确告知用户\"提供的材料中未找到相关内容\"，不要用自身知识回答材料相关问题**
-
-4. 多轮对话时：
-   - 你可以看到之前的对话历史
-   - 即使本轮用户没有重新提交材料，之前的材料仍然可用
-   - 对材料内容不确定时，**必须重新调用 `read_material`** 确认
-   - 不要仅凭记忆引用材料细节，应当重新读取以确保准确
-   - 如果需要回顾之前的对话内容，可以调用 `list_conversation_history` 浏览概览
-   - 然后用 `read_conversation_turn` 读取感兴趣的具体轮次
-   - 当用户问及\"之前讨论过什么\"、\"我第一个问题是什么\"等回顾性问题时，主动使用这些工具
-
- 5. 注意事项：
-    - 不要臆造材料中没有的内容
-    - 如果材料很长，优先读取最相关的部分（可以通过 search_material 定位）
-    - 回答要准确、完整、有条理
-    - **不要在回答末尾主动追问或列举建议问题**，等待用户主动提问
-    - 会话中有多份材料时，在回答开头说明引用的是哪份材料（如\"根据《xxx》...\"）";
+use materials::prepare_materials;
+pub(crate) use prompt::estimate_message_tokens;
+use prompt::{
+    build_chat_history_with_budget, build_page_tool_stubs, build_system_prompt,
+    build_user_prompt, estimate_text_tokens,
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -142,280 +107,40 @@ fn spawn_index_message(
     let content = params.content.clone();
     let has_material = params.has_material;
     let turn_index = params.turn_index;
+    let span = tracing::info_span!(
+        "qa.message_index",
+        session_id = %session_id,
+        tenant_id = %tenant_id,
+        message_id = %msg_id,
+        role = %role,
+        has_material,
+        turn_index,
+    );
 
-    tokio::spawn(async move {
-        if let Err(e) = memory_service::index_message(
-            &ec.0,
-            &ms.client,
-            &IndexMessageParams {
-                collection_name,
-                model_name: embedding_model_name,
-                session_id,
-                tenant_id,
-                message_id: msg_id,
-                role,
-                content,
-                has_material,
-                turn_index,
-            },
-        )
-        .await
-        {
-            tracing::error!(error = %e, "Failed to index message to chat_memory");
-        }
-    });
-}
-
-/// Build a text block from recent chat history to include in the system prompt.
-/// TODO(Phase 4): Retained for reference — replaced by `build_chat_history()` + `stream_chat()`.
-#[allow(dead_code)]
-fn build_conversation_context(
-    history: &[chat_messages::Model],
-    max_messages: usize,
-    max_chars_per_msg: usize,
-) -> String {
-    if history.is_empty() {
-        return String::new();
-    }
-
-    let start = history.len().saturating_sub(max_messages);
-    let recent = &history[start..];
-    let mut parts = vec!["\n--- 对话历史 ---".to_string()];
-    for msg in recent {
-        let role_label = match msg.role.as_str() {
-            "user" => "用户",
-            "assistant" => "助手",
-            _ => continue,
-        };
-        let truncated: String = msg.content.chars().take(max_chars_per_msg).collect();
-        let ellipsis = if msg.content.chars().count() > max_chars_per_msg {
-            "…"
-        } else {
-            ""
-        };
-        parts.push(format!("{role_label}: {truncated}{ellipsis}"));
-    }
-    parts.push("--- 对话历史结束 ---\n".to_string());
-    parts.join("\n")
-}
-
-// ---------------------------------------------------------------------------
-// Token estimation & budget-aware history truncation
-// ---------------------------------------------------------------------------
-
-/// Estimate token count for text.
-/// JSON uses chars/1.2 (structural tokens are expensive);
-/// Natural language uses chars/2 (conservative for Chinese-heavy content).
-pub(crate) fn estimate_text_tokens(text: &str, is_json: bool) -> usize {
-    let char_count = text.chars().count();
-    if is_json {
-        char_count.saturating_mul(5).div_ceil(6)
-    } else {
-        (char_count / 2).max(1)
-    }
-}
-
-const TOOL_OVERHEAD_TOKENS: usize = 10000;
-
-/// Estimate token count for a message, including content + tool call records.
-/// JSON content (tool arguments) uses chars/1.2; natural language uses chars/2.
-pub(crate) fn estimate_message_tokens(msg: &chat_messages::Model) -> usize {
-    let content_tokens = estimate_text_tokens(&msg.content, false);
-
-    let tool_tokens = msg
-        .token_usage
-        .as_ref()
-        .and_then(|u| u.get("toolCalls").and_then(|v| v.as_array()))
-        .map_or(0, |arr| {
-            arr.iter()
-                .map(|tc| {
-                    let args_tokens = tc
-                        .get("arguments")
-                        .map_or(0, |a| estimate_text_tokens(&a.to_string(), true));
-                    let preview_tokens = tc
-                        .get("resultPreview")
-                        .and_then(|v| v.as_str())
-                        .map_or(0, |s| estimate_text_tokens(s, false));
-                    args_tokens + preview_tokens + 20
-                })
-                .sum::<usize>()
-        });
-
-    content_tokens + tool_tokens
-}
-
-/// Build structured chat history from DB messages as rig Messages.
-///
-/// Converts the flat DB message history into structured `rig::Message` objects
-/// that properly represent user messages, assistant messages (with tool calls),
-/// and tool results — ready for `stream_chat()`.
-fn build_chat_history(
-    history: &[chat_messages::Model],
-) -> Vec<rig::completion::message::Message> {
-    use rig::completion::message::{AssistantContent, Message};
-    use rig::OneOrMany;
-
-    let mut messages = Vec::new();
-
-    for msg in history {
-        match msg.role.as_str() {
-            "user" => {
-                messages.push(Message::user(&msg.content));
+    tokio::spawn(
+        async move {
+            if let Err(e) = memory_service::index_message(
+                &ec.0,
+                &ms.client,
+                &IndexMessageParams {
+                    collection_name,
+                    model_name: embedding_model_name,
+                    session_id,
+                    tenant_id,
+                    message_id: msg_id,
+                    role,
+                    content,
+                    has_material,
+                    turn_index,
+                },
+            )
+            .await
+            {
+                tracing::error!(error = %e, "Failed to index message to chat_memory");
             }
-            "assistant" => {
-                if let Some(ref usage) = msg.token_usage {
-                    if let Some(tool_calls) =
-                        usage.get("toolCalls").and_then(|v| v.as_array())
-                    {
-                        if !tool_calls.is_empty() {
-                            let mut assistant_parts: Vec<AssistantContent> = Vec::new();
-                            let mut tool_results: Vec<(String, String, String)> =
-                                Vec::new();
-
-                            if !msg.content.is_empty() {
-                                assistant_parts
-                                    .push(AssistantContent::text(&msg.content));
-                            }
-
-                            for (idx, tc) in tool_calls.iter().enumerate() {
-                                let tool_name = tc
-                                    .get("toolName")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown");
-                                let result_preview = tc
-                                    .get("resultPreview")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
-                                let tool_call_id = tc
-                                    .get("toolCallId")
-                                    .and_then(|v| v.as_str())
-                                    .filter(|s| !s.is_empty())
-                                    .map_or_else(
-                                        || format!("hist-{idx}"),
-                                        std::string::ToString::to_string,
-                                    );
-
-                                // Use tool_call_with_call_id to satisfy Ollama's
-                                // OpenAI Responses API requirement (call_id is mandatory).
-                                assistant_parts.push(
-                                    AssistantContent::tool_call_with_call_id(
-                                        &tool_call_id,
-                                        tool_call_id.clone(),
-                                        tool_name,
-                                        tc.get("arguments")
-                                            .cloned()
-                                            .unwrap_or_else(|| serde_json::json!({})),
-                                    ),
-                                );
-
-                                tool_results.push((
-                                    tool_call_id.clone(),
-                                    tool_call_id,
-                                    format!("[历史工具调用结果] {result_preview}"),
-                                ));
-                            }
-
-                            if !assistant_parts.is_empty() {
-                                messages.push(Message::Assistant {
-                                    id: None,
-                                    content: OneOrMany::many(assistant_parts)
-                                        .unwrap_or_else(|_| {
-                                            OneOrMany::one(AssistantContent::text(""))
-                                        }),
-                                });
-                            }
-
-                            for (id, call_id, result_text) in tool_results {
-                                messages.push(Message::tool_result_with_call_id(
-                                    id,
-                                    Some(call_id),
-                                    result_text,
-                                ));
-                            }
-
-                            continue;
-                        }
-                    }
-                }
-                messages.push(Message::assistant(&msg.content));
-            }
-            _ => {}
         }
-    }
-
-    messages
-}
-
-/// Token-aware history truncation.
-///
-/// Estimates token count with JSON-aware coefficients,
-/// truncates oldest messages to fit within budget.
-/// Ensures complete user+assistant pairs (no dangling user at head or tail).
-fn build_chat_history_with_budget(
-    history: &[chat_messages::Model],
-    max_context_tokens: i32,
-    response_reserve_tokens: i32,
-    system_prompt_tokens: usize,
-) -> Vec<rig::completion::message::Message> {
-    let budget = usize::try_from(max_context_tokens)
-        .unwrap_or_default()
-        .saturating_sub(system_prompt_tokens)
-        .saturating_sub(usize::try_from(response_reserve_tokens).unwrap_or_default())
-        .saturating_sub(TOOL_OVERHEAD_TOKENS);
-
-    // Guard against zero budget (system prompt too large, nothing left for history)
-    if budget == 0 {
-        return build_chat_history(&[]);
-    }
-
-    let mut used_tokens = 0usize;
-    let mut selected_indices: Vec<usize> = Vec::new();
-
-    for (i, msg) in history.iter().enumerate().rev() {
-        let estimated_tokens = estimate_message_tokens(msg);
-        if used_tokens + estimated_tokens > budget {
-            break;
-        }
-        used_tokens += estimated_tokens;
-        selected_indices.push(i);
-    }
-
-    selected_indices.reverse();
-
-    // Head alignment: if first selected is assistant (missing preceding user), skip it
-    if let Some(&first) = selected_indices.first() {
-        if history[first].role == "assistant" && first + 1 < history.len() {
-            selected_indices.remove(0);
-        }
-    }
-
-    // Tail alignment: remove trailing user messages (incomplete turn from crash)
-    while let Some(&last) = selected_indices.last() {
-        if history[last].role == "user" {
-            selected_indices.pop();
-        } else {
-            break;
-        }
-    }
-
-    let selected: Vec<chat_messages::Model> = selected_indices
-        .iter()
-        .map(|&i| history[i].clone())
-        .collect();
-
-    build_chat_history(&selected)
-}
-
-/// Register a document from the DB into the registry.
-fn register_doc_from_model(registry: &mut MaterialRegistry, doc: &kb_documents::Model) {
-    let content = doc.full_text.clone().unwrap_or_default();
-    registry.register_document(DocumentContent {
-        id: doc.id,
-        title: doc.title.clone(),
-        content,
-        doc_type: doc.source_type.clone(),
-        total_lines: doc.full_text.as_deref().map_or(0, |t| t.lines().count()),
-    });
+        .instrument(span),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -562,269 +287,6 @@ async fn prepare_session_and_history(ctx: &QaStreamCtx<'_>) -> Result<SessionPre
         session_id_str,
         history,
     })
-}
-
-async fn prepare_materials(
-    ctx: &QaStreamCtx<'_>,
-    session: &chat_sessions::Model,
-    history: &[chat_messages::Model],
-) -> Result<MaterialPrep, ()> {
-    let material_span = tracing::Span::current();
-    send_event(
-        ctx.tx,
-        QaEvent::PhaseChanged {
-            phase: QaPhase::MaterialProcessing {
-                strategy: "v3_registry".to_string(),
-                total_chunks: None,
-            },
-        },
-    )
-    .await?;
-
-    let mut registry = MaterialRegistry::default();
-    let mut current_turn_materials = Vec::new();
-    let mut inline_material_id: Option<String> = None;
-    register_request_materials(
-        ctx,
-        &mut registry,
-        &mut current_turn_materials,
-        &mut inline_material_id,
-    )
-    .await?;
-    recover_history_materials(ctx, history, &mut registry).await;
-
-    let registry = Arc::new(registry);
-    let material_count = registry.all_materials().len();
-    material_span.record("material_count", material_count);
-    tracing::info!(
-        material_count,
-        "Materials registered: count={}",
-        material_count
-    );
-    save_user_turn(ctx, session, history, inline_material_id.as_deref()).await?;
-
-    Ok(MaterialPrep {
-        registry,
-        current_turn_materials,
-    })
-}
-
-async fn register_request_materials(
-    ctx: &QaStreamCtx<'_>,
-    registry: &mut MaterialRegistry,
-    current_turn_materials: &mut Vec<String>,
-    inline_material_id: &mut Option<String>,
-) -> Result<(), ()> {
-    register_inline_material(ctx, registry, current_turn_materials, inline_material_id);
-    register_document_materials(ctx, registry, current_turn_materials).await?;
-    register_file_materials(ctx, registry, current_turn_materials).await
-}
-
-fn register_inline_material(
-    ctx: &QaStreamCtx<'_>,
-    registry: &mut MaterialRegistry,
-    current_turn_materials: &mut Vec<String>,
-    inline_material_id: &mut Option<String>,
-) {
-    let Some(inline_text) = ctx.request.material.inline.as_ref() else {
-        return;
-    };
-    let content = if inline_text.len() > ctx.config.max_inline_chars {
-        tracing::warn!(
-            len = inline_text.len(),
-            max = ctx.config.max_inline_chars,
-            "Inline material exceeds size limit, truncating"
-        );
-        inline_text
-            .chars()
-            .take(ctx.config.max_inline_chars)
-            .collect::<String>()
-    } else {
-        inline_text.clone()
-    };
-    let id = format!("inline-{}", Uuid::now_v7().simple());
-    let total_lines = content.lines().count();
-    *inline_material_id = Some(id.clone());
-    registry.register_inline(InlineText {
-        id: id.clone(),
-        label: "用户粘贴文本".to_string(),
-        content,
-        total_lines,
-    });
-    current_turn_materials.push(format!("{id} 用户粘贴文本 ({total_lines}行)"));
-}
-
-async fn register_document_materials(
-    ctx: &QaStreamCtx<'_>,
-    registry: &mut MaterialRegistry,
-    current_turn_materials: &mut Vec<String>,
-) -> Result<(), ()> {
-    if ctx.request.material.document_ids.is_empty() {
-        return Ok(());
-    }
-
-    let requested_ids: std::collections::HashSet<Uuid> =
-        ctx.request.material.document_ids.iter().copied().collect();
-    let docs = kb_documents::Entity::find()
-        .filter(kb_documents::Column::TenantId.eq(ctx.tenant_id))
-        .filter(kb_documents::Column::Id.is_in(ctx.request.material.document_ids.clone()))
-        .all(ctx.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to fetch documents by ID");
-            let _ = send_event_blocking(
-                ctx.tx,
-                &QaEvent::Error {
-                    message: format!("Failed to fetch documents: {e}"),
-                },
-            );
-        })?;
-
-    let found_ids: std::collections::HashSet<Uuid> = docs.iter().map(|d| d.id).collect();
-    let missing_ids: Vec<&Uuid> = requested_ids.difference(&found_ids).collect();
-    if !missing_ids.is_empty() {
-        tracing::warn!(
-            ?missing_ids,
-            "Some requested documents not found or not accessible for this tenant"
-        );
-    }
-    add_docs_to_registry(registry, current_turn_materials, &docs);
-    Ok(())
-}
-
-async fn register_file_materials(
-    ctx: &QaStreamCtx<'_>,
-    registry: &mut MaterialRegistry,
-    current_turn_materials: &mut Vec<String>,
-) -> Result<(), ()> {
-    if ctx.request.material.file_ids.is_empty() {
-        return Ok(());
-    }
-
-    let docs = kb_documents::Entity::find()
-        .filter(kb_documents::Column::TenantId.eq(ctx.tenant_id))
-        .filter(kb_documents::Column::FileId.is_in(ctx.request.material.file_ids.clone()))
-        .all(ctx.db)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to resolve file_ids to documents");
-            let _ = send_event_blocking(
-                ctx.tx,
-                &QaEvent::Error {
-                    message: format!("Failed to resolve file_ids: {e}"),
-                },
-            );
-        })?;
-
-    add_docs_to_registry(registry, current_turn_materials, &docs);
-    Ok(())
-}
-
-fn add_docs_to_registry(
-    registry: &mut MaterialRegistry,
-    current_turn_materials: &mut Vec<String>,
-    docs: &[kb_documents::Model],
-) {
-    for doc in docs {
-        register_doc_from_model(registry, doc);
-        let total_lines = doc.full_text.as_deref().map_or(0, |t| t.lines().count());
-        current_turn_materials
-            .push(format!("{} {} ({}行)", doc.id, doc.title, total_lines));
-    }
-}
-
-async fn recover_history_materials(
-    ctx: &QaStreamCtx<'_>,
-    history: &[chat_messages::Model],
-    registry: &mut MaterialRegistry,
-) {
-    for msg in history {
-        let Some(ref refs) = msg.material_refs else {
-            continue;
-        };
-        recover_history_document_refs(ctx, registry, refs).await;
-        recover_history_file_refs(ctx, registry, refs).await;
-        recover_history_inline_ref(registry, refs);
-    }
-}
-
-async fn recover_history_document_refs(
-    ctx: &QaStreamCtx<'_>,
-    registry: &mut MaterialRegistry,
-    refs: &serde_json::Value,
-) {
-    let Some(doc_ids) = refs.get("documentIds").and_then(|v| v.as_array()) else {
-        return;
-    };
-    let ids: Vec<Uuid> = doc_ids
-        .iter()
-        .filter_map(|v| v.as_str().and_then(|s| Uuid::parse_str(s).ok()))
-        .collect();
-    if ids.is_empty() {
-        return;
-    }
-    let docs = kb_documents::Entity::find()
-        .filter(kb_documents::Column::TenantId.eq(ctx.tenant_id))
-        .filter(kb_documents::Column::Id.is_in(ids))
-        .all(ctx.db)
-        .await
-        .unwrap_or_default();
-    for doc in &docs {
-        register_doc_from_model(registry, doc);
-    }
-}
-
-async fn recover_history_file_refs(
-    ctx: &QaStreamCtx<'_>,
-    registry: &mut MaterialRegistry,
-    refs: &serde_json::Value,
-) {
-    let Some(file_ids) = refs.get("fileIds").and_then(|v| v.as_array()) else {
-        return;
-    };
-    let ids: Vec<Uuid> = file_ids
-        .iter()
-        .filter_map(|v| v.as_str().and_then(|s| Uuid::parse_str(s).ok()))
-        .collect();
-    if ids.is_empty() {
-        return;
-    }
-    let docs = kb_documents::Entity::find()
-        .filter(kb_documents::Column::TenantId.eq(ctx.tenant_id))
-        .filter(kb_documents::Column::FileId.is_in(ids))
-        .all(ctx.db)
-        .await
-        .unwrap_or_default();
-    for doc in &docs {
-        register_doc_from_model(registry, doc);
-    }
-}
-
-fn recover_history_inline_ref(registry: &mut MaterialRegistry, refs: &serde_json::Value) {
-    let Some(inline_obj) = refs.get("inline").and_then(|v| v.as_object()) else {
-        return;
-    };
-    let Some(content) = inline_obj.get("content").and_then(|v| v.as_str()) else {
-        return;
-    };
-    let id = inline_obj
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("recovered-inline")
-        .to_string();
-    if registry.get_inline(&id).is_some() {
-        return;
-    }
-    registry.register_inline(InlineText {
-        id,
-        label: inline_obj
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("历史粘贴文本")
-            .to_string(),
-        content: content.to_string(),
-        total_lines: content.lines().count(),
-    });
 }
 
 async fn save_user_turn(
@@ -1021,106 +483,51 @@ fn maybe_spawn_compaction(
     let bg_max_ctx = ctx.config.max_context_tokens;
     let bg_reserve = ctx.config.compaction_reserve_tokens;
     let bg_guard = ctx.compaction_guard.clone();
+    let span = tracing::info_span!(
+        "qa.compaction",
+        session_id = %bg_session_id,
+        tenant_id = %bg_tenant_id,
+        history_len = bg_history.len(),
+    );
 
-    tokio::spawn(async move {
-        tracing::info!(
-            session_id = %bg_session_id,
-            history_len = bg_history.len(),
-            "Spawning background compaction"
-        );
-        let bg_params = CompactHistoryParams {
-            session_id: bg_session_id,
-            tenant_id: bg_tenant_id,
-            max_context_tokens: bg_max_ctx,
-            recent_turns: bg_recent_turns,
-            compaction_reserve_tokens: bg_reserve,
-        };
-        let result = super::qa_compaction_service::compact_history(
-            &bg_db,
-            &bg_qa_client.0,
-            &bg_history,
-            &bg_model,
-            bg_threshold,
-            &bg_params,
-        )
-        .await;
-        match result {
-            Ok(summary) => tracing::info!(
+    tokio::spawn(
+        async move {
+            tracing::info!(
                 session_id = %bg_session_id,
-                summary_len = summary.len(),
-                "Background compaction completed"
-            ),
-            Err(e) => tracing::error!(
-                session_id = %bg_session_id,
-                error = %e,
-                "Background compaction failed"
-            ),
-        }
-        bg_guard.remove(&bg_session_id);
-    });
-}
-
-fn build_system_prompt(
-    request: &QaRequest,
-    registry: &MaterialRegistry,
-    summary: &str,
-    relevant_context: Option<&str>,
-) -> String {
-    let material_hint = build_material_hint(registry);
-    let mut system_prompt = format!("{BASE_SYSTEM_PROMPT}{material_hint}\n\n");
-    if !summary.is_empty() {
-        let _ = write!(system_prompt, "\n\n[对话历史摘要]\n{summary}\n");
-    }
-    append_page_context_prompt(&mut system_prompt, request);
-    if let Some(ctx) = relevant_context {
-        system_prompt.push_str(ctx);
-    }
-    system_prompt
-}
-
-fn build_material_hint(registry: &MaterialRegistry) -> String {
-    let mats = registry.all_materials();
-    if mats.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "\n\n## 当前会话材料状态\n当前会话中有 **{}** 份可用材料。请始终先调用 `list_materials` 查看详情，再根据需要调用 `read_material` 读取内容。",
-            mats.len()
-        )
-    }
-}
-
-fn append_page_context_prompt(system_prompt: &mut String, request: &QaRequest) {
-    if request.page_context.is_empty() {
-        return;
-    }
-    let active_ctx = request.page_context.iter().find(|c| c.active);
-    let page_list: Vec<String> = request
-        .page_context
-        .iter()
-        .map(|c| {
-            let marker = if c.active { " ← 当前" } else { "" };
-            format!(
-                "- 「{}」路由: {} (意图: {}){}",
-                c.title, c.route, c.intent, marker
+                history_len = bg_history.len(),
+                "Spawning background compaction"
+            );
+            let bg_params = CompactHistoryParams {
+                session_id: bg_session_id,
+                tenant_id: bg_tenant_id,
+                max_context_tokens: bg_max_ctx,
+                recent_turns: bg_recent_turns,
+                compaction_reserve_tokens: bg_reserve,
+            };
+            let result = super::qa_compaction_service::compact_history(
+                &bg_db,
+                &bg_qa_client.0,
+                &bg_history,
+                &bg_model,
+                bg_threshold,
+                &bg_params,
             )
-        })
-        .collect();
-    let active_title = active_ctx.map_or("未知", |c| c.title.as_str());
-    let active_route = active_ctx.map_or("未知", |c| c.route.as_str());
-
-    let _ = write!(system_prompt, "\n\n## 已注册页面上下文\n\
-         当前活跃页面：「{}」（路由: {}）\n\n\
-         所有已注册页面：\n{}\n\n\
-         你可以使用 page_ 前缀的工具来查询和操作页面数据。工具的 targetPage 参数用于指定目标页面（默认当前活跃页面）。\n\
-         使用原则：不猜测字段名、先确认再操作、高风险操作需确认。\n\
-         你可以调用 list_available_pages 查看系统所有可访问页面，调用 navigate_to_page 帮助用户切换页面。\n\n\
-         ## 重要：工具调用纪律\n\
-         - 如果需要执行操作（创建、编辑、删除等），**必须直接调用对应的 tool**，不要用文字描述你打算做什么。\n\
-         - 错误示例：\"现在我将执行编辑操作：\"（然后停止）→ 用户什么都没得到。\n\
-         - 正确示例：直接调用 page_execute_action，参数齐全。\n\
-         - 如果缺少必要参数，**直接向用户询问缺失的参数**，不要假装要执行然后停下来。",
-        active_title, active_route, page_list.join("\n")
+            .await;
+            match result {
+                Ok(summary) => tracing::info!(
+                    session_id = %bg_session_id,
+                    summary_len = summary.len(),
+                    "Background compaction completed"
+                ),
+                Err(e) => tracing::error!(
+                    session_id = %bg_session_id,
+                    error = %e,
+                    "Background compaction failed"
+                ),
+            }
+            bg_guard.remove(&bg_session_id);
+        }
+        .instrument(span),
     );
 }
 
@@ -1186,32 +593,6 @@ async fn recall_relevant_context_inner(
         .retain(|m| !recent_msg_ids.contains(&m.message_id));
     let ctx_text = memory_service::format_recalled_context(&recalled);
     (!ctx_text.is_empty()).then_some(ctx_text)
-}
-
-fn build_user_prompt(request: &QaRequest, current_turn_materials: &[String]) -> String {
-    if current_turn_materials.is_empty() {
-        request.instruction.clone()
-    } else {
-        format!(
-            "[本轮新提交材料: {}]\n\n{}",
-            current_turn_materials.join(", "),
-            request.instruction
-        )
-    }
-}
-
-fn build_page_tool_stubs(ctx: &QaStreamCtx<'_>) -> Vec<FrontendToolStub> {
-    ctx.request
-        .page_tools
-        .iter()
-        .map(|def| FrontendToolStub {
-            name: def.name.clone(),
-            description: def.description.clone(),
-            parameters: def.parameters.clone(),
-            broker: ctx.broker.clone(),
-            sse_tx: ctx.tx.clone(),
-        })
-        .collect()
 }
 
 async fn stream_qa_turn(
@@ -1326,6 +707,7 @@ async fn run_agent_stream(
             registry: materials.registry.clone(),
         });
 
+    let conversation_db = std::sync::Arc::new(ctx.db.clone());
     if ctx.request.material.use_knowledge_base {
         let folder_ids = match resolve_search_folder_ids(ctx).await {
             Ok(ids) => ids,
@@ -1339,21 +721,40 @@ async fn run_agent_stream(
                 };
             }
         };
-        agent_builder = agent_builder.tool(SearchKnowledgeBaseTool {
-            embedding_client: ctx.embedding_client.clone(),
-            search_provider: ctx.search_provider.clone(),
-            embedding_model_name: ctx.embedding_model_name.clone(),
-            tenant_id: ctx.tenant_id,
-            user_id: ctx.user_id,
-            library_id: ctx.request.material.library_id,
-            folder_id: ctx.request.material.folder_id,
-            folder_ids,
-            document_ids: (!ctx.request.material.document_ids.is_empty())
-                .then(|| ctx.request.material.document_ids.clone()),
-        });
+        agent_builder = agent_builder
+            .tool(SearchKnowledgeBaseTool {
+                db: conversation_db.clone(),
+                embedding_client: ctx.embedding_client.clone(),
+                search_provider: ctx.search_provider.clone(),
+                embedding_model_name: ctx.embedding_model_name.clone(),
+                tenant_id: ctx.tenant_id,
+                user_id: ctx.user_id,
+                library_id: ctx.request.material.library_id,
+                folder_id: ctx.request.material.folder_id,
+                folder_ids: folder_ids.clone(),
+                document_ids: (!ctx.request.material.document_ids.is_empty())
+                    .then(|| ctx.request.material.document_ids.clone()),
+            })
+            .tool(ListKnowledgeBaseDocumentsTool {
+                db: conversation_db.clone(),
+                tenant_id: ctx.tenant_id,
+                user_id: ctx.user_id,
+                library_id: ctx.request.material.library_id,
+                folder_id: ctx.request.material.folder_id,
+                folder_ids: folder_ids.clone(),
+                document_ids: (!ctx.request.material.document_ids.is_empty())
+                    .then(|| ctx.request.material.document_ids.clone()),
+            })
+            .tool(ListKnowledgeBaseScopeTool {
+                db: conversation_db.clone(),
+                tenant_id: ctx.tenant_id,
+                user_id: ctx.user_id,
+                library_id: ctx.request.material.library_id,
+                folder_id: ctx.request.material.folder_id,
+                folder_ids,
+            });
     }
 
-    let conversation_db = std::sync::Arc::new(ctx.db.clone());
     agent_builder = agent_builder
         .tool(ListConversationHistoryTool {
             db: conversation_db.clone(),

@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -6,8 +7,11 @@ use uuid::Uuid;
 
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::initializers::knowledge_base::SharedSearchProvider;
+use crate::models::_entities::document_lines;
+use crate::modules::knowledge_base::providers::search::SearchResult;
 use crate::modules::knowledge_base::providers::SharedEmbeddingClient;
 use crate::modules::knowledge_base::service::search_service;
 
@@ -47,6 +51,7 @@ pub struct SearchKnowledgeBaseArgs {
 /// Contains `dyn trait` and client fields that cannot auto-derive
 /// `Debug`/`Clone`/`Deserialize`/`Serialize`, so we provide manual impls.
 pub struct SearchKnowledgeBaseTool {
+    pub db: Arc<DatabaseConnection>,
     pub embedding_client: SharedEmbeddingClient,
     pub search_provider: SharedSearchProvider,
     pub embedding_model_name: String,
@@ -75,6 +80,7 @@ impl fmt::Debug for SearchKnowledgeBaseTool {
 impl Clone for SearchKnowledgeBaseTool {
     fn clone(&self) -> Self {
         Self {
+            db: self.db.clone(),
             embedding_client: self.embedding_client.clone(),
             search_provider: self.search_provider.clone(),
             embedding_model_name: self.embedding_model_name.clone(),
@@ -167,6 +173,9 @@ impl Tool for SearchKnowledgeBaseTool {
             ));
         }
 
+        let line_ranges = resolve_line_ranges(&self.db, self.tenant_id, &results)
+            .await
+            .map_err(SearchKBError)?;
         let mut output = Vec::with_capacity(results.len() * 3 + 1);
         output.push(format!(
             "知识库搜索 \"{query}\"，找到 {count} 条相关结果：\n",
@@ -189,12 +198,23 @@ impl Tool for SearchKnowledgeBaseTool {
             };
 
             let heading = r.heading_path.as_deref().unwrap_or("无标题");
+            let location = line_ranges.get(&r.chunk_id).map_or_else(
+                || "位置: 未知".to_string(),
+                |range| {
+                    if range.start_line == range.end_line {
+                        format!("位置: 第 {} 行", range.start_line)
+                    } else {
+                        format!("位置: 第 {}-{} 行", range.start_line, range.end_line)
+                    }
+                },
+            );
 
             output.push(format!(
-                "{}. [{}] (分数: {:.2}, 文档ID: {}, 分块ID: {})\n相关内容:\n{}\n",
+                "{}. [{}] (分数: {:.2}, {}, 文档ID: {}, 分块ID: {})\n相关内容:\n{}\n",
                 i + 1,
                 heading,
                 r.score,
+                location,
                 r.document_id,
                 r.chunk_id,
                 truncated,
@@ -214,6 +234,9 @@ impl SearchKnowledgeBaseTool {
         {
             return "当前搜索范围已限定为用户指定的文档集合。".to_string();
         }
+        if self.folder_ids.as_ref().is_some_and(|ids| ids.len() > 1) {
+            return "当前搜索范围已限定为用户指定目录及其子目录。".to_string();
+        }
         if self.folder_id.is_some() {
             return "当前搜索范围已限定为用户指定目录下的直接文档。".to_string();
         }
@@ -221,5 +244,140 @@ impl SearchKnowledgeBaseTool {
             return "当前搜索范围已限定为用户指定知识库。".to_string();
         }
         "当前搜索范围为租户内可见知识库文档。".to_string()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LineRange {
+    start_line: i32,
+    end_line: i32,
+}
+
+async fn resolve_line_ranges(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    results: &[SearchResult],
+) -> Result<std::collections::HashMap<Uuid, LineRange>, String> {
+    let document_ids: Vec<Uuid> =
+        results.iter().map(|result| result.document_id).collect();
+    if document_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let lines = document_lines::Entity::find()
+        .filter(document_lines::Column::TenantId.eq(tenant_id))
+        .filter(document_lines::Column::DocumentId.is_in(document_ids))
+        .order_by_asc(document_lines::Column::DocumentId)
+        .order_by_asc(document_lines::Column::LineNumber)
+        .all(db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut lines_by_doc: std::collections::HashMap<Uuid, Vec<document_lines::Model>> =
+        std::collections::HashMap::new();
+    for line in lines {
+        lines_by_doc.entry(line.document_id).or_default().push(line);
+    }
+
+    Ok(results
+        .iter()
+        .filter_map(|result| {
+            let lines = lines_by_doc.get(&result.document_id)?;
+            let range = line_range_for_result(result, lines)?;
+            Some((result.chunk_id, range))
+        })
+        .collect())
+}
+
+fn line_range_for_result(
+    result: &SearchResult,
+    lines: &[document_lines::Model],
+) -> Option<LineRange> {
+    let start = i64::from(result.char_start?);
+    let end_exclusive = i64::from(result.char_end?);
+    let start_line = char_offset_to_line(start, lines)?;
+    let end_line =
+        char_offset_to_line(end_exclusive.saturating_sub(1).max(start), lines)?;
+    Some(LineRange {
+        start_line,
+        end_line: end_line.max(start_line),
+    })
+}
+
+fn char_offset_to_line(offset: i64, lines: &[document_lines::Model]) -> Option<i32> {
+    if lines.is_empty() {
+        return None;
+    }
+
+    for line in lines {
+        let line_start = line
+            .cumulative_chars
+            .saturating_sub(i64::from(line.line_chars));
+        if offset >= line_start && offset < line.cumulative_chars {
+            return Some(line.line_number);
+        }
+        if line.line_chars == 0 && offset == line_start {
+            return Some(line.line_number);
+        }
+    }
+
+    lines.last().map(|line| line.line_number)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{char_offset_to_line, line_range_for_result};
+    use crate::models::_entities::document_lines;
+    use crate::modules::knowledge_base::providers::search::SearchResult;
+    use uuid::Uuid;
+
+    #[test]
+    fn char_offset_to_line_maps_boundaries_to_next_line() {
+        let lines = vec![line(1, "aaa", 3), line(2, "bbb", 6), line(3, "ccc", 9)];
+
+        assert_eq!(char_offset_to_line(0, &lines), Some(1));
+        assert_eq!(char_offset_to_line(2, &lines), Some(1));
+        assert_eq!(char_offset_to_line(3, &lines), Some(2));
+        assert_eq!(char_offset_to_line(8, &lines), Some(3));
+    }
+
+    #[test]
+    fn line_range_for_result_maps_chunk_char_range() {
+        let lines = vec![line(1, "aaa", 3), line(2, "bbb", 6), line(3, "ccc", 9)];
+        let result = search_result(Some(2), Some(7));
+
+        let range = line_range_for_result(&result, &lines).unwrap();
+
+        assert_eq!(range.start_line, 1);
+        assert_eq!(range.end_line, 3);
+    }
+
+    fn line(
+        line_number: i32,
+        text: &str,
+        cumulative_chars: i64,
+    ) -> document_lines::Model {
+        document_lines::Model {
+            tenant_id: Uuid::now_v7(),
+            document_id: Uuid::now_v7(),
+            line_number,
+            line_text: text.to_string(),
+            line_chars: i32::try_from(text.chars().count()).unwrap(),
+            cumulative_chars,
+            created_at: chrono::Utc::now().naive_utc(),
+        }
+    }
+
+    fn search_result(char_start: Option<i32>, char_end: Option<i32>) -> SearchResult {
+        SearchResult {
+            chunk_id: Uuid::now_v7(),
+            document_id: Uuid::now_v7(),
+            content: String::new(),
+            heading_path: None,
+            page_number: None,
+            char_start,
+            char_end,
+            score: 1.0,
+        }
     }
 }

@@ -1,5 +1,7 @@
 pub mod frontend_tool_stub;
 pub mod list_conversation_history;
+pub mod list_knowledge_base_documents;
+pub mod list_knowledge_base_scope;
 pub mod list_materials;
 pub mod qa_v3_hook;
 pub mod read_conversation_turn;
@@ -151,6 +153,8 @@ impl MaterialRegistry {
 
 pub use frontend_tool_stub::FrontendToolStub;
 pub use list_conversation_history::ListConversationHistoryTool;
+pub use list_knowledge_base_documents::ListKnowledgeBaseDocumentsTool;
+pub use list_knowledge_base_scope::ListKnowledgeBaseScopeTool;
 pub use list_materials::ListMaterialsTool;
 pub use qa_v3_hook::QaV3Hook;
 pub use read_conversation_turn::ReadConversationTurnTool;
