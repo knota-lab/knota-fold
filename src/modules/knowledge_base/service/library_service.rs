@@ -217,6 +217,23 @@ pub async fn get_folder(
 }
 
 #[tracing::instrument(skip(db))]
+pub async fn list_folder_subtree_ids(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    folder_id: Uuid,
+) -> loco_rs::Result<Vec<Uuid>> {
+    let folder = get_folder(db, tenant_id, folder_id).await?;
+    kb_folders::Entity::find()
+        .filter(kb_folders::Column::TenantId.eq(tenant_id))
+        .filter(kb_folders::Column::LibraryId.eq(folder.library_id))
+        .filter(kb_folders::Column::Path.starts_with(folder.path))
+        .all(db)
+        .await
+        .db_err()
+        .map(|folders| folders.into_iter().map(|item| item.id).collect())
+}
+
+#[tracing::instrument(skip(db))]
 pub async fn update_folder(
     db: &DatabaseConnection,
     tenant_id: Uuid,

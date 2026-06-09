@@ -88,6 +88,7 @@ pub(crate) async fn search(
             limit,
             library_id: params.library_id,
             folder_id: params.folder_id,
+            folder_ids: None,
             document_ids: params.document_ids,
         },
     )

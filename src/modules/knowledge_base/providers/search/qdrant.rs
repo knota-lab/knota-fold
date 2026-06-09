@@ -178,6 +178,15 @@ fn build_filter(tenant_id: Uuid, filter: Option<&SearchFilter>) -> Filter {
         if let Some(folder_id) = f.folder_id {
             must.push(Condition::matches("folder_id", folder_id.to_string()));
         }
+        if let Some(folder_ids) = &f.folder_ids {
+            if !folder_ids.is_empty() {
+                let folder_conds: Vec<Condition> = folder_ids
+                    .iter()
+                    .map(|id| Condition::matches("folder_id", id.to_string()))
+                    .collect();
+                must.push(Filter::should(folder_conds).into());
+            }
+        }
         if let Some(doc_ids) = &f.document_ids {
             if !doc_ids.is_empty() {
                 let doc_conds: Vec<Condition> = doc_ids
@@ -414,7 +423,8 @@ mod tests {
             Some(&SearchFilter {
                 document_ids: Some(vec![document_id]),
                 library_id: Some(library_id),
-                folder_id: Some(folder_id),
+                folder_id: None,
+                folder_ids: Some(vec![folder_id]),
                 min_score: None,
                 user_id: Some(user_id),
             }),

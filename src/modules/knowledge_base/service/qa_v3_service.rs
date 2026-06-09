@@ -24,6 +24,7 @@ use crate::modules::knowledge_base::providers::{SharedEmbeddingClient, SharedQaC
 
 use super::chat_service;
 use super::chat_service::CreateMessageParams;
+use super::library_service;
 use super::memory_service;
 use super::memory_service::IndexMessageParams;
 use super::memory_service::RecallHistoryParams;
@@ -892,6 +893,8 @@ fn build_material_refs_json(
     }
     if let Some(folder_id) = request.material.folder_id {
         refs["folderId"] = serde_json::json!(folder_id.to_string());
+        refs["includeSubfolders"] =
+            serde_json::json!(request.material.include_subfolders);
     }
     if let Some(ref inline_text) = request.material.inline {
         refs["inline"] = serde_json::json!({
@@ -1324,6 +1327,18 @@ async fn run_agent_stream(
         });
 
     if ctx.request.material.use_knowledge_base {
+        let folder_ids = match resolve_search_folder_ids(ctx).await {
+            Ok(ids) => ids,
+            Err(message) => {
+                let _ = send_event(ctx.tx, QaEvent::Error { message }).await;
+                return QaTurnResult {
+                    final_answer: String::new(),
+                    tool_call_count: 0,
+                    captured_usage: None,
+                    client_connected: false,
+                };
+            }
+        };
         agent_builder = agent_builder.tool(SearchKnowledgeBaseTool {
             embedding_client: ctx.embedding_client.clone(),
             search_provider: ctx.search_provider.clone(),
@@ -1332,6 +1347,7 @@ async fn run_agent_stream(
             user_id: ctx.user_id,
             library_id: ctx.request.material.library_id,
             folder_id: ctx.request.material.folder_id,
+            folder_ids,
             document_ids: (!ctx.request.material.document_ids.is_empty())
                 .then(|| ctx.request.material.document_ids.clone()),
         });
@@ -1369,6 +1385,30 @@ async fn run_agent_stream(
         .multi_turn(15)
         .await;
     consume_agent_stream(ctx, session, records_hook, &mut stream).await
+}
+
+async fn resolve_search_folder_ids(
+    ctx: &QaStreamCtx<'_>,
+) -> Result<Option<Vec<Uuid>>, String> {
+    if !ctx.request.material.include_subfolders {
+        return Ok(None);
+    }
+
+    let Some(folder_id) = ctx.request.material.folder_id else {
+        return Ok(None);
+    };
+
+    library_service::list_folder_subtree_ids(ctx.db, ctx.tenant_id, folder_id)
+        .await
+        .map(Some)
+        .map_err(|e| {
+            tracing::warn!(
+                error = %e,
+                folder_id = %folder_id,
+                "failed to resolve knowledge base folder subtree"
+            );
+            e.to_string()
+        })
 }
 
 async fn consume_agent_stream(

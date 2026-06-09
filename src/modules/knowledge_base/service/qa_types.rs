@@ -47,6 +47,8 @@ pub struct MaterialInput {
     pub library_id: Option<uuid::Uuid>,
     pub folder_id: Option<uuid::Uuid>,
     #[serde(default)]
+    pub include_subfolders: bool,
+    #[serde(default)]
     pub file_ids: Vec<uuid::Uuid>,
     #[serde(default)]
     pub document_ids: Vec<uuid::Uuid>,

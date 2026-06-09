@@ -54,6 +54,7 @@ pub struct SearchKnowledgeBaseTool {
     pub user_id: Uuid,
     pub library_id: Option<Uuid>,
     pub folder_id: Option<Uuid>,
+    pub folder_ids: Option<Vec<Uuid>>,
     pub document_ids: Option<Vec<Uuid>>,
 }
 
@@ -65,6 +66,7 @@ impl fmt::Debug for SearchKnowledgeBaseTool {
             .field("user_id", &self.user_id)
             .field("library_id", &self.library_id)
             .field("folder_id", &self.folder_id)
+            .field("folder_ids", &self.folder_ids)
             .field("document_ids", &self.document_ids)
             .finish_non_exhaustive()
     }
@@ -80,6 +82,7 @@ impl Clone for SearchKnowledgeBaseTool {
             user_id: self.user_id,
             library_id: self.library_id,
             folder_id: self.folder_id,
+            folder_ids: self.folder_ids.clone(),
             document_ids: self.document_ids.clone(),
         }
     }
@@ -150,6 +153,7 @@ impl Tool for SearchKnowledgeBaseTool {
                 limit: top_k as usize,
                 library_id: self.library_id,
                 folder_id: self.folder_id,
+                folder_ids: self.folder_ids.clone(),
                 document_ids: self.document_ids.clone(),
             },
         )

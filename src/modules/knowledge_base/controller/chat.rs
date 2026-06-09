@@ -271,7 +271,16 @@ fn markdown_material_lines(refs: &serde_json::Value) -> Vec<String> {
         material_lines.push(format!("- 知识库范围: {library_id}"));
     }
     if let Some(folder_id) = refs.get("folderId").and_then(|v| v.as_str()) {
-        material_lines.push(format!("- 目录范围: {folder_id}"));
+        let scope_suffix = if refs
+            .get("includeSubfolders")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
+            "（含子目录）"
+        } else {
+            "（仅当前目录）"
+        };
+        material_lines.push(format!("- 目录范围: {folder_id}{scope_suffix}"));
     }
     if refs.get("fileIds").is_some() {
         material_lines.push("- 文件".to_string());

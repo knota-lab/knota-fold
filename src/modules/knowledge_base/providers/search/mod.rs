@@ -41,6 +41,7 @@ pub struct SearchFilter {
     pub document_ids: Option<Vec<Uuid>>,
     pub library_id: Option<Uuid>,
     pub folder_id: Option<Uuid>,
+    pub folder_ids: Option<Vec<Uuid>>,
     pub min_score: Option<f64>,
     pub user_id: Option<Uuid>, // for visibility filtering
 }
