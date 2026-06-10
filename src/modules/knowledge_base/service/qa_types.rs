@@ -46,6 +46,7 @@ pub struct MaterialInput {
     pub inline: Option<String>,
     pub library_id: Option<uuid::Uuid>,
     pub folder_id: Option<uuid::Uuid>,
+    pub knowledge_scope_label: Option<String>,
     #[serde(default)]
     pub include_subfolders: bool,
     #[serde(default)]

@@ -358,6 +358,14 @@ fn build_material_refs_json(
         refs["includeSubfolders"] =
             serde_json::json!(request.material.include_subfolders);
     }
+    if let Some(label) = request
+        .material
+        .knowledge_scope_label
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        refs["knowledgeScopeLabel"] = serde_json::json!(label);
+    }
     if let Some(ref inline_text) = request.material.inline {
         refs["inline"] = serde_json::json!({
             "type": "inline",
@@ -1017,6 +1025,21 @@ fn collect_tool_usage_json(records_hook: &QaV3Hook) -> Option<serde_json::Value>
     Some(serde_json::Value::Object(obj))
 }
 
+fn attach_citations_to_usage(
+    usage: Option<serde_json::Value>,
+    citations: &[Citation],
+) -> Option<serde_json::Value> {
+    if citations.is_empty() {
+        return usage;
+    }
+
+    let mut obj = usage
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    obj.insert("citations".to_string(), serde_json::json!(citations));
+    Some(serde_json::Value::Object(obj))
+}
+
 async fn persist_successful_turn(
     ctx: &QaStreamCtx<'_>,
     session_prep: &SessionPrep,
@@ -1036,8 +1059,9 @@ async fn persist_successful_turn(
             .await?;
         }
 
-        let tool_usage_json = collect_tool_usage_json(records_hook);
         let citations = records_hook.take_citations();
+        let tool_usage_json =
+            attach_citations_to_usage(collect_tool_usage_json(records_hook), &citations);
         let (prompt_tokens, completion_tokens, total_tokens) =
             turn_result.captured_usage.map_or((0, 0, 0), |u| {
                 (
