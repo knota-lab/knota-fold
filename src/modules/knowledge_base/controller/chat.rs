@@ -304,6 +304,7 @@ fn write_markdown_assistant_message(md: &mut String, msg: &chat_messages::Model)
     } else {
         write_markdown_legacy_assistant(md, msg, is_error);
     }
+    write_markdown_citations(md, msg.token_usage.as_ref());
 
     if msg.total_tokens > 0 {
         let _ = writeln!(
@@ -314,6 +315,48 @@ fn write_markdown_assistant_message(md: &mut String, msg: &chat_messages::Model)
     }
 
     md.push_str("\n---\n\n");
+}
+
+fn write_markdown_citations(md: &mut String, token_usage: Option<&serde_json::Value>) {
+    use std::fmt::Write;
+
+    let Some(citations) = token_usage
+        .and_then(|tu| tu.get("citations"))
+        .and_then(serde_json::Value::as_array)
+        .filter(|items| !items.is_empty())
+    else {
+        return;
+    };
+
+    md.push_str("\n**引用来源:**\n");
+    for citation in citations {
+        let title = citation_title(citation);
+        let heading = citation
+            .get("headingPath")
+            .and_then(serde_json::Value::as_str);
+        let document_id = citation
+            .get("documentId")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unknown");
+        let chunk_suffix = citation
+            .get("chunkId")
+            .and_then(serde_json::Value::as_str)
+            .map_or_else(String::new, |id| format!(", 分块: {}", short_id(id)));
+        let score = citation
+            .get("score")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or_default();
+        let location = citation_location(citation);
+
+        let _ = writeln!(
+            md,
+            "- {title}（{location}, 文档: {document}{chunk_suffix}, 相关度: {score:.2}）",
+            document = short_id(document_id),
+        );
+        if heading.is_some() && citation.get("documentTitle").is_some() {
+            let _ = writeln!(md, "  - 章节: {}", heading.unwrap_or_default());
+        }
+    }
 }
 
 fn write_markdown_content_parts(
@@ -443,6 +486,34 @@ fn format_duration(duration_ms: u64) -> String {
     } else {
         format!("{}.{:01}s", duration_ms / 1000, (duration_ms % 1000) / 100)
     }
+}
+
+fn citation_title(citation: &serde_json::Value) -> String {
+    citation
+        .get("documentTitle")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            citation
+                .get("headingPath")
+                .and_then(serde_json::Value::as_str)
+        })
+        .map_or_else(|| "未知文档".to_string(), ToString::to_string)
+}
+
+fn citation_location(citation: &serde_json::Value) -> String {
+    let start = citation
+        .get("startLine")
+        .and_then(serde_json::Value::as_i64);
+    let end = citation.get("endLine").and_then(serde_json::Value::as_i64);
+    match (start, end) {
+        (Some(start), Some(end)) if start != end => format!("第 {start}-{end} 行"),
+        (Some(start), _) => format!("第 {start} 行"),
+        _ => "位置未知".to_string(),
+    }
+}
+
+fn short_id(id: &str) -> String {
+    id.chars().take(8).collect()
 }
 
 /// Export a chat session as debug Markdown (full tool results, debug context, etc.).
@@ -705,8 +776,49 @@ fn write_debug_assistant_message(
     }
 
     write_debug_tool_records(html, tu);
+    write_debug_citations(html, tu);
     write_debug_answer(html, msg);
     html.push_str("</div>\n");
+}
+
+fn write_debug_citations(html: &mut String, tu: Option<&serde_json::Value>) {
+    use std::fmt::Write;
+
+    let Some(citations) = tu
+        .and_then(|v| v.get("citations"))
+        .and_then(serde_json::Value::as_array)
+        .filter(|items| !items.is_empty())
+    else {
+        return;
+    };
+
+    html.push_str("<div class=\"section-title\">引用来源</div>\n");
+    html.push_str("<table class=\"kv-table\"><tr><td>文档</td><td>章节</td><td>位置</td><td>分块</td><td>相关度</td></tr>");
+    for citation in citations {
+        let title = citation_title(citation);
+        let heading = citation
+            .get("headingPath")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("—");
+        let chunk = citation
+            .get("chunkId")
+            .and_then(serde_json::Value::as_str)
+            .map_or_else(|| "—".to_string(), short_id);
+        let score = citation
+            .get("score")
+            .and_then(serde_json::Value::as_f64)
+            .map_or_else(|| "—".to_string(), |value| format!("{value:.2}"));
+        let _ = write!(
+            html,
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td><code>{}</code></td><td>{}</td></tr>",
+            html_escape(&title),
+            html_escape(heading),
+            html_escape(&citation_location(citation)),
+            html_escape(&chunk),
+            score
+        );
+    }
+    html.push_str("</table>\n");
 }
 
 fn write_debug_context(html: &mut String, dc: &serde_json::Value) {

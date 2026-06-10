@@ -71,6 +71,10 @@ pub fn results_to_citations(results: &[SearchResult]) -> Vec<Citation> {
         .map(|r| Citation {
             document_id: r.document_id,
             chunk_id: Some(r.chunk_id),
+            document_title: None,
+            heading_path: r.heading_path.clone(),
+            start_line: None,
+            end_line: None,
             content: r.content.clone(),
             score: r.score,
         })

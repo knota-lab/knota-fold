@@ -64,6 +64,10 @@ const fn default_use_knowledge_base() -> bool {
 pub struct Citation {
     pub document_id: uuid::Uuid,
     pub chunk_id: Option<uuid::Uuid>,
+    pub document_title: Option<String>,
+    pub heading_path: Option<String>,
+    pub start_line: Option<i32>,
+    pub end_line: Option<i32>,
     pub content: String,
     pub score: f64,
 }

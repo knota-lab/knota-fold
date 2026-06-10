@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ use rig::tool::Tool;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::initializers::knowledge_base::SharedSearchProvider;
-use crate::models::_entities::document_lines;
+use crate::models::_entities::{document_lines, kb_chunks, kb_documents};
 use crate::modules::knowledge_base::providers::search::SearchResult;
 use crate::modules::knowledge_base::providers::SharedEmbeddingClient;
 use crate::modules::knowledge_base::service::search_service;
@@ -165,10 +166,11 @@ impl Tool for SearchKnowledgeBaseTool {
         )
         .await
         .map_err(|e| SearchKBError(e.to_string()))?;
+        let results = self.filter_visible_results(results).await?;
 
         if results.is_empty() {
             return Ok(format!(
-                "知识库搜索 \"{query}\" 未找到相关结果。",
+                "知识库搜索 \"{query}\" 未找到当前范围内可见的相关结果。",
                 query = args.query
             ));
         }
@@ -226,6 +228,84 @@ impl Tool for SearchKnowledgeBaseTool {
 }
 
 impl SearchKnowledgeBaseTool {
+    async fn filter_visible_results(
+        &self,
+        results: Vec<SearchResult>,
+    ) -> Result<Vec<SearchResult>, SearchKBError> {
+        let chunk_ids: Vec<Uuid> = results.iter().map(|result| result.chunk_id).collect();
+        if chunk_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let chunks = kb_chunks::Entity::find()
+            .filter(kb_chunks::Column::TenantId.eq(self.tenant_id))
+            .filter(kb_chunks::Column::Id.is_in(chunk_ids))
+            .all(&*self.db)
+            .await
+            .map_err(|e| SearchKBError(e.to_string()))?;
+        let chunks_by_id: HashMap<Uuid, kb_chunks::Model> =
+            chunks.into_iter().map(|chunk| (chunk.id, chunk)).collect();
+        if chunks_by_id.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let document_ids: Vec<Uuid> = chunks_by_id
+            .values()
+            .map(|chunk| chunk.document_id)
+            .collect();
+        let mut query = kb_documents::Entity::find()
+            .filter(kb_documents::Column::TenantId.eq(self.tenant_id))
+            .filter(kb_documents::Column::Id.is_in(document_ids))
+            .filter(kb_documents::Column::Status.eq("ready"))
+            .filter(
+                kb_documents::Column::Scope
+                    .eq("tenant")
+                    .or(kb_documents::Column::Scope
+                        .eq("private")
+                        .and(kb_documents::Column::CreatedBy.eq(self.user_id))),
+            );
+
+        if let Some(document_ids) = &self.document_ids {
+            if !document_ids.is_empty() {
+                query =
+                    query.filter(kb_documents::Column::Id.is_in(document_ids.clone()));
+            }
+        }
+        if let Some(library_id) = self.library_id {
+            query = query.filter(kb_documents::Column::LibraryId.eq(library_id));
+        }
+        if let Some(folder_ids) = &self.folder_ids {
+            if !folder_ids.is_empty() {
+                query = query
+                    .filter(kb_documents::Column::FolderId.is_in(folder_ids.clone()));
+            }
+        } else if let Some(folder_id) = self.folder_id {
+            query = query.filter(kb_documents::Column::FolderId.eq(folder_id));
+        }
+
+        let visible_docs: std::collections::HashSet<Uuid> = query
+            .all(&*self.db)
+            .await
+            .map_err(|e| SearchKBError(e.to_string()))?
+            .into_iter()
+            .map(|document| document.id)
+            .collect();
+
+        Ok(results
+            .into_iter()
+            .filter_map(|mut result| {
+                let chunk = chunks_by_id.get(&result.chunk_id)?;
+                if !visible_docs.contains(&chunk.document_id) {
+                    return None;
+                }
+                result.document_id = chunk.document_id;
+                result.char_start = result.char_start.or(chunk.char_start);
+                result.char_end = result.char_end.or(chunk.char_end);
+                Some(result)
+            })
+            .collect())
+    }
+
     fn scope_description(&self) -> String {
         if self
             .document_ids

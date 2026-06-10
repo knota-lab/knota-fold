@@ -248,6 +248,8 @@ impl SearchProvider for QdrantSearchProvider {
                 "content": chunk.content,
                 "heading_path": chunk.heading_path,
                 "page_number": chunk.page_number,
+                "char_start": chunk.char_start,
+                "char_end": chunk.char_end,
                 "token_count": chunk.token_count,
             });
             if let Some(library_id) = chunk.library_id {

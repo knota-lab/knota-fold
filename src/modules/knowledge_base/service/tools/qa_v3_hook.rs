@@ -401,6 +401,8 @@ where
         // H6: Extract citations from search_knowledge_base results.
         if tool_name == "search_knowledge_base" {
             extract_citations_from_result(result, &self.citations);
+        } else if tool_name == "read_knowledge_base_lines" {
+            merge_line_read_citation(result, &self.citations);
         }
 
         HookAction::cont()
@@ -475,6 +477,8 @@ fn extract_citations_from_result(result: &str, citations: &Arc<Mutex<Vec<Citatio
                 continue;
             };
             let chunk_id = uuid::Uuid::parse_str(chunk_id_str).ok();
+            let heading_path = extract_heading_path(line).map(str::to_string);
+            let (start_line, end_line) = extract_line_range(line);
 
             // Extract content after "相关内容:\n" on the next line
             // Since we're iterating line by line, we'll grab a truncated preview
@@ -491,11 +495,97 @@ fn extract_citations_from_result(result: &str, citations: &Arc<Mutex<Vec<Citatio
             list.push(Citation {
                 document_id: doc_id,
                 chunk_id,
+                document_title: None,
+                heading_path,
+                start_line,
+                end_line,
                 content,
                 score,
             });
         }
     }
+}
+
+fn merge_line_read_citation(result: &str, citations: &Arc<Mutex<Vec<Citation>>>) {
+    let Some((document_title, document_id, start_line, end_line)) =
+        parse_read_lines_header(result)
+    else {
+        return;
+    };
+
+    if let Ok(mut list) = citations.lock() {
+        if let Some(existing) = list
+            .iter_mut()
+            .rev()
+            .find(|citation| citation.document_id == document_id)
+        {
+            existing.document_title = Some(document_title);
+            existing.start_line = Some(start_line);
+            existing.end_line = Some(end_line);
+            return;
+        }
+
+        list.push(Citation {
+            document_id,
+            chunk_id: None,
+            document_title: Some(document_title),
+            heading_path: None,
+            start_line: Some(start_line),
+            end_line: Some(end_line),
+            content: extract_line_preview(result),
+            score: 0.0,
+        });
+    }
+}
+
+fn parse_read_lines_header(result: &str) -> Option<(String, uuid::Uuid, i32, i32)> {
+    let first_line = result.lines().next()?;
+    let title_start = first_line.find('《')? + '《'.len_utf8();
+    let title_end = first_line[title_start..].find('》')? + title_start;
+    let title = first_line[title_start..title_end].to_string();
+
+    let id_start = first_line[title_end..].find('(')? + title_end + 1;
+    let id_end = first_line[id_start..].find(')')? + id_start;
+    let document_id = uuid::Uuid::parse_str(&first_line[id_start..id_end]).ok()?;
+
+    let line_marker = "第 ";
+    let line_start = first_line[id_end..].find(line_marker)? + id_end + line_marker.len();
+    let line_end = first_line[line_start..].find('行')? + line_start;
+    let raw = first_line[line_start..line_end].trim();
+    let (start_line, end_line) = parse_line_range(raw);
+
+    Some((title, document_id, start_line?, end_line?))
+}
+
+fn parse_line_range(raw: &str) -> (Option<i32>, Option<i32>) {
+    if let Some((start, end)) = raw.split_once('-') {
+        return (start.trim().parse().ok(), end.trim().parse().ok());
+    }
+    let line_num = raw.trim().parse().ok();
+    (line_num, line_num)
+}
+
+fn extract_line_preview(result: &str) -> String {
+    result
+        .lines()
+        .skip(1)
+        .find(|line| !line.trim().is_empty())
+        .map_or_else(String::new, |line| line.chars().take(120).collect())
+}
+
+fn extract_heading_path(line: &str) -> Option<&str> {
+    let start = line.find('[')?;
+    let rest = &line[start + 1..];
+    let end = rest.find("] (")?;
+    Some(&rest[..end])
+}
+
+fn extract_line_range(line: &str) -> (Option<i32>, Option<i32>) {
+    let Some(raw) = extract_field(line, "位置: 第 ") else {
+        return (None, None);
+    };
+    let trimmed = raw.trim_end_matches('行').trim();
+    parse_line_range(trimmed)
 }
 
 /// Extract a field value between the marker and the next `,` or `)`.
@@ -549,5 +639,65 @@ mod tests {
         let s = "日本語テスト";
         // Each char is 3 bytes; limit of 6 bytes should give first 2 chars.
         assert_eq!(truncate_str(s, 6), "日本");
+    }
+
+    #[test]
+    fn extract_line_range_parses_single_line() {
+        let line = "1. [标题] (分数: 0.85, 位置: 第 12 行, 文档ID: 019ea257-0000-7000-8000-000000000001, 分块ID: 019ea257-0000-7000-8000-000000000002)";
+
+        assert_eq!(extract_line_range(line), (Some(12), Some(12)));
+    }
+
+    #[test]
+    fn extract_line_range_parses_line_range() {
+        let line = "1. [标题] (分数: 0.85, 位置: 第 12-18 行, 文档ID: 019ea257-0000-7000-8000-000000000001, 分块ID: 019ea257-0000-7000-8000-000000000002)";
+
+        assert_eq!(extract_line_range(line), (Some(12), Some(18)));
+    }
+
+    #[test]
+    fn parse_read_lines_header_extracts_title_document_and_range() {
+        let document_id = uuid::Uuid::now_v7();
+        let result =
+            format!("文档《前端开发指导》({document_id}) 第 10-20 行：\n10 | 内容");
+
+        let (title, parsed_document_id, start_line, end_line) =
+            parse_read_lines_header(&result).unwrap();
+
+        assert_eq!(title, "前端开发指导");
+        assert_eq!(parsed_document_id, document_id);
+        assert_eq!(start_line, 10);
+        assert_eq!(end_line, 20);
+    }
+
+    #[test]
+    fn merge_line_read_citation_fills_existing_search_citation() {
+        let document_id = uuid::Uuid::now_v7();
+        let chunk_id = uuid::Uuid::now_v7();
+        let citations = Arc::new(Mutex::new(vec![Citation {
+            document_id,
+            chunk_id: Some(chunk_id),
+            document_title: None,
+            heading_path: Some("3. 组件开发规范".to_string()),
+            start_line: None,
+            end_line: None,
+            content: "3. 组件开发规范".to_string(),
+            score: 0.7,
+        }]));
+        let result = format!(
+            "文档《knota-studio 前端开发指导》({document_id}) 第 33-45 行：\n33 | 内容"
+        );
+
+        merge_line_read_citation(&result, &citations);
+
+        let guard = citations.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(
+            guard[0].document_title.as_deref(),
+            Some("knota-studio 前端开发指导")
+        );
+        assert_eq!(guard[0].start_line, Some(33));
+        assert_eq!(guard[0].end_line, Some(45));
+        assert_eq!(guard[0].chunk_id, Some(chunk_id));
     }
 }
