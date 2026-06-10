@@ -21,7 +21,7 @@ use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::models::{
     document_lines as dl_models, kb_chunks as kc_models,
 };
-use crate::modules::knowledge_base::providers::parser::ParsedAsset;
+use crate::modules::knowledge_base::providers::parser::{ParsedAsset, ParsedDocument};
 use crate::modules::knowledge_base::providers::search::ChunkPoint;
 use crate::modules::knowledge_base::providers::SharedEmbeddingClient;
 use crate::modules::knowledge_base::service::numeric::embedding_vec_f64_to_f32;
@@ -35,6 +35,18 @@ use rig::embeddings::EmbeddingModel;
 
 const MAX_INDEX_FILE_BYTES: i64 = 50 * 1024 * 1024;
 const LEGACY_TEXT_SOURCE_TYPES: &[&str] = &["kb_upload", "chat_upload", "api", "sync"];
+
+macro_rules! log_index_stage_completed {
+    ($document_id:expr, $stage:literal, $started_at:expr $(, $field:ident = $value:expr)* $(,)?) => {
+        tracing::info!(
+            document_id = %$document_id,
+            stage = $stage,
+            elapsed_ms = elapsed_ms($started_at),
+            $($field = $value,)*
+            "knowledge base indexing stage completed"
+        );
+    };
+}
 
 pub struct IndexingWorker {
     pub ctx: AppContext,
@@ -442,13 +454,19 @@ fn normalise_parser_input(
             extension_mime.as_deref(),
             &source_name,
         )?;
-        return Ok((detected_mime.to_string(), source_name));
+        return Ok((
+            effective_parser_mime(
+                detected_mime,
+                &declared_mime,
+                extension_mime.as_deref(),
+            ),
+            source_name,
+        ));
     }
 
-    if extension_mime
-        .as_deref()
-        .is_some_and(|mime| is_supported_document_mime(mime) && mime != declared_mime)
-    {
+    if extension_mime.as_deref().is_some_and(|mime| {
+        is_supported_document_mime(mime) && !mime_matches_metadata(mime, &declared_mime)
+    }) {
         return Err(format!(
             "文件名后缀与记录的 MIME 类型不一致: sourceName='{source_name}', extensionMime='{}', declaredMime='{declared_mime}'",
             extension_mime.as_deref().unwrap_or_default()
@@ -464,7 +482,9 @@ fn ensure_detected_mime_matches_metadata(
     extension_mime: Option<&str>,
     source_name: &str,
 ) -> std::result::Result<(), String> {
-    if is_supported_document_mime(declared_mime) && detected_mime != declared_mime {
+    if is_supported_document_mime(declared_mime)
+        && !mime_matches_metadata(detected_mime, declared_mime)
+    {
         return Err(format!(
             "文件内容类型与记录的 MIME 类型不一致: detectedMime='{detected_mime}', declaredMime='{declared_mime}', sourceName='{source_name}'"
         ));
@@ -472,7 +492,7 @@ fn ensure_detected_mime_matches_metadata(
 
     if extension_mime
         .filter(|mime| is_supported_document_mime(mime))
-        .is_some_and(|mime| mime != detected_mime)
+        .is_some_and(|mime| !mime_matches_metadata(detected_mime, mime))
     {
         return Err(format!(
             "文件内容类型与文件名后缀不一致: detectedMime='{detected_mime}', extensionMime='{}', sourceName='{source_name}'",
@@ -481,6 +501,29 @@ fn ensure_detected_mime_matches_metadata(
     }
 
     Ok(())
+}
+
+fn mime_matches_metadata(actual_mime: &str, metadata_mime: &str) -> bool {
+    actual_mime == metadata_mime
+        || is_text_document_mime(actual_mime) && is_text_document_mime(metadata_mime)
+}
+
+fn effective_parser_mime(
+    detected_mime: &str,
+    declared_mime: &str,
+    extension_mime: Option<&str>,
+) -> String {
+    if is_text_document_mime(detected_mime)
+        && (extension_mime == Some("text/markdown") || declared_mime == "text/markdown")
+    {
+        return "text/markdown".to_string();
+    }
+
+    detected_mime.to_string()
+}
+
+fn is_text_document_mime(mime_type: &str) -> bool {
+    matches!(mime_type, "text/plain" | "text/markdown")
 }
 
 fn is_supported_document_mime(mime_type: &str) -> bool {
@@ -601,35 +644,18 @@ fn build_chunk_points_and_models(
 async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Result<()> {
     let pipeline_started_at = Instant::now();
 
-    // 4. Parse document — select parser by MIME type from source_type
-    let parser = p
-        .parser_chain
-        .iter()
-        .find(|pr| pr.supported_mime_types().contains(&p.mime_type))
-        .ok_or_else(|| {
-            KnowledgeBaseError::UnsupportedFormat(format!(
-                "no parser found for content type '{}'",
-                p.mime_type
-            ))
-            .to_err()
-        })?;
-    let parsed = async {
-        parser
-            .parse(p.input_bytes, p.mime_type, p.source_name)
-            .await
-            .map_err(|e| {
-                KnowledgeBaseError::ParsingError(format!("parsing failed: {e}")).to_err()
-            })
-    }
-    .instrument(tracing::info_span!(
-        "kb.index.parse",
-        document_id = %p.document_id,
-        mime_type = p.mime_type,
-        source_name = p.source_name,
-        input_bytes = p.input_bytes.len(),
-    ))
-    .await?;
+    // 4. Parse document
+    let parse_started_at = Instant::now();
+    let parsed = parse_document(p).await?;
+    log_index_stage_completed!(
+        p.document_id,
+        "parse",
+        parse_started_at,
+        markdown_chars = parsed.markdown.chars().count(),
+        asset_count = parsed.assets.len(),
+    );
 
+    let assets_started_at = Instant::now();
     let ParsedMarkdown {
         preview_markdown,
         index_markdown,
@@ -641,7 +667,15 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
             asset_count = parsed.assets.len(),
         ))
         .await?;
+    log_index_stage_completed!(
+        p.document_id,
+        "assets",
+        assets_started_at,
+        preview_chars = preview_markdown.chars().count(),
+        index_chars = index_markdown.chars().count(),
+    );
 
+    let save_parsed_started_at = Instant::now();
     async {
         document_service::set_parsed_content(
             db,
@@ -658,21 +692,49 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
         index_chars = index_markdown.chars().count(),
     ))
     .await?;
+    log_index_stage_completed!(p.document_id, "save_parsed", save_parsed_started_at);
 
     // 5. Chunk the markdown
+    let chunk_started_at = Instant::now();
     let chunks = chunk_index_markdown(p, &index_markdown)?;
+    log_index_stage_completed!(
+        p.document_id,
+        "chunk",
+        chunk_started_at,
+        chunk_count = chunks.len(),
+        total_tokens = chunks.iter().map(|chunk| chunk.token_count).sum::<i32>(),
+    );
 
     // 6. Split lines and insert
+    let lines_started_at = Instant::now();
     insert_document_lines(db, p, &index_markdown).await?;
+    log_index_stage_completed!(p.document_id, "lines", lines_started_at);
 
     // 7. Generate embeddings
+    let embedding_started_at = Instant::now();
     let embeddings = generate_embeddings(p, &chunks).await?;
+    log_index_stage_completed!(
+        p.document_id,
+        "embedding",
+        embedding_started_at,
+        embedding_count = embeddings.len(),
+    );
 
     // 8-10. Build chunks, save chunks and upsert vectors
+    let persist_started_at = Instant::now();
     let total_tokens = persist_chunks_and_vectors(db, p, &chunks, &embeddings).await?;
+    log_index_stage_completed!(
+        p.document_id,
+        "persist",
+        persist_started_at,
+        chunk_count = chunks.len(),
+        total_tokens = total_tokens,
+    );
 
     // 11. Mark document as ready
+    let ready_started_at = Instant::now();
     mark_document_ready(db, p, chunks.len(), total_tokens).await?;
+    log_index_stage_completed!(p.document_id, "mark_ready", ready_started_at);
 
     tracing::info!(
         document_id = %p.document_id,
@@ -683,6 +745,37 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     );
 
     Ok(())
+}
+
+async fn parse_document(p: &PipelineParams<'_>) -> Result<ParsedDocument> {
+    let parser = p
+        .parser_chain
+        .iter()
+        .find(|pr| pr.supported_mime_types().contains(&p.mime_type))
+        .ok_or_else(|| {
+            KnowledgeBaseError::UnsupportedFormat(format!(
+                "no parser found for content type '{}'",
+                p.mime_type
+            ))
+            .to_err()
+        })?;
+
+    async {
+        parser
+            .parse(p.input_bytes, p.mime_type, p.source_name)
+            .await
+            .map_err(|e| {
+                KnowledgeBaseError::ParsingError(format!("parsing failed: {e}")).to_err()
+            })
+    }
+    .instrument(tracing::info_span!(
+        "kb.index.parse",
+        document_id = %p.document_id,
+        mime_type = p.mime_type,
+        source_name = p.source_name,
+        input_bytes = p.input_bytes.len(),
+    ))
+    .await
 }
 
 fn chunk_index_markdown(
@@ -1148,6 +1241,19 @@ mod tests {
 
         assert_eq!(mime_type, "application/pdf");
         assert_eq!(source_name, "知识库-v4.pdf");
+    }
+
+    #[test]
+    fn parser_input_accepts_markdown_detected_as_plain_text() {
+        let (mime_type, source_name) = normalise_parser_input(
+            b"# Title\n\n| A | B |\n| - | - |\n| 1 | 2 |\n",
+            "text/markdown".to_string(),
+            "国际化.md".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(mime_type, "text/markdown");
+        assert_eq!(source_name, "国际化.md");
     }
 
     #[test]
