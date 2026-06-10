@@ -333,18 +333,18 @@ mod tests {
 
     #[test]
     fn char_offset_to_line_maps_boundaries_to_next_line() {
-        let lines = vec![line(1, "aaa", 3), line(2, "bbb", 6), line(3, "ccc", 9)];
+        let lines = vec![line(1, "aaa", 4), line(2, "bbb", 8), line(3, "ccc", 11)];
 
         assert_eq!(char_offset_to_line(0, &lines), Some(1));
-        assert_eq!(char_offset_to_line(2, &lines), Some(1));
-        assert_eq!(char_offset_to_line(3, &lines), Some(2));
-        assert_eq!(char_offset_to_line(8, &lines), Some(3));
+        assert_eq!(char_offset_to_line(3, &lines), Some(1));
+        assert_eq!(char_offset_to_line(4, &lines), Some(2));
+        assert_eq!(char_offset_to_line(10, &lines), Some(3));
     }
 
     #[test]
     fn line_range_for_result_maps_chunk_char_range() {
-        let lines = vec![line(1, "aaa", 3), line(2, "bbb", 6), line(3, "ccc", 9)];
-        let result = search_result(Some(2), Some(7));
+        let lines = vec![line(1, "aaa", 4), line(2, "bbb", 8), line(3, "ccc", 11)];
+        let result = search_result(Some(2), Some(9));
 
         let range = line_range_for_result(&result, &lines).unwrap();
 
@@ -362,7 +362,11 @@ mod tests {
             document_id: Uuid::now_v7(),
             line_number,
             line_text: text.to_string(),
-            line_chars: i32::try_from(text.chars().count()).unwrap(),
+            line_chars: if line_number < 3 {
+                i32::try_from(text.chars().count() + 1).unwrap()
+            } else {
+                i32::try_from(text.chars().count()).unwrap()
+            },
             cumulative_chars,
             created_at: chrono::Utc::now().naive_utc(),
         }

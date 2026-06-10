@@ -7,6 +7,9 @@ pub const MIME_BLACKLIST: &[&str] = &[
 
 #[must_use]
 pub fn detect_mime(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(b"%PDF-") {
+        return "application/pdf";
+    }
     tree_magic_mini::from_u8(bytes)
 }
 
@@ -36,6 +39,11 @@ mod tests {
     #[test]
     fn detect_mime_returns_non_empty_value_for_text() {
         assert!(!detect_mime(b"hello world\n").is_empty());
+    }
+
+    #[test]
+    fn detect_mime_recognizes_pdf_magic_bytes() {
+        assert_eq!(detect_mime(b"%PDF-1.7\nbody"), "application/pdf");
     }
 
     #[test]

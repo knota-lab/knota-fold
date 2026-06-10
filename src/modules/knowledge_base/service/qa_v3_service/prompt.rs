@@ -20,6 +20,7 @@ const BASE_SYSTEM_PROMPT: &str = "\
    - 然后调用 `read_material` 读取材料的指定部分
    - 可以调用 `search_material` 在材料中搜索关键词
    - 可以调用 `search_knowledge_base` 在知识库文档中搜索
+   - 搜索结果返回文档ID、分块ID或行号后，可以调用 `read_knowledge_base_lines` 读取命中片段前后的原文行
 
 2. 选择正确的材料：
    - `list_materials` 按提交顺序排列，第 1 份是最早提交的

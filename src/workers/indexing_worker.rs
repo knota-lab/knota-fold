@@ -29,6 +29,7 @@ use crate::modules::knowledge_base::service::{
     chunking_service, document_service, line_splitting_service,
 };
 use crate::services::resource_types::ResourceType;
+use crate::utils::mime::detect_mime;
 use rig::client::EmbeddingsClient;
 use rig::embeddings::EmbeddingModel;
 
@@ -237,6 +238,10 @@ async fn load_pipeline_input(
     db: &DatabaseConnection,
     doc: &kb_documents::Model,
 ) -> Result<PipelineInput> {
+    if document_has_file_source(doc) {
+        return load_file_pipeline_input(ctx, db, doc).await;
+    }
+
     if let Some(full_text) = &doc.full_text {
         return Ok(PipelineInput {
             bytes: full_text.as_bytes().to_vec(),
@@ -245,6 +250,18 @@ async fn load_pipeline_input(
         });
     }
 
+    load_file_pipeline_input(ctx, db, doc).await
+}
+
+const fn document_has_file_source(doc: &kb_documents::Model) -> bool {
+    doc.file_reference_id.is_some() || doc.file_id.is_some()
+}
+
+async fn load_file_pipeline_input(
+    ctx: &AppContext,
+    db: &DatabaseConnection,
+    doc: &kb_documents::Model,
+) -> Result<PipelineInput> {
     let file_input = load_document_file_input(db, doc).await?;
 
     if file_input.file.size > MAX_INDEX_FILE_BYTES {
@@ -259,11 +276,14 @@ async fn load_pipeline_input(
         KnowledgeBaseError::ConfigError("S3 client not initialized".into()).to_err()
     })?;
     let bytes = read_file_bytes(&s3_client, &file_input.file).await?;
+    let (mime_type, source_name) =
+        normalise_parser_input(&bytes, file_input.mime_type, file_input.source_name)
+            .map_err(|message| KnowledgeBaseError::ParsingError(message).to_err())?;
 
     Ok(PipelineInput {
         bytes,
-        mime_type: file_input.mime_type,
-        source_name: file_input.source_name,
+        mime_type,
+        source_name,
     })
 }
 
@@ -388,6 +408,96 @@ fn infer_mime_from_name(name: &str) -> Option<String> {
         _ => return None,
     };
     Some(mime.to_string())
+}
+
+fn normalise_parser_input(
+    bytes: &[u8],
+    declared_mime: String,
+    source_name: String,
+) -> std::result::Result<(String, String), String> {
+    let detected_mime = detect_mime(bytes);
+    let extension_mime = infer_mime_from_name(&source_name);
+    let magic_prefix = bytes
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    tracing::warn!(
+        declared_mime,
+        detected_mime,
+        extension_mime = extension_mime.as_deref().unwrap_or("unknown"),
+        source_name,
+        magic_prefix,
+        "knowledge base parser input MIME detection result"
+    );
+
+    if is_supported_document_mime(detected_mime)
+        && detected_mime != "application/octet-stream"
+    {
+        ensure_detected_mime_matches_metadata(
+            detected_mime,
+            &declared_mime,
+            extension_mime.as_deref(),
+            &source_name,
+        )?;
+        return Ok((detected_mime.to_string(), source_name));
+    }
+
+    if extension_mime
+        .as_deref()
+        .is_some_and(|mime| is_supported_document_mime(mime) && mime != declared_mime)
+    {
+        return Err(format!(
+            "文件名后缀与记录的 MIME 类型不一致: sourceName='{source_name}', extensionMime='{}', declaredMime='{declared_mime}'",
+            extension_mime.as_deref().unwrap_or_default()
+        ));
+    }
+
+    Ok((declared_mime, source_name))
+}
+
+fn ensure_detected_mime_matches_metadata(
+    detected_mime: &str,
+    declared_mime: &str,
+    extension_mime: Option<&str>,
+    source_name: &str,
+) -> std::result::Result<(), String> {
+    if is_supported_document_mime(declared_mime) && detected_mime != declared_mime {
+        return Err(format!(
+            "文件内容类型与记录的 MIME 类型不一致: detectedMime='{detected_mime}', declaredMime='{declared_mime}', sourceName='{source_name}'"
+        ));
+    }
+
+    if extension_mime
+        .filter(|mime| is_supported_document_mime(mime))
+        .is_some_and(|mime| mime != detected_mime)
+    {
+        return Err(format!(
+            "文件内容类型与文件名后缀不一致: detectedMime='{detected_mime}', extensionMime='{}', sourceName='{source_name}'",
+            extension_mime.unwrap_or_default()
+        ));
+    }
+
+    Ok(())
+}
+
+fn is_supported_document_mime(mime_type: &str) -> bool {
+    matches!(
+        mime_type,
+        "text/plain"
+            | "text/markdown"
+            | "application/pdf"
+            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            | "image/png"
+            | "image/jpeg"
+            | "image/webp"
+            | "image/bmp"
+            | "image/tiff"
+    )
 }
 
 async fn read_file_bytes(
@@ -898,11 +1008,12 @@ fn extension_for_mime(mime_type: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        extension_for_mime, indexing_error_message, normalize_asset_target,
-        resolve_file_document_mime, resolve_reference_document_mime,
-        rewrite_markdown_image_targets, strip_markdown_images,
+        document_has_file_source, extension_for_mime, indexing_error_message,
+        normalise_parser_input, normalize_asset_target, resolve_file_document_mime,
+        resolve_reference_document_mime, rewrite_markdown_image_targets,
+        strip_markdown_images,
     };
-    use crate::models::_entities::{file_references, files};
+    use crate::models::_entities::{file_references, files, kb_documents};
     use uuid::Uuid;
 
     #[test]
@@ -999,6 +1110,56 @@ mod tests {
     }
 
     #[test]
+    fn parser_input_rejects_pdf_when_extension_was_changed() {
+        let err = normalise_parser_input(
+            b"%PDF-1.7\nbody",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                .to_string(),
+            "知识库-v4 - 副本.docx".to_string(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("detectedMime='application/pdf'"));
+        assert!(err.contains("declaredMime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'"));
+    }
+
+    #[test]
+    fn parser_input_rejects_plain_text_when_extension_was_changed() {
+        let err = normalise_parser_input(
+            b"plain text",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                .to_string(),
+            "notes.docx".to_string(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("detectedMime='text/plain'"));
+        assert!(err.contains("declaredMime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'"));
+    }
+
+    #[test]
+    fn parser_input_accepts_matching_pdf_metadata() {
+        let (mime_type, source_name) = normalise_parser_input(
+            b"%PDF-1.7\nbody",
+            "application/pdf".to_string(),
+            "知识库-v4.pdf".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(mime_type, "application/pdf");
+        assert_eq!(source_name, "知识库-v4.pdf");
+    }
+
+    #[test]
+    fn document_with_parsed_text_and_file_reference_still_uses_file_source() {
+        let mut doc = kb_document_model();
+        doc.full_text = Some("# parsed markdown".to_string());
+        doc.file_reference_id = Some(Uuid::now_v7());
+
+        assert!(document_has_file_source(&doc));
+    }
+
+    #[test]
     fn indexing_error_message_keeps_custom_description() {
         let err =
             crate::modules::knowledge_base::errors::KnowledgeBaseError::EmbeddingError(
@@ -1053,6 +1214,31 @@ mod tests {
             created_by: Uuid::now_v7(),
             created_at: chrono::Utc::now().fixed_offset(),
             deleted_at: None,
+        }
+    }
+
+    fn kb_document_model() -> kb_documents::Model {
+        let now = chrono::Utc::now().naive_utc();
+        kb_documents::Model {
+            id: Uuid::now_v7(),
+            tenant_id: Uuid::now_v7(),
+            title: "doc".to_string(),
+            description: None,
+            library_id: None,
+            folder_id: None,
+            source_type: "application/pdf".to_string(),
+            file_id: None,
+            file_reference_id: None,
+            full_text: None,
+            status: "ready".to_string(),
+            scope: "tenant".to_string(),
+            chunk_count: 0,
+            total_tokens: 0,
+            metadata: None,
+            error_message: None,
+            created_by: Uuid::now_v7(),
+            created_at: now,
+            updated_at: now,
         }
     }
 }

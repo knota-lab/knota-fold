@@ -34,8 +34,8 @@ use super::tools::qa_v3_hook::QaV3Hook;
 use super::tools::{
     ListConversationHistoryTool, ListKnowledgeBaseDocumentsTool,
     ListKnowledgeBaseScopeTool, ListMaterialsTool, MaterialRegistry,
-    ReadConversationTurnTool, ReadMaterialTool, SearchKnowledgeBaseTool,
-    SearchMaterialTool, ToolResultBroker,
+    ReadConversationTurnTool, ReadKnowledgeBaseLinesTool, ReadMaterialTool,
+    SearchKnowledgeBaseTool, SearchMaterialTool, ToolResultBroker,
 };
 
 mod materials;
@@ -713,14 +713,11 @@ async fn run_agent_stream(
             Ok(ids) => ids,
             Err(message) => {
                 let _ = send_event(ctx.tx, QaEvent::Error { message }).await;
-                return QaTurnResult {
-                    final_answer: String::new(),
-                    tool_call_count: 0,
-                    captured_usage: None,
-                    client_connected: false,
-                };
+                return disconnected_turn_result();
             }
         };
+        let document_ids = (!ctx.request.material.document_ids.is_empty())
+            .then(|| ctx.request.material.document_ids.clone());
         agent_builder = agent_builder
             .tool(SearchKnowledgeBaseTool {
                 db: conversation_db.clone(),
@@ -732,8 +729,7 @@ async fn run_agent_stream(
                 library_id: ctx.request.material.library_id,
                 folder_id: ctx.request.material.folder_id,
                 folder_ids: folder_ids.clone(),
-                document_ids: (!ctx.request.material.document_ids.is_empty())
-                    .then(|| ctx.request.material.document_ids.clone()),
+                document_ids: document_ids.clone(),
             })
             .tool(ListKnowledgeBaseDocumentsTool {
                 db: conversation_db.clone(),
@@ -742,8 +738,7 @@ async fn run_agent_stream(
                 library_id: ctx.request.material.library_id,
                 folder_id: ctx.request.material.folder_id,
                 folder_ids: folder_ids.clone(),
-                document_ids: (!ctx.request.material.document_ids.is_empty())
-                    .then(|| ctx.request.material.document_ids.clone()),
+                document_ids: document_ids.clone(),
             })
             .tool(ListKnowledgeBaseScopeTool {
                 db: conversation_db.clone(),
@@ -751,7 +746,16 @@ async fn run_agent_stream(
                 user_id: ctx.user_id,
                 library_id: ctx.request.material.library_id,
                 folder_id: ctx.request.material.folder_id,
+                folder_ids: folder_ids.clone(),
+            })
+            .tool(ReadKnowledgeBaseLinesTool {
+                db: conversation_db.clone(),
+                tenant_id: ctx.tenant_id,
+                user_id: ctx.user_id,
+                library_id: ctx.request.material.library_id,
+                folder_id: ctx.request.material.folder_id,
                 folder_ids,
+                document_ids,
             });
     }
 
@@ -786,6 +790,15 @@ async fn run_agent_stream(
         .multi_turn(15)
         .await;
     consume_agent_stream(ctx, session, records_hook, &mut stream).await
+}
+
+const fn disconnected_turn_result() -> QaTurnResult {
+    QaTurnResult {
+        final_answer: String::new(),
+        tool_call_count: 0,
+        captured_usage: None,
+        client_connected: false,
+    }
 }
 
 async fn resolve_search_folder_ids(

@@ -5,17 +5,22 @@ pub struct RawLine {
     pub cumulative_chars: i64,
 }
 
-/// Split text into lines with character counting metadata.
+/// Split text into lines with character offset metadata.
 ///
-/// Lines are 1-indexed. `cumulative_chars` is the sum of all `line_chars`
-/// from line 1 through the current line (inclusive).
+/// Lines are 1-indexed. `line_chars` is the line's span in the original text:
+/// it includes the trailing `\n` for all non-final lines. `cumulative_chars`
+/// is the exclusive end offset of the line in character coordinates.
 #[must_use]
 pub fn split_lines(text: &str) -> Vec<RawLine> {
     let mut lines = Vec::new();
     let mut cumulative: i64 = 0;
+    let parts: Vec<&str> = text.split('\n').collect();
+    let last_idx = parts.len().saturating_sub(1);
 
-    for (idx, line) in text.split('\n').enumerate() {
-        let line_chars = i32::try_from(line.chars().count()).unwrap_or(i32::MAX);
+    for (idx, line) in parts.into_iter().enumerate() {
+        let text_chars = line.chars().count();
+        let span_chars = text_chars + usize::from(idx < last_idx);
+        let line_chars = i32::try_from(span_chars).unwrap_or(i32::MAX);
         cumulative += i64::from(line_chars);
 
         lines.push(RawLine {
@@ -59,18 +64,18 @@ mod tests {
 
         assert_eq!(lines[0].line_number, 1);
         assert_eq!(lines[0].line_text, "aaa");
-        assert_eq!(lines[0].line_chars, 3);
-        assert_eq!(lines[0].cumulative_chars, 3);
+        assert_eq!(lines[0].line_chars, 4);
+        assert_eq!(lines[0].cumulative_chars, 4);
 
         assert_eq!(lines[1].line_number, 2);
         assert_eq!(lines[1].line_text, "bbb");
-        assert_eq!(lines[1].line_chars, 3);
-        assert_eq!(lines[1].cumulative_chars, 6);
+        assert_eq!(lines[1].line_chars, 4);
+        assert_eq!(lines[1].cumulative_chars, 8);
 
         assert_eq!(lines[2].line_number, 3);
         assert_eq!(lines[2].line_text, "ccc");
         assert_eq!(lines[2].line_chars, 3);
-        assert_eq!(lines[2].cumulative_chars, 9);
+        assert_eq!(lines[2].cumulative_chars, 11);
     }
 
     #[test]
@@ -78,9 +83,11 @@ mod tests {
         let lines = split_lines("foo\n");
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0].line_text, "foo");
+        assert_eq!(lines[0].line_chars, 4);
+        assert_eq!(lines[0].cumulative_chars, 4);
         assert_eq!(lines[1].line_text, "");
         assert_eq!(lines[1].line_chars, 0);
-        assert_eq!(lines[1].cumulative_chars, 3);
+        assert_eq!(lines[1].cumulative_chars, 4);
     }
 
     #[test]
