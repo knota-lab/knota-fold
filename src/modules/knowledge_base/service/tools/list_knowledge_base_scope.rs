@@ -183,6 +183,7 @@ impl ListKnowledgeBaseScopeTool {
     ) -> Result<DocumentCounts, ListKnowledgeBaseScopeError> {
         let mut query = kb_documents::Entity::find()
             .filter(kb_documents::Column::TenantId.eq(self.tenant_id))
+            .filter(kb_documents::Column::DeletedAt.is_null())
             .filter(kb_documents::Column::Status.eq("ready"))
             .filter(
                 kb_documents::Column::Scope

@@ -18,8 +18,9 @@ pub use chat_service::{
 };
 pub use chunking_service::{chunk_markdown, ChunkMarkdownOptions, RawChunk};
 pub use document_service::{
-    create_document, get_document, insert_chunks, insert_lines, mark_ready,
-    promote_document, set_full_text, update_status, CreateDocumentParams,
+    clear_index_records, create_document, get_document, insert_chunks, insert_lines,
+    mark_ready, promote_document, set_full_text, soft_delete_document, update_status,
+    CreateDocumentParams,
 };
 pub use library_service::{
     create_folder, create_library, delete_folder, delete_library, get_folder,

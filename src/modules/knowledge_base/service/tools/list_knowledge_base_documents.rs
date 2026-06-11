@@ -133,6 +133,7 @@ impl ListKnowledgeBaseDocumentsTool {
     ) -> Result<Vec<kb_documents::Model>, ListKnowledgeBaseDocumentsError> {
         let mut query = kb_documents::Entity::find()
             .filter(kb_documents::Column::TenantId.eq(self.tenant_id))
+            .filter(kb_documents::Column::DeletedAt.is_null())
             .filter(
                 kb_documents::Column::Scope
                     .eq("tenant")

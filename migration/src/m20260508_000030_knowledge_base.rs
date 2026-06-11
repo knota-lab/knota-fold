@@ -138,6 +138,8 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(KbDocuments::Metadata).json_binary().null())
                 .col(ColumnDef::new(KbDocuments::ErrorMessage).text().null())
                 .col(ColumnDef::new(KbDocuments::CreatedBy).uuid().not_null())
+                .col(ColumnDef::new(KbDocuments::DeletedAt).date_time().null())
+                .col(ColumnDef::new(KbDocuments::DeletedBy).uuid().null())
                 .col(
                     ColumnDef::new(KbDocuments::CreatedAt)
                         .date_time()
@@ -281,6 +283,11 @@ impl MigrationTrait for Migration {
             .await?;
         m.get_connection()
             .execute_unprepared(
+                "CREATE INDEX IF NOT EXISTS idx_kb_docs_deleted_at ON kb_documents (tenant_id, deleted_at)",
+            )
+            .await?;
+        m.get_connection()
+            .execute_unprepared(
                 "CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks (document_id)",
             )
             .await?;
@@ -362,6 +369,8 @@ enum KbDocuments {
     Metadata,
     ErrorMessage,
     CreatedBy,
+    DeletedAt,
+    DeletedBy,
     CreatedAt,
     UpdatedAt,
 }

@@ -4,8 +4,9 @@ use uuid::Uuid;
 use crate::extractors::request_meta::RequestMeta;
 use crate::extractors::TenantContext;
 use crate::models::_entities::{
-    audit_logs, dict_items, dict_types, file_references, file_uploads, files, roles,
-    sys_menus, sys_role_templates, tenant_menu_overrides, tenants, users,
+    audit_logs, dict_items, dict_types, file_references, file_uploads, files,
+    kb_documents, roles, sys_menus, sys_role_templates, tenant_menu_overrides, tenants,
+    users,
 };
 
 // ---------------------------------------------------------------------------
@@ -399,6 +400,52 @@ impl From<&file_references::Model> for FileReferenceAuditSnapshot {
             resource_id: m.resource_id.clone(),
             field_name: m.field_name.clone(),
             created_by: m.created_by,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbDocumentAuditSnapshot {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub title: String,
+    pub description: Option<String>,
+    pub library_id: Option<Uuid>,
+    pub folder_id: Option<Uuid>,
+    pub source_type: String,
+    pub scope: String,
+    pub file_id: Option<Uuid>,
+    pub file_reference_id: Option<Uuid>,
+    pub status: String,
+    pub chunk_count: i32,
+    pub total_tokens: i32,
+    pub error_message: Option<String>,
+    pub created_by: Uuid,
+    pub deleted_at: Option<chrono::NaiveDateTime>,
+    pub deleted_by: Option<Uuid>,
+}
+
+impl From<&kb_documents::Model> for KbDocumentAuditSnapshot {
+    fn from(m: &kb_documents::Model) -> Self {
+        Self {
+            id: m.id,
+            tenant_id: m.tenant_id,
+            title: m.title.clone(),
+            description: m.description.clone(),
+            library_id: m.library_id,
+            folder_id: m.folder_id,
+            source_type: m.source_type.clone(),
+            scope: m.scope.clone(),
+            file_id: m.file_id,
+            file_reference_id: m.file_reference_id,
+            status: m.status.clone(),
+            chunk_count: m.chunk_count,
+            total_tokens: m.total_tokens,
+            error_message: m.error_message.clone(),
+            created_by: m.created_by,
+            deleted_at: m.deleted_at,
+            deleted_by: m.deleted_by,
         }
     }
 }

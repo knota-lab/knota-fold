@@ -180,9 +180,19 @@ async fn run_indexing_pipeline(
     .catch_unwind()
     .await;
 
+    handle_pipeline_outcome(ctx, document_id, tenant_id, pipeline_result).await
+}
+
+async fn handle_pipeline_outcome(
+    ctx: &AppContext,
+    document_id: Uuid,
+    tenant_id: Uuid,
+    pipeline_result: std::result::Result<Result<()>, Box<dyn std::any::Any + Send>>,
+) -> Result<()> {
     match pipeline_result {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => {
+            cleanup_partial_index(ctx, document_id, tenant_id).await;
             mark_indexing_failed(
                 &ctx.db,
                 document_id,
@@ -194,9 +204,36 @@ async fn run_indexing_pipeline(
         }
         Err(panic_payload) => {
             let error_msg = panic_message(&panic_payload);
+            cleanup_partial_index(ctx, document_id, tenant_id).await;
             mark_indexing_failed(&ctx.db, document_id, tenant_id, &error_msg).await;
             Err(loco_rs::Error::string(&error_msg))
         }
+    }
+}
+
+async fn cleanup_partial_index(ctx: &AppContext, document_id: Uuid, tenant_id: Uuid) {
+    if let Err(error) =
+        document_service::clear_index_records(&ctx.db, document_id, tenant_id).await
+    {
+        tracing::warn!(
+            document_id = %document_id,
+            error = %error,
+            "failed to clean partial database index records"
+        );
+    }
+
+    let Some(search_provider) = ctx.shared_store.get::<SharedSearchProvider>() else {
+        return;
+    };
+    if let Err(error) = search_provider
+        .delete_by_document(document_id, tenant_id)
+        .await
+    {
+        tracing::warn!(
+            document_id = %document_id,
+            error = %error,
+            "failed to clean partial vector index records"
+        );
     }
 }
 

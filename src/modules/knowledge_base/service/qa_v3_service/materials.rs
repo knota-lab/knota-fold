@@ -115,6 +115,7 @@ async fn register_document_materials(
     let docs = kb_documents::Entity::find()
         .filter(kb_documents::Column::TenantId.eq(ctx.tenant_id))
         .filter(kb_documents::Column::Id.is_in(ctx.request.material.document_ids.clone()))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .all(ctx.db)
         .await
         .map_err(|e| {
@@ -151,6 +152,7 @@ async fn register_file_materials(
     let docs = kb_documents::Entity::find()
         .filter(kb_documents::Column::TenantId.eq(ctx.tenant_id))
         .filter(kb_documents::Column::FileId.is_in(ctx.request.material.file_ids.clone()))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .all(ctx.db)
         .await
         .map_err(|e| {
@@ -213,6 +215,7 @@ async fn recover_history_document_refs(
     let docs = kb_documents::Entity::find()
         .filter(kb_documents::Column::TenantId.eq(ctx.tenant_id))
         .filter(kb_documents::Column::Id.is_in(ids))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .all(ctx.db)
         .await
         .unwrap_or_default();
@@ -239,6 +242,7 @@ async fn recover_history_file_refs(
     let docs = kb_documents::Entity::find()
         .filter(kb_documents::Column::TenantId.eq(ctx.tenant_id))
         .filter(kb_documents::Column::FileId.is_in(ids))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .all(ctx.db)
         .await
         .unwrap_or_default();

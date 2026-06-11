@@ -28,6 +28,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub error_message: Option<String>,
     pub created_by: Uuid,
+    pub deleted_at: Option<DateTime>,
+    pub deleted_by: Option<Uuid>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }

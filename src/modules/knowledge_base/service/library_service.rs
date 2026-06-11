@@ -127,6 +127,7 @@ pub async fn delete_library(
     let document_count = kb_documents::Entity::find()
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
         .filter(kb_documents::Column::LibraryId.eq(library_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .count(db)
         .await
         .db_err()?;
@@ -264,6 +265,7 @@ pub async fn delete_folder(
     let document_count = kb_documents::Entity::find()
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
         .filter(kb_documents::Column::FolderId.eq(folder_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .count(db)
         .await
         .db_err()?;

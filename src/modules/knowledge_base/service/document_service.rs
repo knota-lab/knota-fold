@@ -80,6 +80,7 @@ pub async fn set_file_reference(
 ) -> loco_rs::Result<kb_documents::Model> {
     let doc = kb_documents::Entity::find_by_id(document_id)
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
@@ -101,6 +102,7 @@ pub async fn update_status(
 ) -> loco_rs::Result<()> {
     let doc = kb_documents::Entity::find_by_id(document_id)
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
@@ -140,6 +142,7 @@ pub async fn start_indexing(
 ) -> loco_rs::Result<()> {
     let doc = kb_documents::Entity::find_by_id(document_id)
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
@@ -175,6 +178,7 @@ pub async fn mark_error(
 ) -> loco_rs::Result<()> {
     let doc = kb_documents::Entity::find_by_id(document_id)
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
@@ -200,6 +204,7 @@ pub async fn set_full_text(
     full_text: &str,
 ) -> loco_rs::Result<()> {
     let doc = kb_documents::Entity::find_by_id(document_id)
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
@@ -221,6 +226,7 @@ pub async fn set_parsed_content(
     metadata: serde_json::Value,
 ) -> loco_rs::Result<()> {
     let doc = kb_documents::Entity::find_by_id(document_id)
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
@@ -245,6 +251,7 @@ pub async fn set_indexing_progress(
 ) -> loco_rs::Result<()> {
     let doc = kb_documents::Entity::find_by_id(document_id)
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
@@ -272,6 +279,7 @@ pub async fn is_indexing_active(
 ) -> loco_rs::Result<bool> {
     let Some(doc) = kb_documents::Entity::find_by_id(document_id)
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
@@ -291,6 +299,7 @@ pub async fn mark_ready(
     total_tokens: i32,
 ) -> loco_rs::Result<()> {
     let doc = kb_documents::Entity::find_by_id(document_id)
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
@@ -347,16 +356,36 @@ fn with_indexing_progress(
 /// Get document by ID, verifying `tenant_id` ownership.
 #[tracing::instrument(skip(db))]
 pub async fn get_document(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     document_id: Uuid,
     tenant_id: Uuid,
 ) -> loco_rs::Result<kb_documents::Model> {
     kb_documents::Entity::find_by_id(document_id)
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
         .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())
+}
+
+#[tracing::instrument(skip(db))]
+pub async fn soft_delete_document(
+    db: &impl ConnectionTrait,
+    document_id: Uuid,
+    tenant_id: Uuid,
+    user_id: Uuid,
+) -> loco_rs::Result<kb_documents::Model> {
+    let doc = get_document(db, document_id, tenant_id).await?;
+    let mut active: kd_models::ActiveModel = doc.into();
+    active.status = ActiveValue::Set("deleted".to_string());
+    active.chunk_count = ActiveValue::Set(0);
+    active.total_tokens = ActiveValue::Set(0);
+    active.error_message = ActiveValue::Set(None);
+    active.deleted_at = ActiveValue::Set(Some(Utc::now().naive_utc()));
+    active.deleted_by = ActiveValue::Set(Some(user_id));
+    active.updated_at = ActiveValue::Set(Utc::now().naive_utc());
+    active.update(db).await.db_err()
 }
 
 /// Batch insert `kb_chunks` records.
@@ -391,6 +420,29 @@ pub async fn insert_lines(
     Ok(())
 }
 
+#[tracing::instrument(skip(db))]
+pub async fn clear_index_records(
+    db: &impl ConnectionTrait,
+    document_id: Uuid,
+    tenant_id: Uuid,
+) -> loco_rs::Result<()> {
+    kb_chunks::Entity::delete_many()
+        .filter(kb_chunks::Column::DocumentId.eq(document_id))
+        .filter(kb_chunks::Column::TenantId.eq(tenant_id))
+        .exec(db)
+        .await
+        .db_err()?;
+
+    document_lines::Entity::delete_many()
+        .filter(document_lines::Column::DocumentId.eq(document_id))
+        .filter(document_lines::Column::TenantId.eq(tenant_id))
+        .exec(db)
+        .await
+        .db_err()?;
+
+    Ok(())
+}
+
 /// Promote document scope from private to tenant.
 /// Validates that the document exists, belongs to the tenant, was created by the user,
 /// and is currently private.
@@ -403,6 +455,7 @@ pub async fn promote_document(
 ) -> loco_rs::Result<kb_documents::Model> {
     let doc = kb_documents::Entity::find_by_id(document_id)
         .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .filter(kb_documents::Column::DeletedAt.is_null())
         .one(db)
         .await
         .db_err()?
