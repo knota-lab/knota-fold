@@ -43,6 +43,7 @@ pub fn chunk_markdown(markdown: &str, options: ChunkMarkdownOptions) -> Vec<RawC
     let mut current_content = String::new();
     let mut chunk_byte_start: usize = 0;
     let mut has_new_content_since_flush = false;
+    let mut next_token_check_bytes = token_check_byte_threshold(options.max_tokens);
 
     for (event, range) in &events {
         if heading_triggers_split(
@@ -51,7 +52,7 @@ pub fn chunk_markdown(markdown: &str, options: ChunkMarkdownOptions) -> Vec<RawC
             options.min_heading_level,
             options.max_heading_level,
         ) && !current_content.is_empty()
-            && count_tokens(&current_content) > options.min_tokens
+            && estimate_tokens(&current_content) > options.min_tokens
         {
             let _ = flush_chunk(
                 &mut chunks,
@@ -76,8 +77,9 @@ pub fn chunk_markdown(markdown: &str, options: ChunkMarkdownOptions) -> Vec<RawC
         );
 
         // Check size after accumulation.
-        if !current_content.is_empty() {
-            while count_tokens(&current_content) > options.max_tokens {
+        if !current_content.is_empty() && current_content.len() >= next_token_check_bytes
+        {
+            while estimate_tokens(&current_content) > options.max_tokens {
                 let Some((head, tail)) =
                     split_at_token_budget(&current_content, options.max_tokens)
                 else {
@@ -117,6 +119,8 @@ pub fn chunk_markdown(markdown: &str, options: ChunkMarkdownOptions) -> Vec<RawC
                     break;
                 }
             }
+            next_token_check_bytes =
+                next_token_check_len(current_content.len(), options.max_tokens);
         }
     }
 
@@ -134,6 +138,19 @@ pub fn chunk_markdown(markdown: &str, options: ChunkMarkdownOptions) -> Vec<RawC
     }
 
     chunks
+}
+
+fn token_check_byte_threshold(max_tokens: i32) -> usize {
+    let token_budget = usize::try_from(max_tokens).unwrap_or(usize::MAX / 2).max(1);
+    if token_budget < 128 {
+        token_budget
+    } else {
+        token_budget.saturating_mul(2).max(1024)
+    }
+}
+
+fn next_token_check_len(current_len: usize, max_tokens: i32) -> usize {
+    current_len.saturating_add(token_check_byte_threshold(max_tokens) / 2)
 }
 
 fn heading_triggers_split(
@@ -333,7 +350,7 @@ fn byte_to_char(text: &str, byte_offset: usize) -> usize {
 }
 
 fn split_at_token_budget(text: &str, max_tokens: i32) -> Option<(String, String)> {
-    if text.is_empty() || count_tokens(text) <= max_tokens {
+    if text.is_empty() || estimate_tokens(text) <= max_tokens {
         return None;
     }
 
@@ -342,21 +359,7 @@ fn split_at_token_budget(text: &str, max_tokens: i32) -> Option<(String, String)
     candidates.sort_unstable();
     candidates.dedup();
 
-    let mut best = None;
-    for boundary in candidates {
-        if boundary == 0 || boundary >= text.len() {
-            continue;
-        }
-        let prefix = text[..boundary].trim();
-        if prefix.is_empty() {
-            continue;
-        }
-        if count_tokens(prefix) <= max_tokens {
-            best = Some(boundary);
-        } else {
-            break;
-        }
-    }
+    let best = best_boundary_under_token_budget(text, &candidates, max_tokens);
 
     let boundary = best.unwrap_or_else(|| fallback_char_boundary(text));
     if boundary == 0 || boundary >= text.len() {
@@ -370,6 +373,40 @@ fn split_at_token_budget(text: &str, max_tokens: i32) -> Option<(String, String)
     } else {
         Some((head, tail))
     }
+}
+
+fn best_boundary_under_token_budget(
+    text: &str,
+    candidates: &[usize],
+    max_tokens: i32,
+) -> Option<usize> {
+    let mut low = 0;
+    let mut high = candidates.len();
+    let mut best = None;
+
+    while low < high {
+        let mid = low + (high - low) / 2;
+        let boundary = candidates[mid];
+        if boundary == 0 || boundary >= text.len() {
+            high = mid;
+            continue;
+        }
+
+        let prefix = text[..boundary].trim();
+        if prefix.is_empty() {
+            low = mid + 1;
+            continue;
+        }
+
+        if estimate_tokens(prefix) <= max_tokens {
+            best = Some(boundary);
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+
+    best
 }
 
 fn sentence_boundaries(text: &str) -> Vec<usize> {
@@ -422,6 +459,20 @@ fn trailing_sentences(text: &str, count: i32) -> String {
     } else {
         format!("{overlap}\n\n")
     }
+}
+
+fn estimate_tokens(text: &str) -> i32 {
+    let mut ascii_chars = 0usize;
+    let mut non_ascii_chars = 0usize;
+    for ch in text.chars() {
+        if ch.is_ascii() {
+            ascii_chars += 1;
+        } else {
+            non_ascii_chars += 1;
+        }
+    }
+    let estimated = non_ascii_chars.saturating_add(ascii_chars.div_ceil(4));
+    i32::try_from(estimated).unwrap_or(i32::MAX)
 }
 
 /// Count tokens using the `cl100k_base` tokenizer.

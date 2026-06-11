@@ -34,6 +34,7 @@ use rig::client::EmbeddingsClient;
 use rig::embeddings::EmbeddingModel;
 
 const MAX_INDEX_FILE_BYTES: i64 = 50 * 1024 * 1024;
+const EMBEDDING_PROGRESS_BATCH_SIZE: usize = 16;
 const LEGACY_TEXT_SOURCE_TYPES: &[&str] = &["kb_upload", "chat_upload", "api", "sync"];
 
 macro_rules! log_index_stage_completed {
@@ -140,7 +141,19 @@ async fn run_indexing_pipeline(
         let doc = document_service::get_document(db, document_id, tenant_id).await?;
         document_service::start_indexing(db, document_id, tenant_id).await?;
 
+        record_indexing_progress(
+            db,
+            document_id,
+            tenant_id,
+            "load_file",
+            "读取文件",
+            Some("正在读取上传文件"),
+        )
+        .await;
         let input = load_pipeline_input(ctx, db, &doc).await?;
+        if indexing_was_cancelled(db, document_id, tenant_id).await? {
+            return Ok(());
+        }
         execute_pipeline(
             db,
             &PipelineParams {
@@ -436,7 +449,7 @@ fn normalise_parser_input(
         .collect::<Vec<_>>()
         .join(" ");
 
-    tracing::warn!(
+    tracing::debug!(
         declared_mime,
         detected_mime,
         extension_mime = extension_mime.as_deref().unwrap_or("unknown"),
@@ -644,57 +657,13 @@ fn build_chunk_points_and_models(
 async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Result<()> {
     let pipeline_started_at = Instant::now();
 
-    // 4. Parse document
-    let parse_started_at = Instant::now();
-    let parsed = parse_document(p).await?;
-    log_index_stage_completed!(
-        p.document_id,
-        "parse",
-        parse_started_at,
-        markdown_chars = parsed.markdown.chars().count(),
-        asset_count = parsed.assets.len(),
-    );
-
-    let assets_started_at = Instant::now();
-    let ParsedMarkdown {
-        preview_markdown,
-        index_markdown,
-        asset_metadata,
-    } = prepare_parsed_markdown(p, &parsed.markdown, &parsed.assets)
-        .instrument(tracing::info_span!(
-            "kb.index.assets",
-            document_id = %p.document_id,
-            asset_count = parsed.assets.len(),
-        ))
-        .await?;
-    log_index_stage_completed!(
-        p.document_id,
-        "assets",
-        assets_started_at,
-        preview_chars = preview_markdown.chars().count(),
-        index_chars = index_markdown.chars().count(),
-    );
-
-    let save_parsed_started_at = Instant::now();
-    async {
-        document_service::set_parsed_content(
-            db,
-            p.document_id,
-            &preview_markdown,
-            asset_metadata,
-        )
-        .await
+    let index_markdown = parse_prepare_and_save(db, p).await?;
+    if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+        return Ok(());
     }
-    .instrument(tracing::info_span!(
-        "kb.index.save_parsed",
-        document_id = %p.document_id,
-        preview_chars = preview_markdown.chars().count(),
-        index_chars = index_markdown.chars().count(),
-    ))
-    .await?;
-    log_index_stage_completed!(p.document_id, "save_parsed", save_parsed_started_at);
 
     // 5. Chunk the markdown
+    record_pipeline_progress(db, p, "chunk", "文档分块", Some("正在切分索引内容")).await;
     let chunk_started_at = Instant::now();
     let chunks = chunk_index_markdown(p, &index_markdown)?;
     log_index_stage_completed!(
@@ -704,23 +673,49 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
         chunk_count = chunks.len(),
         total_tokens = chunks.iter().map(|chunk| chunk.token_count).sum::<i32>(),
     );
+    if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+        return Ok(());
+    }
 
     // 6. Split lines and insert
+    record_pipeline_progress(db, p, "lines", "行号落库", Some("正在保存原文行号")).await;
     let lines_started_at = Instant::now();
     insert_document_lines(db, p, &index_markdown).await?;
     log_index_stage_completed!(p.document_id, "lines", lines_started_at);
+    if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+        return Ok(());
+    }
 
     // 7. Generate embeddings
+    record_pipeline_progress(
+        db,
+        p,
+        "embedding",
+        "向量生成",
+        Some("正在为文档分块生成向量"),
+    )
+    .await;
     let embedding_started_at = Instant::now();
-    let embeddings = generate_embeddings(p, &chunks).await?;
+    let embeddings = generate_embeddings(db, p, &chunks).await?;
     log_index_stage_completed!(
         p.document_id,
         "embedding",
         embedding_started_at,
         embedding_count = embeddings.len(),
     );
+    if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+        return Ok(());
+    }
 
     // 8-10. Build chunks, save chunks and upsert vectors
+    record_pipeline_progress(
+        db,
+        p,
+        "persist",
+        "索引写入",
+        Some("正在写入分块和向量索引"),
+    )
+    .await;
     let persist_started_at = Instant::now();
     let total_tokens = persist_chunks_and_vectors(db, p, &chunks, &embeddings).await?;
     log_index_stage_completed!(
@@ -730,8 +725,13 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
         chunk_count = chunks.len(),
         total_tokens = total_tokens,
     );
+    if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+        return Ok(());
+    }
 
     // 11. Mark document as ready
+    record_pipeline_progress(db, p, "mark_ready", "完成入库", Some("正在更新文档状态"))
+        .await;
     let ready_started_at = Instant::now();
     mark_document_ready(db, p, chunks.len(), total_tokens).await?;
     log_index_stage_completed!(p.document_id, "mark_ready", ready_started_at);
@@ -745,6 +745,145 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     );
 
     Ok(())
+}
+
+async fn parse_prepare_and_save(
+    db: &DatabaseConnection,
+    p: &PipelineParams<'_>,
+) -> Result<String> {
+    record_pipeline_progress(db, p, "parse", "文档解析", Some("正在解析文档内容")).await;
+    let parse_started_at = Instant::now();
+    let parsed = parse_document(p).await?;
+    log_index_stage_completed!(
+        p.document_id,
+        "parse",
+        parse_started_at,
+        markdown_chars = parsed.markdown.chars().count(),
+        asset_count = parsed.assets.len(),
+    );
+    if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+        return Ok(String::new());
+    }
+
+    let assets_started_at = Instant::now();
+    record_pipeline_progress(
+        db,
+        p,
+        "assets",
+        "资源处理",
+        Some("正在处理解析出的图片资源"),
+    )
+    .await;
+    let parsed_markdown = prepare_parsed_markdown(p, &parsed.markdown, &parsed.assets)
+        .instrument(tracing::info_span!(
+            "kb.index.assets",
+            document_id = %p.document_id,
+            asset_count = parsed.assets.len(),
+        ))
+        .await?;
+    log_index_stage_completed!(
+        p.document_id,
+        "assets",
+        assets_started_at,
+        preview_chars = parsed_markdown.preview_markdown.chars().count(),
+        index_chars = parsed_markdown.index_markdown.chars().count(),
+    );
+    if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+        return Ok(String::new());
+    }
+
+    save_parsed_markdown(db, p, &parsed_markdown).await?;
+    Ok(parsed_markdown.index_markdown)
+}
+
+async fn save_parsed_markdown(
+    db: &DatabaseConnection,
+    p: &PipelineParams<'_>,
+    parsed_markdown: &ParsedMarkdown,
+) -> Result<()> {
+    let started_at = Instant::now();
+    record_pipeline_progress(
+        db,
+        p,
+        "save_parsed",
+        "保存解析结果",
+        Some("正在保存预览内容"),
+    )
+    .await;
+    async {
+        document_service::set_parsed_content(
+            db,
+            p.document_id,
+            &parsed_markdown.preview_markdown,
+            parsed_markdown.asset_metadata.clone(),
+        )
+        .await
+    }
+    .instrument(tracing::info_span!(
+        "kb.index.save_parsed",
+        document_id = %p.document_id,
+        preview_chars = parsed_markdown.preview_markdown.chars().count(),
+        index_chars = parsed_markdown.index_markdown.chars().count(),
+    ))
+    .await?;
+    log_index_stage_completed!(p.document_id, "save_parsed", started_at);
+    Ok(())
+}
+
+async fn record_pipeline_progress(
+    db: &DatabaseConnection,
+    p: &PipelineParams<'_>,
+    stage: &str,
+    label: &str,
+    message: Option<&str>,
+) {
+    record_indexing_progress(db, p.document_id, p.tenant_id, stage, label, message).await;
+}
+
+async fn record_indexing_progress(
+    db: &DatabaseConnection,
+    document_id: Uuid,
+    tenant_id: Uuid,
+    stage: &str,
+    label: &str,
+    message: Option<&str>,
+) {
+    if let Err(error) = document_service::set_indexing_progress(
+        db,
+        document_id,
+        tenant_id,
+        &document_service::IndexingProgressUpdate {
+            stage,
+            label,
+            message,
+            current: None,
+            total: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(
+            document_id = %document_id,
+            stage,
+            error = %error,
+            "failed to update indexing progress"
+        );
+    }
+}
+
+async fn indexing_was_cancelled(
+    db: &DatabaseConnection,
+    document_id: Uuid,
+    tenant_id: Uuid,
+) -> Result<bool> {
+    let active = document_service::is_indexing_active(db, document_id, tenant_id).await?;
+    if !active {
+        tracing::info!(
+            document_id = %document_id,
+            "indexing pipeline stopped because document is no longer active"
+        );
+    }
+    Ok(!active)
 }
 
 async fn parse_document(p: &PipelineParams<'_>) -> Result<ParsedDocument> {
@@ -847,23 +986,37 @@ async fn insert_document_lines(
 }
 
 async fn generate_embeddings(
+    db: &DatabaseConnection,
     p: &PipelineParams<'_>,
     chunks: &[chunking_service::RawChunk],
 ) -> Result<Vec<rig::embeddings::Embedding>> {
     let model = p.embedding_client.0.embedding_model(p.embedding_model_name);
-    let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
-    let embeddings: Vec<rig::embeddings::Embedding> = async {
-        model.embed_texts(texts).await.map_err(|e| {
-            KnowledgeBaseError::EmbeddingError(format!("embedding failed: {e}")).to_err()
-        })
-    }
-    .instrument(tracing::info_span!(
+    let embedding_span = tracing::info_span!(
         "kb.index.embedding",
         document_id = %p.document_id,
         chunk_count = chunks.len(),
         model = p.embedding_model_name,
-    ))
-    .await?;
+    );
+    let _guard = embedding_span.enter();
+    let total_chunks = chunks.len();
+    update_embedding_progress(db, p, 0, total_chunks).await;
+
+    let mut embeddings = Vec::with_capacity(total_chunks);
+    for chunk_batch in chunks.chunks(EMBEDDING_PROGRESS_BATCH_SIZE) {
+        if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+            return Ok(embeddings);
+        }
+
+        let texts: Vec<String> = chunk_batch
+            .iter()
+            .map(|chunk| chunk.content.clone())
+            .collect();
+        let batch_embeddings = model.embed_texts(texts).await.map_err(|e| {
+            KnowledgeBaseError::EmbeddingError(format!("embedding failed: {e}")).to_err()
+        })?;
+        embeddings.extend(batch_embeddings);
+        update_embedding_progress(db, p, embeddings.len(), total_chunks).await;
+    }
 
     if embeddings.len() != chunks.len() {
         return Err(KnowledgeBaseError::EmbeddingError(format!(
@@ -876,12 +1029,47 @@ async fn generate_embeddings(
     Ok(embeddings)
 }
 
+async fn update_embedding_progress(
+    db: &DatabaseConnection,
+    p: &PipelineParams<'_>,
+    current: usize,
+    total: usize,
+) {
+    let current_i32 = i32::try_from(current).unwrap_or(i32::MAX);
+    let total_i32 = i32::try_from(total).unwrap_or(i32::MAX);
+    let message = format!("正在生成向量：{current_i32}/{total_i32} 个分块");
+    if let Err(error) = document_service::set_indexing_progress(
+        db,
+        p.document_id,
+        p.tenant_id,
+        &document_service::IndexingProgressUpdate {
+            stage: "embedding",
+            label: "向量生成",
+            message: Some(&message),
+            current: Some(current_i32),
+            total: Some(total_i32),
+        },
+    )
+    .await
+    {
+        tracing::warn!(
+            document_id = %p.document_id,
+            error = %error,
+            "failed to update embedding progress"
+        );
+    }
+}
+
 async fn persist_chunks_and_vectors(
     db: &DatabaseConnection,
     p: &PipelineParams<'_>,
     chunks: &[chunking_service::RawChunk],
     embeddings: &[rig::embeddings::Embedding],
 ) -> Result<i32> {
+    if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+        return Ok(0);
+    }
+
     let build_span = tracing::info_span!(
         "kb.index.build_chunks",
         document_id = %p.document_id,
@@ -903,6 +1091,10 @@ async fn persist_chunks_and_vectors(
             chunk_count = chunk_points.len(),
         ))
         .await?;
+
+    if indexing_was_cancelled(db, p.document_id, p.tenant_id).await? {
+        return Ok(total_tokens);
+    }
 
     // 10. Write vectors to Qdrant
     async {

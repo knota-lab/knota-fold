@@ -3,6 +3,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection,
     EntityTrait, QueryFilter,
 };
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::models::_entities::{document_lines, kb_chunks, kb_documents};
@@ -25,6 +26,15 @@ pub struct CreateDocumentParams {
     pub file_id: Option<Uuid>,
     pub file_reference_id: Option<Uuid>,
     pub created_by: Uuid,
+}
+
+#[derive(Debug)]
+pub struct IndexingProgressUpdate<'a> {
+    pub stage: &'a str,
+    pub label: &'a str,
+    pub message: Option<&'a str>,
+    pub current: Option<i32>,
+    pub total: Option<i32>,
 }
 
 /// Create a new `kb_documents` record with status='pending'.
@@ -218,11 +228,58 @@ pub async fn set_parsed_content(
 
     let mut active: kd_models::ActiveModel = doc.into();
     active.full_text = ActiveValue::Set(Some(full_text.to_string()));
-    active.metadata = ActiveValue::Set(Some(metadata));
+    active.metadata =
+        ActiveValue::Set(Some(merge_metadata(active.metadata.clone(), metadata)));
     active.status = ActiveValue::Set("indexing".to_string());
     active.updated_at = ActiveValue::Set(Utc::now().naive_utc());
     active.update(db).await.db_err()?;
     Ok(())
+}
+
+#[tracing::instrument(skip(db))]
+pub async fn set_indexing_progress(
+    db: &DatabaseConnection,
+    document_id: Uuid,
+    tenant_id: Uuid,
+    update: &IndexingProgressUpdate<'_>,
+) -> loco_rs::Result<()> {
+    let doc = kb_documents::Entity::find_by_id(document_id)
+        .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .one(db)
+        .await
+        .db_err()?
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+
+    if !matches!(doc.status.as_str(), "pending" | "indexing") {
+        return Ok(());
+    }
+
+    let mut active: kd_models::ActiveModel = doc.into();
+    active.metadata = ActiveValue::Set(Some(with_indexing_progress(
+        active.metadata.clone(),
+        update,
+    )));
+    active.updated_at = ActiveValue::Set(Utc::now().naive_utc());
+    active.update(db).await.db_err()?;
+    Ok(())
+}
+
+#[tracing::instrument(skip(db))]
+pub async fn is_indexing_active(
+    db: &DatabaseConnection,
+    document_id: Uuid,
+    tenant_id: Uuid,
+) -> loco_rs::Result<bool> {
+    let Some(doc) = kb_documents::Entity::find_by_id(document_id)
+        .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .one(db)
+        .await
+        .db_err()?
+    else {
+        return Ok(false);
+    };
+
+    Ok(matches!(doc.status.as_str(), "pending" | "indexing"))
 }
 
 /// Update `chunk_count` and `total_tokens`, set status to 'ready'.
@@ -246,6 +303,45 @@ pub async fn mark_ready(
     active.updated_at = ActiveValue::Set(Utc::now().naive_utc());
     active.update(db).await.db_err()?;
     Ok(())
+}
+
+fn merge_metadata(existing: ActiveValue<Option<Value>>, incoming: Value) -> Value {
+    let mut base = match existing {
+        ActiveValue::Set(Some(value)) | ActiveValue::Unchanged(Some(value)) => value,
+        _ => json!({}),
+    };
+
+    match (&mut base, incoming) {
+        (Value::Object(base_map), Value::Object(incoming_map)) => {
+            base_map.extend(incoming_map);
+            base
+        }
+        (_, incoming_value) => incoming_value,
+    }
+}
+
+fn with_indexing_progress(
+    existing: ActiveValue<Option<Value>>,
+    update: &IndexingProgressUpdate<'_>,
+) -> Value {
+    let mut metadata = match existing {
+        ActiveValue::Set(Some(value)) | ActiveValue::Unchanged(Some(value)) => value,
+        _ => json!({}),
+    };
+
+    if !metadata.is_object() {
+        metadata = json!({});
+    }
+
+    metadata["indexing"] = json!({
+        "stage": update.stage,
+        "label": update.label,
+        "message": update.message,
+        "current": update.current,
+        "total": update.total,
+        "stageStartedAt": Utc::now().to_rfc3339(),
+    });
+    metadata
 }
 
 /// Get document by ID, verifying `tenant_id` ownership.

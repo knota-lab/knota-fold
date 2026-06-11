@@ -95,6 +95,17 @@ pub struct UpdateFolderRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct IndexingProgressResponse {
+    pub stage: String,
+    pub label: String,
+    pub message: Option<String>,
+    pub current: Option<i32>,
+    pub total: Option<i32>,
+    pub stage_started_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DocumentResponse {
     pub id: String,
     pub title: String,
@@ -108,6 +119,7 @@ pub struct DocumentResponse {
     pub status: String,
     pub chunk_count: i32,
     pub total_tokens: i32,
+    pub indexing_progress: Option<IndexingProgressResponse>,
     pub error_message: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -129,11 +141,49 @@ impl DocumentResponse {
             status: m.status.clone(),
             chunk_count: m.chunk_count,
             total_tokens: m.total_tokens,
+            indexing_progress: indexing_progress_from_metadata(m.metadata.as_ref()),
             error_message: m.error_message.clone(),
             created_at: m.created_at.and_utc().to_rfc3339(),
             updated_at: m.updated_at.and_utc().to_rfc3339(),
         }
     }
+}
+
+fn indexing_progress_from_metadata(
+    metadata: Option<&serde_json::Value>,
+) -> Option<IndexingProgressResponse> {
+    let indexing = metadata?.get("indexing")?;
+    let stage = indexing.get("stage")?.as_str()?.to_string();
+    let label = indexing
+        .get("label")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(&stage)
+        .to_string();
+    let message = indexing
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .map(std::string::ToString::to_string);
+    let stage_started_at = indexing
+        .get("stageStartedAt")
+        .and_then(serde_json::Value::as_str)
+        .map(std::string::ToString::to_string);
+    let current = indexing
+        .get("current")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok());
+    let total = indexing
+        .get("total")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok());
+
+    Some(IndexingProgressResponse {
+        stage,
+        label,
+        message,
+        current,
+        total,
+        stage_started_at,
+    })
 }
 
 #[derive(Debug, Serialize)]
