@@ -68,6 +68,17 @@ pub(crate) async fn create(
     } else {
         None
     };
+    if let Some(response) = reuse_duplicate_document_upload(
+        &ctx.db,
+        tc.tenant_id,
+        location.library_id,
+        location.folder_id,
+        file.as_ref(),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     let source_type = resolve_document_source_type(
         params.source_type.as_deref(),
         params.content.as_deref(),
@@ -134,20 +145,57 @@ pub(crate) async fn create(
             .model_err()?;
     }
 
+    enqueue_document_indexing(&ctx, &meta, tc.tenant_id, doc.id).await?;
+
+    format::json(DocumentResponse::from_model(&doc))
+}
+
+async fn enqueue_document_indexing(
+    ctx: &AppContext,
+    meta: &RequestMeta,
+    tenant_id: uuid::Uuid,
+    document_id: uuid::Uuid,
+) -> Result<()> {
     IndexingWorker::perform_later(
-        &ctx,
+        ctx,
         IndexingWorkerArgs {
-            document_id: doc.id,
-            tenant_id: tc.tenant_id,
-            trace_id: Some(meta.trace_id),
+            document_id,
+            tenant_id,
+            trace_id: Some(meta.trace_id.clone()),
             parent_span_id: tracing::Span::current()
                 .with_subscriber(|(id, _)| id.into_u64().to_string()),
         },
     )
     .await
-    .model_err()?;
+    .model_err()
+}
 
-    format::json(DocumentResponse::from_model(&doc))
+async fn reuse_duplicate_document_upload(
+    db: &DatabaseConnection,
+    tenant_id: uuid::Uuid,
+    library_id: Option<uuid::Uuid>,
+    folder_id: Option<uuid::Uuid>,
+    file: Option<&files::Model>,
+) -> Result<Option<Response>> {
+    let Some(file) = file else {
+        return Ok(None);
+    };
+    let existing = service::document_service::find_duplicate_file_document(
+        db, tenant_id, library_id, folder_id, file,
+    )
+    .await
+    .model_err()?;
+    let Some(existing) = existing else {
+        return Ok(None);
+    };
+
+    tracing::info!(
+        document_id = %existing.id,
+        file_id = %file.id,
+        content_hash = %file.content_hash,
+        "knowledge base document upload reused existing indexed file"
+    );
+    format::json(DocumentResponse::from_reused_model(&existing)).map(Some)
 }
 
 async fn load_document_file(

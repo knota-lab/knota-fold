@@ -123,6 +123,8 @@ pub struct DocumentResponse {
     pub error_message: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reused_existing: Option<bool>,
 }
 
 impl DocumentResponse {
@@ -145,6 +147,15 @@ impl DocumentResponse {
             error_message: m.error_message.clone(),
             created_at: m.created_at.and_utc().to_rfc3339(),
             updated_at: m.updated_at.and_utc().to_rfc3339(),
+            reused_existing: None,
+        }
+    }
+
+    #[must_use]
+    pub fn from_reused_model(m: &kb_documents::Model) -> Self {
+        Self {
+            reused_existing: Some(true),
+            ..Self::from_model(m)
         }
     }
 }

@@ -50,7 +50,7 @@ impl Initializer for SqliteWalInitializer {
         let timeout_result = db
             .execute(Statement::from_string(
                 DatabaseBackend::Sqlite,
-                "PRAGMA busy_timeout = 5000",
+                "PRAGMA busy_timeout = 30000",
             ))
             .await;
 

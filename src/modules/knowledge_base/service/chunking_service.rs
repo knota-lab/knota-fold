@@ -245,7 +245,8 @@ fn push_chunk(
     let char_end = char_start.saturating_add(content_chars);
     let token_count = count_tokens(&content);
     let heading_path = resolve_heading_path(byte_start, heading_map);
-    let overlap = trailing_sentences(&content, overlap_sentences);
+    let overlap =
+        non_blocking_overlap(&content, trailing_sentences(&content, overlap_sentences));
 
     chunks.push(RawChunk {
         chunk_index: *chunk_index,
@@ -458,6 +459,14 @@ fn trailing_sentences(text: &str, count: i32) -> String {
         String::new()
     } else {
         format!("{overlap}\n\n")
+    }
+}
+
+fn non_blocking_overlap(previous_chunk: &str, overlap: String) -> String {
+    if overlap.trim() == previous_chunk.trim() {
+        String::new()
+    } else {
+        overlap
     }
 }
 
@@ -818,6 +827,37 @@ fn main() {
         );
         assert_eq!(chunks.len(), 1);
         assert!(chunks[0].content.contains("中文内容"));
+    }
+
+    #[test]
+    fn chunk_markdown_task_scheduler_document_finishes() {
+        let md = include_str!("../../../../../system-design/任务调度.md");
+        let chunks = chunk_markdown(md, test_options());
+
+        assert!(!chunks.is_empty());
+        assert!(chunks.len() > 1);
+    }
+
+    #[test]
+    fn chunk_markdown_overlap_does_not_block_progress() {
+        let md = format!(
+            "{}. {}",
+            "一段没有更多句号的长文本".repeat(80),
+            "后续内容".repeat(20),
+        );
+        let chunks = chunk_markdown(
+            &md,
+            ChunkMarkdownOptions {
+                max_tokens: 30,
+                min_tokens: 1,
+                overlap_sentences: 2,
+                split_by_heading: false,
+                min_heading_level: 1,
+                max_heading_level: 4,
+            },
+        );
+
+        assert!(!chunks.is_empty());
     }
 
     // ── helper function tests ────────────────────────────────────

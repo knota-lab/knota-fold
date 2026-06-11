@@ -1571,6 +1571,8 @@ mod tests {
             total_tokens: 0,
             metadata: None,
             error_message: None,
+            deleted_at: None,
+            deleted_by: None,
             created_by: Uuid::now_v7(),
             created_at: now,
             updated_at: now,

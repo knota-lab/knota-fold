@@ -57,7 +57,7 @@ use uuid::Uuid;
 
 use crate::models::_entities::{file_references, files};
 use crate::services::resource_types::ResourceType;
-use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
+use crate::utils::error::{db_err_into, IntoAppError, IntoModelResult, OptionErrInto};
 use crate::utils::id::generate_id;
 use crate::views::audit_logs::AuditContext;
 use crate::views::file_references::{
@@ -268,7 +268,7 @@ async fn attach_in_txn_inner<C: ConnectionTrait>(
         .filter(files::Column::TenantId.eq(tenant_id))
         .one(txn)
         .await
-        .map_err(|e| AttachError::Loco(Error::Any(e.into())))?
+        .map_err(|e| AttachError::Loco(db_err_into(&e)))?
         .ok_or_else(|| {
             AttachError::Loco(crate::views::errors::err_not_found(
                 "file.not_found",
@@ -341,7 +341,7 @@ async fn attach_in_txn_inner<C: ConnectionTrait>(
         let revived = am
             .update(txn)
             .await
-            .map_err(|e| AttachError::Loco(Error::Any(e.into())))?;
+            .map_err(|e| AttachError::Loco(db_err_into(&e)))?;
         return Ok(revived);
     }
 
@@ -365,7 +365,7 @@ async fn attach_in_txn_inner<C: ConnectionTrait>(
     match am.insert(txn).await {
         Ok(model) => Ok(model),
         Err(e) if is_unique_violation(&e) => Err(AttachError::UniqueRace),
-        Err(e) => Err(AttachError::Loco(Error::Any(e.into()))),
+        Err(e) => Err(AttachError::Loco(db_err_into(&e))),
     }
 }
 

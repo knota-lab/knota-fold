@@ -1,12 +1,12 @@
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, QueryFilter,
+    EntityTrait, QueryFilter, QueryOrder,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::models::_entities::{document_lines, kb_chunks, kb_documents};
+use crate::models::_entities::{document_lines, files, kb_chunks, kb_documents};
 use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::models::{
     document_lines as dl_models, kb_chunks as kc_models, kb_documents as kd_models,
@@ -64,6 +64,51 @@ pub async fn create_document(
         ..Default::default()
     };
     model.insert(db).await.db_err()
+}
+
+/// Find an existing active knowledge-base document backed by the same physical
+/// file content in the same library/folder scope.
+#[tracing::instrument(skip(db, file))]
+pub async fn find_duplicate_file_document(
+    db: &impl ConnectionTrait,
+    tenant_id: Uuid,
+    library_id: Option<Uuid>,
+    folder_id: Option<Uuid>,
+    file: &files::Model,
+) -> loco_rs::Result<Option<kb_documents::Model>> {
+    let file_ids = files::Entity::find()
+        .filter(files::Column::TenantId.eq(tenant_id))
+        .filter(files::Column::ContentHash.eq(&file.content_hash))
+        .filter(files::Column::ContentHashAlgo.eq(&file.content_hash_algo))
+        .filter(files::Column::Size.eq(file.size))
+        .filter(files::Column::DeletedAt.is_null())
+        .all(db)
+        .await
+        .db_err()?
+        .into_iter()
+        .map(|file| file.id)
+        .collect::<Vec<_>>();
+
+    if file_ids.is_empty() {
+        return Ok(None);
+    }
+
+    let mut query = kb_documents::Entity::find()
+        .filter(kb_documents::Column::TenantId.eq(tenant_id))
+        .filter(kb_documents::Column::FileId.is_in(file_ids))
+        .filter(kb_documents::Column::DeletedAt.is_null())
+        .order_by_desc(kb_documents::Column::CreatedAt);
+
+    query = match library_id {
+        Some(id) => query.filter(kb_documents::Column::LibraryId.eq(id)),
+        None => query.filter(kb_documents::Column::LibraryId.is_null()),
+    };
+    query = match folder_id {
+        Some(id) => query.filter(kb_documents::Column::FolderId.eq(id)),
+        None => query.filter(kb_documents::Column::FolderId.is_null()),
+    };
+
+    query.one(db).await.db_err()
 }
 
 /// Attach a file reference id to an existing document.

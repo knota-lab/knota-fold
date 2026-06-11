@@ -59,49 +59,17 @@ fn attach_to_service_request(
     })
 }
 
-#[utoipa::path(get, path = "/api/files", tag = "文件管理", description = "分页查询文件列表",
-    responses((status = 200, description = "Success")))]
-#[debug_handler]
-pub(crate) async fn list(
-    tc: TenantContext,
-    State(ctx): State<AppContext>,
-    Query(pagination): Query<PaginationParams>,
-) -> Result<Response> {
-    let pagination = pagination.into();
-    let response: crate::views::pagination::PaginatedResponse<FileResponse> =
-        file_service::list_paginated(&ctx.db, tc.tenant_id, &pagination).await?;
-    format::json(response)
+struct SmallUploadMultipartParts {
+    file_name: String,
+    file_bytes: bytes::Bytes,
+    attach_payload: Option<AttachReferenceRequest>,
+    mime_type_hint: Option<String>,
 }
 
-#[utoipa::path(get, path = "/api/files/{id}", tag = "文件管理", description = "查询单个文件详情",
-    responses((status = 200, description = "Success")))]
-#[debug_handler]
-pub(crate) async fn get_one(
-    tc: TenantContext,
-    State(ctx): State<AppContext>,
-    Path(id): Path<Uuid>,
-) -> Result<Response> {
-    let response: crate::models::_entities::files::Model =
-        file_service::get_by_id(&ctx.db, tc.tenant_id, id).await?;
-    format::json(FileResponse::from(response))
-}
-
-#[utoipa::path(post, path = "/api/files", tag = "文件管理", description = "直接上传（小文件，multipart/form-data，设计 §8.1 L579-598）",
-    responses((status = 201, description = "Created")))]
-#[debug_handler]
-pub(crate) async fn small_upload(
-    tc: TenantContext,
-    meta: RequestMeta,
-    State(ctx): State<AppContext>,
-    mut multipart: Multipart,
-) -> Result<Response> {
-    let audit_ctx = AuditContext::from_request(&tc, &meta);
+async fn parse_small_upload_multipart(
+    multipart: &mut Multipart,
+) -> Result<SmallUploadMultipartParts> {
     let mut upload: Option<(String, bytes::Bytes)> = None;
-    // Wave 5 D4b: optional sidecar field carrying the same payload shape
-    // as `POST /api/files/{id}/references`. When present, the file row
-    // and its initial business binding are created in one logical
-    // operation (atomic for Insert + Revive paths; sequenced in a
-    // follow-up txn for the dedup-active path — see service docs).
     let mut attach_payload: Option<AttachReferenceRequest> = None;
     let mut mime_type_hint: Option<String> = None;
 
@@ -182,14 +150,61 @@ pub(crate) async fn small_upload(
             "multipart 字段 `file` 是必需的",
         )
     })?;
+
+    Ok(SmallUploadMultipartParts {
+        file_name,
+        file_bytes,
+        attach_payload,
+        mime_type_hint,
+    })
+}
+
+#[utoipa::path(get, path = "/api/files", tag = "文件管理", description = "分页查询文件列表",
+    responses((status = 200, description = "Success")))]
+#[debug_handler]
+pub(crate) async fn list(
+    tc: TenantContext,
+    State(ctx): State<AppContext>,
+    Query(pagination): Query<PaginationParams>,
+) -> Result<Response> {
+    let pagination = pagination.into();
+    let response: crate::views::pagination::PaginatedResponse<FileResponse> =
+        file_service::list_paginated(&ctx.db, tc.tenant_id, &pagination).await?;
+    format::json(response)
+}
+
+#[utoipa::path(get, path = "/api/files/{id}", tag = "文件管理", description = "查询单个文件详情",
+    responses((status = 200, description = "Success")))]
+#[debug_handler]
+pub(crate) async fn get_one(
+    tc: TenantContext,
+    State(ctx): State<AppContext>,
+    Path(id): Path<Uuid>,
+) -> Result<Response> {
+    let response: crate::models::_entities::files::Model =
+        file_service::get_by_id(&ctx.db, tc.tenant_id, id).await?;
+    format::json(FileResponse::from(response))
+}
+
+#[utoipa::path(post, path = "/api/files", tag = "文件管理", description = "直接上传（小文件，multipart/form-data，设计 §8.1 L579-598）",
+    responses((status = 201, description = "Created")))]
+#[debug_handler]
+pub(crate) async fn small_upload(
+    tc: TenantContext,
+    meta: RequestMeta,
+    State(ctx): State<AppContext>,
+    mut multipart: Multipart,
+) -> Result<Response> {
+    let audit_ctx = AuditContext::from_request(&tc, &meta);
+    let parts = parse_small_upload_multipart(&mut multipart).await?;
     // Validate `resource_type` BEFORE opening any db txn / writing S3.
-    let attach = match attach_payload {
+    let attach = match parts.attach_payload {
         Some(payload) => Some(attach_to_service_request(payload)?),
         None => Some(file_reference_service::default_self_attach()),
     };
     let params = SmallUploadRequest {
-        name: file_name,
-        mime_type_hint,
+        name: parts.file_name,
+        mime_type_hint: parts.mime_type_hint,
         attach_to: None,
     };
 
@@ -198,13 +213,38 @@ pub(crate) async fn small_upload(
         tc.tenant_id,
         tc.user_id,
         &params,
-        file_bytes,
+        parts.file_bytes,
         &audit_ctx,
         attach,
     )
-    .await?;
+    .await
+    .inspect_err(|err| {
+        log_small_upload_error(err, tc.tenant_id, tc.user_id, &params.name);
+    })?;
 
     Ok((StatusCode::CREATED, axum::Json(response)).into_response())
+}
+
+#[track_caller]
+fn log_small_upload_error(err: &Error, tenant_id: Uuid, user_id: Uuid, file_name: &str) {
+    if let Error::CustomError(_, _) = err {
+        return;
+    }
+
+    let caller = std::panic::Location::caller();
+    tracing::error!(
+        code = crate::error_info::common::INTERNAL.code(),
+        status = StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+        location = %format_args!("{}:{}:{}", caller.file(), caller.line(), caller.column()),
+        caller_file = caller.file(),
+        caller_line = caller.line(),
+        caller_column = caller.column(),
+        error = ?err,
+        tenant_id = %tenant_id,
+        user_id = %user_id,
+        file_name = file_name,
+        "small upload failed before classified error conversion"
+    );
 }
 
 #[utoipa::path(post, path = "/api/files/dedup-check", tag = "文件管理", description = "秒传精确探测",
