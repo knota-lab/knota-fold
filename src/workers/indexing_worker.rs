@@ -29,6 +29,10 @@ use crate::modules::knowledge_base::service::{
     chunking_service, document_service, line_splitting_service,
 };
 use crate::services::resource_types::ResourceType;
+use crate::services::worker_run_service::{
+    WorkerRunStart, WorkerRunTracker, KNOWLEDGE_BASE_INDEXING_BUSINESS_TYPE,
+    KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION, KNOWLEDGE_BASE_INDEXING_WORKER_NAME,
+};
 use crate::utils::mime::detect_mime;
 use rig::client::EmbeddingsClient;
 use rig::embeddings::EmbeddingModel;
@@ -82,7 +86,9 @@ impl BackgroundWorker<IndexingWorkerArgs> for IndexingWorker {
         let document_id = args.document_id;
         let tenant_id = args.tenant_id;
 
-        async move { run_indexing_pipeline(&ctx, document_id, tenant_id).await }
+        async move {
+            run_indexing_pipeline(&ctx, document_id, tenant_id, args.trace_id).await
+        }
             .instrument(span)
             .await
     }
@@ -92,7 +98,21 @@ async fn run_indexing_pipeline(
     ctx: &AppContext,
     document_id: Uuid,
     tenant_id: Uuid,
+    trace_id: Option<String>,
 ) -> Result<()> {
+    let tracker = WorkerRunTracker::start(
+        &ctx.db,
+        WorkerRunStart {
+            tenant_id: Some(tenant_id),
+            worker_name: KNOWLEDGE_BASE_INDEXING_WORKER_NAME,
+            business_type: KNOWLEDGE_BASE_INDEXING_BUSINESS_TYPE,
+            business_id: document_id.to_string(),
+            definition: KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION,
+            trace_id,
+            metadata: None,
+        },
+    )
+    .await?;
     let pipeline_result = AssertUnwindSafe(async {
         let db = &ctx.db;
 
@@ -142,11 +162,9 @@ async fn run_indexing_pipeline(
         document_service::start_indexing(db, document_id, tenant_id).await?;
 
         record_indexing_progress(
-            db,
+            &tracker,
             document_id,
-            tenant_id,
             "load_file",
-            "读取文件",
             Some("正在读取上传文件"),
         )
         .await;
@@ -173,6 +191,7 @@ async fn run_indexing_pipeline(
                 folder_id: doc.folder_id,
                 config,
                 embedding_model_name: &kb_config.embedding.model,
+                tracker: &tracker,
             },
         )
         .await
@@ -180,31 +199,32 @@ async fn run_indexing_pipeline(
     .catch_unwind()
     .await;
 
-    handle_pipeline_outcome(ctx, document_id, tenant_id, pipeline_result).await
+    handle_pipeline_outcome(ctx, document_id, tenant_id, &tracker, pipeline_result).await
 }
 
 async fn handle_pipeline_outcome(
     ctx: &AppContext,
     document_id: Uuid,
     tenant_id: Uuid,
+    tracker: &WorkerRunTracker,
     pipeline_result: std::result::Result<Result<()>, Box<dyn std::any::Any + Send>>,
 ) -> Result<()> {
     match pipeline_result {
-        Ok(Ok(())) => Ok(()),
+        Ok(Ok(())) => {
+            tracker.succeed().await?;
+            Ok(())
+        }
         Ok(Err(e)) => {
             cleanup_partial_index(ctx, document_id, tenant_id).await;
-            mark_indexing_failed(
-                &ctx.db,
-                document_id,
-                tenant_id,
-                &indexing_error_message(&e),
-            )
-            .await;
+            let error_msg = indexing_error_message(&e);
+            let _ = tracker.fail(&error_msg).await;
+            mark_indexing_failed(&ctx.db, document_id, tenant_id, &error_msg).await;
             Err(e)
         }
         Err(panic_payload) => {
             let error_msg = panic_message(&panic_payload);
             cleanup_partial_index(ctx, document_id, tenant_id).await;
+            let _ = tracker.fail(&error_msg).await;
             mark_indexing_failed(&ctx.db, document_id, tenant_id, &error_msg).await;
             Err(loco_rs::Error::string(&error_msg))
         }
@@ -640,6 +660,7 @@ struct PipelineParams<'a> {
     folder_id: Option<Uuid>,
     config: &'a crate::config::ChunkingConfig,
     embedding_model_name: &'a str,
+    tracker: &'a WorkerRunTracker,
 }
 
 fn build_chunk_points_and_models(
@@ -700,7 +721,7 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     }
 
     // 5. Chunk the markdown
-    record_pipeline_progress(db, p, "chunk", "文档分块", Some("正在切分索引内容")).await;
+    record_pipeline_progress(p, "chunk", Some("正在切分索引内容")).await;
     let chunk_started_at = Instant::now();
     let chunks = chunk_index_markdown(p, &index_markdown)?;
     log_index_stage_completed!(
@@ -715,7 +736,7 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     }
 
     // 6. Split lines and insert
-    record_pipeline_progress(db, p, "lines", "行号落库", Some("正在保存原文行号")).await;
+    record_pipeline_progress(p, "lines", Some("正在保存原文行号")).await;
     let lines_started_at = Instant::now();
     insert_document_lines(db, p, &index_markdown).await?;
     log_index_stage_completed!(p.document_id, "lines", lines_started_at);
@@ -724,14 +745,7 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     }
 
     // 7. Generate embeddings
-    record_pipeline_progress(
-        db,
-        p,
-        "embedding",
-        "向量生成",
-        Some("正在为文档分块生成向量"),
-    )
-    .await;
+    record_pipeline_progress(p, "embedding", Some("正在为文档分块生成向量")).await;
     let embedding_started_at = Instant::now();
     let embeddings = generate_embeddings(db, p, &chunks).await?;
     log_index_stage_completed!(
@@ -745,14 +759,7 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     }
 
     // 8-10. Build chunks, save chunks and upsert vectors
-    record_pipeline_progress(
-        db,
-        p,
-        "persist",
-        "索引写入",
-        Some("正在写入分块和向量索引"),
-    )
-    .await;
+    record_pipeline_progress(p, "persist", Some("正在写入分块和向量索引")).await;
     let persist_started_at = Instant::now();
     let total_tokens = persist_chunks_and_vectors(db, p, &chunks, &embeddings).await?;
     log_index_stage_completed!(
@@ -767,8 +774,7 @@ async fn execute_pipeline(db: &DatabaseConnection, p: &PipelineParams<'_>) -> Re
     }
 
     // 11. Mark document as ready
-    record_pipeline_progress(db, p, "mark_ready", "完成入库", Some("正在更新文档状态"))
-        .await;
+    record_pipeline_progress(p, "mark_ready", Some("正在更新文档状态")).await;
     let ready_started_at = Instant::now();
     mark_document_ready(db, p, chunks.len(), total_tokens).await?;
     log_index_stage_completed!(p.document_id, "mark_ready", ready_started_at);
@@ -788,7 +794,7 @@ async fn parse_prepare_and_save(
     db: &DatabaseConnection,
     p: &PipelineParams<'_>,
 ) -> Result<String> {
-    record_pipeline_progress(db, p, "parse", "文档解析", Some("正在解析文档内容")).await;
+    record_pipeline_progress(p, "parse", Some("正在解析文档内容")).await;
     let parse_started_at = Instant::now();
     let parsed = parse_document(p).await?;
     log_index_stage_completed!(
@@ -803,14 +809,7 @@ async fn parse_prepare_and_save(
     }
 
     let assets_started_at = Instant::now();
-    record_pipeline_progress(
-        db,
-        p,
-        "assets",
-        "资源处理",
-        Some("正在处理解析出的图片资源"),
-    )
-    .await;
+    record_pipeline_progress(p, "assets", Some("正在处理解析出的图片资源")).await;
     let parsed_markdown = prepare_parsed_markdown(p, &parsed.markdown, &parsed.assets)
         .instrument(tracing::info_span!(
             "kb.index.assets",
@@ -839,14 +838,7 @@ async fn save_parsed_markdown(
     parsed_markdown: &ParsedMarkdown,
 ) -> Result<()> {
     let started_at = Instant::now();
-    record_pipeline_progress(
-        db,
-        p,
-        "save_parsed",
-        "保存解析结果",
-        Some("正在保存预览内容"),
-    )
-    .await;
+    record_pipeline_progress(p, "save_parsed", Some("正在保存预览内容")).await;
     async {
         document_service::set_parsed_content(
             db,
@@ -868,37 +860,20 @@ async fn save_parsed_markdown(
 }
 
 async fn record_pipeline_progress(
-    db: &DatabaseConnection,
     p: &PipelineParams<'_>,
     stage: &str,
-    label: &str,
     message: Option<&str>,
 ) {
-    record_indexing_progress(db, p.document_id, p.tenant_id, stage, label, message).await;
+    record_indexing_progress(p.tracker, p.document_id, stage, message).await;
 }
 
 async fn record_indexing_progress(
-    db: &DatabaseConnection,
+    tracker: &WorkerRunTracker,
     document_id: Uuid,
-    tenant_id: Uuid,
     stage: &str,
-    label: &str,
     message: Option<&str>,
 ) {
-    if let Err(error) = document_service::set_indexing_progress(
-        db,
-        document_id,
-        tenant_id,
-        &document_service::IndexingProgressUpdate {
-            stage,
-            label,
-            message,
-            current: None,
-            total: None,
-        },
-    )
-    .await
-    {
+    if let Err(error) = tracker.stage(stage, message).await {
         tracing::warn!(
             document_id = %document_id,
             stage,
@@ -1067,7 +1042,7 @@ async fn generate_embeddings(
 }
 
 async fn update_embedding_progress(
-    db: &DatabaseConnection,
+    _db: &DatabaseConnection,
     p: &PipelineParams<'_>,
     current: usize,
     total: usize,
@@ -1075,19 +1050,10 @@ async fn update_embedding_progress(
     let current_i32 = i32::try_from(current).unwrap_or(i32::MAX);
     let total_i32 = i32::try_from(total).unwrap_or(i32::MAX);
     let message = format!("正在生成向量：{current_i32}/{total_i32} 个分块");
-    if let Err(error) = document_service::set_indexing_progress(
-        db,
-        p.document_id,
-        p.tenant_id,
-        &document_service::IndexingProgressUpdate {
-            stage: "embedding",
-            label: "向量生成",
-            message: Some(&message),
-            current: Some(current_i32),
-            total: Some(total_i32),
-        },
-    )
-    .await
+    if let Err(error) = p
+        .tracker
+        .progress("embedding", current_i32, total_i32, Some(&message))
+        .await
     {
         tracing::warn!(
             document_id = %p.document_id,

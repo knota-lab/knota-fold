@@ -32,3 +32,4 @@ pub use super::tenant_menu_overrides::Entity as TenantMenuOverrides;
 pub use super::tenants::Entity as Tenants;
 pub use super::user_roles::Entity as UserRoles;
 pub use super::users::Entity as Users;
+pub use super::worker_runs::Entity as WorkerRuns;

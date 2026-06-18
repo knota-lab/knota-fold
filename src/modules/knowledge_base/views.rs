@@ -1,4 +1,10 @@
-use crate::models::_entities::{kb_documents, kb_folders, kb_libraries};
+use chrono::Utc;
+
+use crate::models::_entities::{kb_documents, kb_folders, kb_libraries, worker_runs};
+use crate::services::worker_run_service::{
+    WorkerRunDefinition, KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION, STATUS_CANCELLED,
+    STATUS_FAILED, STATUS_SUCCEEDED,
+};
 use serde::{Deserialize, Serialize};
 
 // ---- Request types ----
@@ -102,6 +108,11 @@ pub struct IndexingProgressResponse {
     pub current: Option<i32>,
     pub total: Option<i32>,
     pub stage_started_at: Option<String>,
+    pub heartbeat_at: Option<String>,
+    pub health: String,
+    pub is_stale: bool,
+    pub is_hard_timeout: bool,
+    pub stale_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -158,6 +169,21 @@ impl DocumentResponse {
             ..Self::from_model(m)
         }
     }
+
+    #[must_use]
+    pub fn from_model_with_worker_run(
+        m: &kb_documents::Model,
+        worker_run: Option<&worker_runs::Model>,
+    ) -> Self {
+        let mut response = Self::from_model(m);
+        if let Some(run) = worker_run {
+            response.indexing_progress = indexing_progress_from_worker_run(
+                run,
+                KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION,
+            );
+        }
+        response
+    }
 }
 
 fn indexing_progress_from_metadata(
@@ -194,7 +220,198 @@ fn indexing_progress_from_metadata(
         current,
         total,
         stage_started_at,
+        heartbeat_at: None,
+        health: "normal".to_string(),
+        is_stale: false,
+        is_hard_timeout: false,
+        stale_reason: None,
     })
+}
+
+fn indexing_progress_from_worker_run(
+    run: &worker_runs::Model,
+    definition: WorkerRunDefinition,
+) -> Option<IndexingProgressResponse> {
+    let stage = run.stage.clone()?;
+    let stage_definition = definition.stage(&stage);
+    let label = run
+        .stage_label
+        .clone()
+        .or_else(|| stage_definition.map(|stage| stage.label.to_string()))
+        .unwrap_or_else(|| stage.clone());
+    let now = Utc::now().naive_utc();
+    let derived = derive_worker_run_health(
+        run.status.as_str(),
+        stage_definition,
+        run.heartbeat_at,
+        run.stage_started_at,
+        now,
+    );
+    let stale_reason = stale_reason(
+        &label,
+        derived.is_stale,
+        derived.is_hard_timeout,
+        stage_definition.and_then(|stage| stage.hard_timeout),
+        stage_definition.map(|stage| stage.stale_after),
+    );
+
+    Some(IndexingProgressResponse {
+        stage,
+        label,
+        message: run.message.clone(),
+        current: run.current,
+        total: run.total,
+        stage_started_at: run.stage_started_at.map(|time| time.and_utc().to_rfc3339()),
+        heartbeat_at: run.heartbeat_at.map(|time| time.and_utc().to_rfc3339()),
+        health: derived.health.to_string(),
+        is_stale: derived.is_stale,
+        is_hard_timeout: derived.is_hard_timeout,
+        stale_reason,
+    })
+}
+
+struct DerivedWorkerRunHealth {
+    health: &'static str,
+    is_stale: bool,
+    is_hard_timeout: bool,
+}
+
+fn derive_worker_run_health(
+    status: &str,
+    stage_definition: Option<
+        &crate::services::worker_run_service::WorkerRunStageDefinition,
+    >,
+    heartbeat_at: Option<chrono::NaiveDateTime>,
+    stage_started_at: Option<chrono::NaiveDateTime>,
+    now: chrono::NaiveDateTime,
+) -> DerivedWorkerRunHealth {
+    let status_finished =
+        matches!(status, STATUS_SUCCEEDED | STATUS_FAILED | STATUS_CANCELLED);
+    let is_stale = !status_finished
+        && stage_definition.is_some_and(|stage| {
+            heartbeat_at.is_some_and(|heartbeat_at| {
+                (now - heartbeat_at).num_seconds() > duration_secs(stage.stale_after)
+            })
+        });
+    let is_hard_timeout = !status_finished
+        && stage_definition.is_some_and(|stage| {
+            stage.hard_timeout.is_some_and(|timeout| {
+                stage_started_at.is_some_and(|stage_started_at| {
+                    (now - stage_started_at).num_seconds() > duration_secs(timeout)
+                })
+            })
+        });
+    let health = if status_finished {
+        "finished"
+    } else if is_hard_timeout {
+        "timeout"
+    } else if is_stale {
+        "stale"
+    } else {
+        "normal"
+    };
+    DerivedWorkerRunHealth {
+        health,
+        is_stale,
+        is_hard_timeout,
+    }
+}
+
+fn stale_reason(
+    label: &str,
+    is_stale: bool,
+    is_hard_timeout: bool,
+    hard_timeout: Option<std::time::Duration>,
+    stale_after: Option<std::time::Duration>,
+) -> Option<String> {
+    if is_hard_timeout {
+        return Some(format!(
+            "{label}阶段超过{}分钟仍未完成",
+            seconds_to_minutes(duration_secs(hard_timeout.unwrap_or_default()))
+        ));
+    }
+    if is_stale {
+        return Some(format!(
+            "{label}阶段{}分钟无进展",
+            seconds_to_minutes(duration_secs(stale_after.unwrap_or_default()))
+        ));
+    }
+    None
+}
+
+fn duration_secs(duration: std::time::Duration) -> i64 {
+    i64::try_from(duration.as_secs()).unwrap_or(i64::MAX)
+}
+
+const fn seconds_to_minutes(seconds: i64) -> i64 {
+    (seconds + 59) / 60
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Duration as ChronoDuration;
+
+    use super::*;
+    use crate::services::worker_run_service::{
+        KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION, STATUS_RUNNING,
+    };
+
+    #[test]
+    fn worker_run_health_is_normal_before_stale_threshold() {
+        let now = Utc::now().naive_utc();
+        let stage = KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION
+            .stage("embedding")
+            .expect("embedding stage");
+        let health = derive_worker_run_health(
+            STATUS_RUNNING,
+            Some(stage),
+            Some(now - ChronoDuration::minutes(1)),
+            Some(now - ChronoDuration::minutes(1)),
+            now,
+        );
+
+        assert_eq!(health.health, "normal");
+        assert!(!health.is_stale);
+        assert!(!health.is_hard_timeout);
+    }
+
+    #[test]
+    fn worker_run_health_marks_stale_after_heartbeat_threshold() {
+        let now = Utc::now().naive_utc();
+        let stage = KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION
+            .stage("embedding")
+            .expect("embedding stage");
+        let health = derive_worker_run_health(
+            STATUS_RUNNING,
+            Some(stage),
+            Some(now - ChronoDuration::minutes(6)),
+            Some(now - ChronoDuration::minutes(6)),
+            now,
+        );
+
+        assert_eq!(health.health, "stale");
+        assert!(health.is_stale);
+        assert!(!health.is_hard_timeout);
+    }
+
+    #[test]
+    fn worker_run_health_marks_timeout_after_stage_threshold() {
+        let now = Utc::now().naive_utc();
+        let stage = KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION
+            .stage("chunk")
+            .expect("chunk stage");
+        let health = derive_worker_run_health(
+            STATUS_RUNNING,
+            Some(stage),
+            Some(now - ChronoDuration::minutes(1)),
+            Some(now - ChronoDuration::minutes(11)),
+            now,
+        );
+
+        assert_eq!(health.health, "timeout");
+        assert!(!health.is_stale);
+        assert!(health.is_hard_timeout);
+    }
 }
 
 #[derive(Debug, Serialize)]

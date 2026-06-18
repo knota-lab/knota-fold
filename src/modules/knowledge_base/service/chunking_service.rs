@@ -831,7 +831,7 @@ fn main() {
 
     #[test]
     fn chunk_markdown_task_scheduler_document_finishes() {
-        let md = include_str!("../../../../../system-design/任务调度.md");
+        let md = build_task_scheduler_like_document();
         let chunks = chunk_markdown(md, test_options());
 
         assert!(!chunks.is_empty());
@@ -858,6 +858,55 @@ fn main() {
         );
 
         assert!(!chunks.is_empty());
+    }
+
+    fn build_task_scheduler_like_document() -> &'static str {
+        r#"# 任务调度系统
+
+> 定位：基于 Task + BackgroundWorker 体系的多租户任务调度框架。
+
+## 1. 为什么需要任务调度
+
+| 场景 | 没有调度 | 有调度 |
+|------|---------|--------|
+| 每天凌晨清理过期文件 | 管理员手动执行或配 crontab | 后台配 cron 表达式，自动执行 |
+| 租户 A 要每小时同步数据 | 全局 crontab 无法按租户隔离 | 租户自己配 cron + 参数 |
+| 谁触发了任务、执行结果如何 | 无记录 | 完整执行日志 |
+
+## 2. 设计决策
+
+### 2.1 核心选型
+
+本方案使用一个元任务每分钟扫描到期计划，然后把实际业务投递到独立 worker。
+worker 负责消费队列、更新执行状态、记录失败原因，并在必要时触发重试。
+
+### 2.2 执行链路
+
+```text
+scheduler_dispatch
+  -> query due schedules
+  -> create execution
+  -> enqueue worker
+  -> update next_run_at
+```
+
+## 3. 并发控制
+
+调度器需要避免同一租户下同一任务重复执行。实现上通过数据库状态和执行记录来控制。
+当多个请求同时触发时，只有第一个请求能够进入 running，其余请求应该看到已有执行。
+
+## 4. 错误处理
+
+失败时记录错误码、错误描述和 trace id。用户侧看到可翻译的错误描述，运维侧能追踪原始错误。
+
+## 5. 长段落回归
+
+这一段模拟设计文档中没有足够句号切分点的长内容，用于覆盖 overlap 不能阻止分块推进的场景。
+调度系统需要处理租户隔离、任务授权、执行日志、参数校验、状态恢复、幂等投递、队列消费、超时标记、
+失败重试、禁用策略、worker 注册、后台扫描、审计记录、配置变更、权限校验、跨租户隔离、任务暂停、
+任务恢复、批量查询、列表分页、日志归档、告警集成、链路追踪、开发环境 SQLite、生产环境 PostgreSQL、
+以及所有这些能力组合在一起时的稳定性和可观测性。
+"#
     }
 
     // ── helper function tests ────────────────────────────────────

@@ -77,6 +77,7 @@ impl Initializer for S3ClientInitializer {
             .build();
 
         let client = Client::from_conf(s3_cfg);
+        ensure_bucket_accessible(&client, &cfg).await?;
 
         ctx.shared_store.insert::<SharedS3Client>(Arc::new(client));
         ctx.shared_store
@@ -92,4 +93,32 @@ impl Initializer for S3ClientInitializer {
 
         Ok(())
     }
+}
+
+async fn ensure_bucket_accessible(client: &Client, cfg: &S3Config) -> Result<()> {
+    client
+        .head_bucket()
+        .bucket(&cfg.bucket)
+        .send()
+        .await
+        .map_err(|err| {
+            tracing::error!(
+                error = ?err,
+                endpoint = %cfg.endpoint,
+                bucket = %cfg.bucket,
+                force_path_style = cfg.force_path_style,
+                "S3 bucket accessibility check failed"
+            );
+            Error::Message(format!(
+                "S3 bucket '{}' is not accessible at '{}'. Create it first, for local Docker run: docker compose -f docker/docker-compose.yml run --rm minio-init",
+                cfg.bucket, cfg.endpoint
+            ))
+        })?;
+
+    tracing::info!(
+        endpoint = %cfg.endpoint,
+        bucket = %cfg.bucket,
+        "S3 bucket accessibility verified"
+    );
+    Ok(())
 }

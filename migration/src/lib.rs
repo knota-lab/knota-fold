@@ -35,6 +35,7 @@ mod m20260508_000030_knowledge_base;
 mod m20260510_000031_kb_scope_and_chat;
 mod m20260512_000032_chat_token_columns;
 mod m20260512_000033_session_summary_cache;
+mod m20260613_000034_worker_runs;
 
 pub struct Migrator;
 
@@ -74,6 +75,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260510_000031_kb_scope_and_chat::Migration),
             Box::new(m20260512_000032_chat_token_columns::Migration),
             Box::new(m20260512_000033_session_summary_cache::Migration),
+            Box::new(m20260613_000034_worker_runs::Migration),
             // inject-above (do not remove this comment)
         ]
     }

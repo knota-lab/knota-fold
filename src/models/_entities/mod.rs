@@ -43,3 +43,4 @@ pub mod tenant_menu_overrides;
 pub mod tenants;
 pub mod user_roles;
 pub mod users;
+pub mod worker_runs;

@@ -30,3 +30,4 @@ pub mod task_scheduler_service;
 pub mod tenant_menu_service;
 pub mod tenant_service;
 pub mod user_service;
+pub mod worker_run_service;

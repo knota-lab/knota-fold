@@ -28,15 +28,6 @@ pub struct CreateDocumentParams {
     pub created_by: Uuid,
 }
 
-#[derive(Debug)]
-pub struct IndexingProgressUpdate<'a> {
-    pub stage: &'a str,
-    pub label: &'a str,
-    pub message: Option<&'a str>,
-    pub current: Option<i32>,
-    pub total: Option<i32>,
-}
-
 /// Create a new `kb_documents` record with status='pending'.
 /// Returns the created model.
 #[tracing::instrument(skip(db))]
@@ -288,35 +279,6 @@ pub async fn set_parsed_content(
 }
 
 #[tracing::instrument(skip(db))]
-pub async fn set_indexing_progress(
-    db: &DatabaseConnection,
-    document_id: Uuid,
-    tenant_id: Uuid,
-    update: &IndexingProgressUpdate<'_>,
-) -> loco_rs::Result<()> {
-    let doc = kb_documents::Entity::find_by_id(document_id)
-        .filter(kb_documents::Column::TenantId.eq(tenant_id))
-        .filter(kb_documents::Column::DeletedAt.is_null())
-        .one(db)
-        .await
-        .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
-
-    if !matches!(doc.status.as_str(), "pending" | "indexing") {
-        return Ok(());
-    }
-
-    let mut active: kd_models::ActiveModel = doc.into();
-    active.metadata = ActiveValue::Set(Some(with_indexing_progress(
-        active.metadata.clone(),
-        update,
-    )));
-    active.updated_at = ActiveValue::Set(Utc::now().naive_utc());
-    active.update(db).await.db_err()?;
-    Ok(())
-}
-
-#[tracing::instrument(skip(db))]
 pub async fn is_indexing_active(
     db: &DatabaseConnection,
     document_id: Uuid,
@@ -372,30 +334,6 @@ fn merge_metadata(existing: ActiveValue<Option<Value>>, incoming: Value) -> Valu
         }
         (_, incoming_value) => incoming_value,
     }
-}
-
-fn with_indexing_progress(
-    existing: ActiveValue<Option<Value>>,
-    update: &IndexingProgressUpdate<'_>,
-) -> Value {
-    let mut metadata = match existing {
-        ActiveValue::Set(Some(value)) | ActiveValue::Unchanged(Some(value)) => value,
-        _ => json!({}),
-    };
-
-    if !metadata.is_object() {
-        metadata = json!({});
-    }
-
-    metadata["indexing"] = json!({
-        "stage": update.stage,
-        "label": update.label,
-        "message": update.message,
-        "current": update.current,
-        "total": update.total,
-        "stageStartedAt": Utc::now().to_rfc3339(),
-    });
-    metadata
 }
 
 /// Get document by ID, verifying `tenant_id` ownership.

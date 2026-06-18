@@ -23,6 +23,7 @@ use crate::modules::knowledge_base::views::{
 use crate::services::audit_service;
 use crate::services::file_reference_service::{self, AttachRequest};
 use crate::services::resource_types::ResourceType;
+use crate::services::worker_run_service::{self, KNOWLEDGE_BASE_INDEXING_BUSINESS_TYPE};
 use crate::utils::error::IntoModelResult;
 use crate::views::audit_logs::{AuditAction, AuditContext, KbDocumentAuditSnapshot};
 use crate::views::errors::{
@@ -302,9 +303,29 @@ pub(crate) async fn list(
     let total_items = paginator.num_items().await.model_err()?;
     let total_pages = paginator.num_pages().await.model_err()?;
     let items = paginator.fetch_page(page - 1).await.model_err()?;
+    let document_ids = items
+        .iter()
+        .map(|item| item.id.to_string())
+        .collect::<Vec<_>>();
+    let worker_runs = worker_run_service::latest_runs_by_business_ids(
+        &ctx.db,
+        Some(tc.tenant_id),
+        KNOWLEDGE_BASE_INDEXING_BUSINESS_TYPE,
+        &document_ids,
+    )
+    .await
+    .model_err()?;
 
     format::json(PaginatedResponse {
-        items: items.iter().map(DocumentResponse::from_model).collect(),
+        items: items
+            .iter()
+            .map(|item| {
+                DocumentResponse::from_model_with_worker_run(
+                    item,
+                    worker_runs.get(&item.id.to_string()),
+                )
+            })
+            .collect(),
         total_pages,
         total_items,
         page,
@@ -329,8 +350,19 @@ pub(crate) async fn get(
     let doc = service::get_document(&ctx.db, doc_id, tc.tenant_id)
         .await
         .model_err()?;
+    let worker_run = worker_run_service::latest_run_by_business_id(
+        &ctx.db,
+        Some(tc.tenant_id),
+        KNOWLEDGE_BASE_INDEXING_BUSINESS_TYPE,
+        &doc.id.to_string(),
+    )
+    .await
+    .model_err()?;
 
-    format::json(DocumentResponse::from_model(&doc))
+    format::json(DocumentResponse::from_model_with_worker_run(
+        &doc,
+        worker_run.as_ref(),
+    ))
 }
 
 #[utoipa::path(
