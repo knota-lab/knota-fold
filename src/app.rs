@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-use axum::response::IntoResponse;
+use axum::{response::IntoResponse, Router as AxumRouter};
 use loco_rs::{
     app::{AppContext, Hooks, Initializer},
     bgworker::{BackgroundWorker, Queue},
-    boot::{create_app, BootResult, StartMode},
+    boot::{create_app, BootResult, ServeParams, StartMode},
     config::Config,
     controller::AppRoutes,
     db::{self, truncate_table},
@@ -75,13 +75,39 @@ impl Hooks for App {
         crate::app_logs::init_logger(ctx)
     }
 
+    async fn before_run(ctx: &AppContext) -> Result<()> {
+        check_start_server_port_before_loco_banner(ctx)
+    }
+
     async fn boot(
         mode: StartMode,
         environment: &Environment,
         config: Config,
     ) -> Result<BootResult> {
-        ensure_server_port_available(&mode, &config)?;
         create_app::<Self, Migrator>(mode, environment, config).await
+    }
+
+    async fn serve(
+        app: AxumRouter,
+        _ctx: &AppContext,
+        serve_params: &ServeParams,
+    ) -> Result<()> {
+        let addr = format!("{}:{}", serve_params.binding, serve_params.port);
+        let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|err| {
+            Error::Message(format!(
+                "server address {addr} is not available: {err}. Stop the process using this port or change `server.binding` / `server.port`."
+            ))
+        })?;
+
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            let () = loco_rs::boot::shutdown_signal().await;
+        })
+        .await?;
+        Ok(())
     }
 
     async fn initializers(ctx: &AppContext) -> Result<Vec<Box<dyn Initializer>>> {
@@ -309,24 +335,83 @@ impl Hooks for App {
     }
 }
 
-fn ensure_server_port_available(mode: &StartMode, config: &Config) -> Result<()> {
-    if !start_mode_uses_server(mode) {
+fn check_start_server_port_before_loco_banner(ctx: &AppContext) -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !is_start_command(&args) || is_worker_only_start(&args) {
         return Ok(());
     }
 
-    let addr = format!("{}:{}", config.server.binding, config.server.port);
+    let binding = find_option_value(&args, "--binding", "-b")
+        .unwrap_or_else(|| ctx.config.server.binding.clone());
+    let port = find_option_value(&args, "--port", "-p")
+        .map_or(ctx.config.server.port, |value| {
+            value.parse::<i32>().unwrap_or(ctx.config.server.port)
+        });
+    let addr = format!("{binding}:{port}");
+
     let listener = TcpListener::bind(&addr).map_err(|err| {
         Error::Message(format!(
-            "server address {addr} is not available: {err}. Stop the process using this port or change `server.binding` / `server.port`."
+            "server address {addr} is not available before startup: {err}. Stop the process using this port or change `server.binding` / `server.port`."
         ))
     })?;
     drop(listener);
     Ok(())
 }
 
-const fn start_mode_uses_server(mode: &StartMode) -> bool {
+fn is_start_command(args: &[String]) -> bool {
+    first_command(args).is_some_and(|command| command == "start" || command == "s")
+}
+
+fn is_worker_only_start(args: &[String]) -> bool {
+    has_flag(args, "--worker", "-w")
+        && !has_flag(args, "--server-and-worker", "")
+        && !has_flag(args, "--all", "")
+}
+
+fn first_command(args: &[String]) -> Option<&str> {
+    let mut skip_next = false;
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if option_takes_value(arg) {
+            skip_next = !arg.contains('=');
+            continue;
+        }
+        if !arg.starts_with('-') {
+            return Some(arg.as_str());
+        }
+    }
+    None
+}
+
+fn option_takes_value(arg: &str) -> bool {
     matches!(
-        mode,
-        StartMode::ServerOnly | StartMode::ServerAndWorker | StartMode::All
-    )
+        arg,
+        "-e" | "--environment" | "-b" | "--binding" | "-p" | "--port"
+    ) || arg.starts_with("--environment=")
+        || arg.starts_with("--binding=")
+        || arg.starts_with("--port=")
+}
+
+fn find_option_value(args: &[String], long: &str, short: &str) -> Option<String> {
+    let long_eq = format!("{long}=");
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if let Some(value) = arg.strip_prefix(&long_eq) {
+            return Some(value.to_string());
+        }
+        if arg == long || (!short.is_empty() && arg == short) {
+            return iter.next().cloned();
+        }
+    }
+    None
+}
+
+fn has_flag(args: &[String], long: &str, short: &str) -> bool {
+    let long_eq = format!("{long}=");
+    args.iter().any(|arg| {
+        arg == long || (!short.is_empty() && arg == short) || arg.starts_with(&long_eq)
+    })
 }
