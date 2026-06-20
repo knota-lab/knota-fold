@@ -120,7 +120,7 @@ pub async fn set_file_reference(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
     let mut active: kd_models::ActiveModel = doc.into();
     active.file_reference_id = ActiveValue::Set(Some(file_reference_id));
     active.update(db).await.db_err()
@@ -142,7 +142,7 @@ pub async fn update_status(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
 
     let current = doc.status.as_str();
     let valid = match new_status {
@@ -154,7 +154,7 @@ pub async fn update_status(
         return Err(KnowledgeBaseError::IndexingError(format!(
             "invalid status transition: {current} -> {new_status}"
         ))
-        .to_err());
+        .to_loco_error());
     }
 
     let mut active: kd_models::ActiveModel = doc.into();
@@ -182,14 +182,14 @@ pub async fn start_indexing(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
 
     if !matches!(doc.status.as_str(), "pending" | "indexing") {
         return Err(KnowledgeBaseError::IndexingError(format!(
             "cannot start indexing from status '{}'",
             doc.status
         ))
-        .to_err());
+        .to_loco_error());
     }
 
     let mut active: kd_models::ActiveModel = doc.into();
@@ -218,7 +218,7 @@ pub async fn mark_error(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
 
     if !matches!(doc.status.as_str(), "pending" | "indexing") {
         return Ok(());
@@ -244,7 +244,7 @@ pub async fn set_full_text(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
 
     let mut active: kd_models::ActiveModel = doc.into();
     active.full_text = ActiveValue::Set(Some(full_text.to_string()));
@@ -266,7 +266,7 @@ pub async fn set_parsed_content(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
 
     let mut active: kd_models::ActiveModel = doc.into();
     active.full_text = ActiveValue::Set(Some(full_text.to_string()));
@@ -310,7 +310,7 @@ pub async fn mark_ready(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
 
     let mut active: kd_models::ActiveModel = doc.into();
     active.status = ActiveValue::Set("ready".to_string());
@@ -349,7 +349,7 @@ pub async fn get_document(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())
 }
 
 #[tracing::instrument(skip(db))]
@@ -442,10 +442,10 @@ pub async fn promote_document(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
 
     if doc.created_by != user_id {
-        return Err(KnowledgeBaseError::Forbidden.to_err());
+        return Err(KnowledgeBaseError::Forbidden.to_loco_error());
     }
     if doc.scope != "private" {
         return Err(crate::views::errors::err_bad_request(

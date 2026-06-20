@@ -64,13 +64,15 @@ pub(crate) async fn search(
         .config
         .typed_settings()
         .map_err(|e| {
-            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}")).to_err()
+            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}"))
+                .to_loco_error()
         })?
         .ok_or_else(|| {
-            KnowledgeBaseError::ConfigError("settings missing".into()).to_err()
+            KnowledgeBaseError::ConfigError("settings missing".into()).to_loco_error()
         })?;
     let kb_config = settings.knowledge_base.as_ref().ok_or_else(|| {
-        KnowledgeBaseError::ConfigError("knowledge base not configured".into()).to_err()
+        KnowledgeBaseError::ConfigError("knowledge base not configured".into())
+            .to_loco_error()
     })?;
 
     let limit = params.limit.unwrap_or_else(|| {
@@ -93,7 +95,7 @@ pub(crate) async fn search(
         },
     )
     .await
-    .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_err())?;
+    .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_loco_error())?;
 
     let response: Vec<SearchResultResponse> = results
         .iter()
@@ -224,13 +226,15 @@ fn resolve_qa_v3_deps(ctx: &AppContext) -> Result<QaV3StreamDeps> {
         .config
         .typed_settings()
         .map_err(|e| {
-            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}")).to_err()
+            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}"))
+                .to_loco_error()
         })?
         .ok_or_else(|| {
-            KnowledgeBaseError::ConfigError("settings missing".into()).to_err()
+            KnowledgeBaseError::ConfigError("settings missing".into()).to_loco_error()
         })?;
     let kb_config = settings.knowledge_base.ok_or_else(|| {
-        KnowledgeBaseError::ConfigError("knowledge base not configured".into()).to_err()
+        KnowledgeBaseError::ConfigError("knowledge base not configured".into())
+            .to_loco_error()
     })?;
 
     Ok(QaV3StreamDeps {

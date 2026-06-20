@@ -120,14 +120,14 @@ async fn run_indexing_pipeline(
         let parser_chain =
             ctx.shared_store.get::<SharedParserChain>().ok_or_else(|| {
                 KnowledgeBaseError::ConfigError("Parser chain not initialized".into())
-                    .to_err()
+                    .to_loco_error()
             })?;
         let embedding_client = ctx
             .shared_store
             .get::<SharedEmbeddingClient>()
             .ok_or_else(|| {
                 KnowledgeBaseError::ConfigError("Embedding client not initialized".into())
-                    .to_err()
+                    .to_loco_error()
             })?;
         let search_provider =
             ctx.shared_store
@@ -136,7 +136,7 @@ async fn run_indexing_pipeline(
                     KnowledgeBaseError::ConfigError(
                         "Search provider not initialized".into(),
                     )
-                    .to_err()
+                    .to_loco_error()
                 })?;
         let s3_client = ctx.shared_store.get::<SharedS3Client>();
         let s3_config = ctx.shared_store.get::<SharedS3Config>();
@@ -146,14 +146,15 @@ async fn run_indexing_pipeline(
             .config
             .typed_settings()
             .map_err(|e| {
-                KnowledgeBaseError::ConfigError(format!("invalid settings: {e}")).to_err()
+                KnowledgeBaseError::ConfigError(format!("invalid settings: {e}"))
+                    .to_loco_error()
             })?
             .ok_or_else(|| {
-                KnowledgeBaseError::ConfigError("settings missing".into()).to_err()
+                KnowledgeBaseError::ConfigError("settings missing".into()).to_loco_error()
             })?;
         let kb_config = settings.knowledge_base.as_ref().ok_or_else(|| {
             KnowledgeBaseError::ConfigError("knowledge base config missing".into())
-                .to_err()
+                .to_loco_error()
         })?;
         let config = &kb_config.chunking;
 
@@ -351,16 +352,19 @@ async fn load_file_pipeline_input(
             "file is too large to index synchronously: {} bytes > {} bytes",
             file_input.file.size, MAX_INDEX_FILE_BYTES
         ))
-        .to_err());
+        .to_loco_error());
     }
 
     let s3_client = ctx.shared_store.get::<SharedS3Client>().ok_or_else(|| {
-        KnowledgeBaseError::ConfigError("S3 client not initialized".into()).to_err()
+        KnowledgeBaseError::ConfigError("S3 client not initialized".into())
+            .to_loco_error()
     })?;
     let bytes = read_file_bytes(&s3_client, &file_input.file).await?;
     let (mime_type, source_name) =
         normalise_parser_input(&bytes, file_input.mime_type, file_input.source_name)
-            .map_err(|message| KnowledgeBaseError::ParsingError(message).to_err())?;
+            .map_err(|message| {
+                KnowledgeBaseError::ParsingError(message).to_loco_error()
+            })?;
 
     Ok(PipelineInput {
         bytes,
@@ -390,8 +394,10 @@ async fn load_document_file_input(
             .filter(file_references::Column::DeletedAt.is_null())
             .one(db)
             .await
-            .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_err())?
-            .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+            .map_err(|e| {
+                KnowledgeBaseError::ProviderError(e.to_string()).to_loco_error()
+            })?
+            .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
         let file = load_active_file(db, doc.tenant_id, reference.file_id).await?;
         return Ok(FileInput {
             mime_type: resolve_reference_document_mime(
@@ -408,7 +414,7 @@ async fn load_document_file_input(
         KnowledgeBaseError::ParsingError(
             "document has neither content nor file_id".into(),
         )
-        .to_err()
+        .to_loco_error()
     })?;
 
     let file = load_active_file(db, doc.tenant_id, file_id).await?;
@@ -430,8 +436,8 @@ async fn load_active_file(
         .filter(files::Column::DeletedAt.is_null())
         .one(db)
         .await
-        .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_err())?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())
+        .map_err(|e| KnowledgeBaseError::ProviderError(e.to_string()).to_loco_error())?
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())
 }
 
 fn normalise_source_mime(source_type: &str) -> String {
@@ -627,7 +633,7 @@ async fn read_file_bytes(
             KnowledgeBaseError::ProviderError(format!(
                 "failed to fetch file object from storage: {e}"
             ))
-            .to_err()
+            .to_loco_error()
         })?;
 
     let capacity = usize::try_from(file.size.max(0)).unwrap_or_default();
@@ -637,7 +643,7 @@ async fn read_file_bytes(
         KnowledgeBaseError::ProviderError(format!(
             "failed to read file object from storage: {e}"
         ))
-        .to_err()
+        .to_loco_error()
     })?;
     Ok(bytes)
 }
@@ -908,7 +914,7 @@ async fn parse_document(p: &PipelineParams<'_>) -> Result<ParsedDocument> {
                 "no parser found for content type '{}'",
                 p.mime_type
             ))
-            .to_err()
+            .to_loco_error()
         })?;
 
     async {
@@ -916,7 +922,8 @@ async fn parse_document(p: &PipelineParams<'_>) -> Result<ParsedDocument> {
             .parse(p.input_bytes, p.mime_type, p.source_name)
             .await
             .map_err(|e| {
-                KnowledgeBaseError::ParsingError(format!("parsing failed: {e}")).to_err()
+                KnowledgeBaseError::ParsingError(format!("parsing failed: {e}"))
+                    .to_loco_error()
             })
     }
     .instrument(tracing::info_span!(
@@ -957,7 +964,7 @@ fn chunk_index_markdown(
         return Err(KnowledgeBaseError::IndexingError(
             "chunking produced no chunks".into(),
         )
-        .to_err());
+        .to_loco_error());
     }
     let chunk_tokens: i32 = chunks.iter().map(|chunk| chunk.token_count).sum();
     chunk_span.record("chunk_count", chunks.len());
@@ -1024,7 +1031,8 @@ async fn generate_embeddings(
             .map(|chunk| chunk.content.clone())
             .collect();
         let batch_embeddings = model.embed_texts(texts).await.map_err(|e| {
-            KnowledgeBaseError::EmbeddingError(format!("embedding failed: {e}")).to_err()
+            KnowledgeBaseError::EmbeddingError(format!("embedding failed: {e}"))
+                .to_loco_error()
         })?;
         embeddings.extend(batch_embeddings);
         update_embedding_progress(db, p, embeddings.len(), total_chunks).await;
@@ -1036,7 +1044,7 @@ async fn generate_embeddings(
             embeddings.len(),
             chunks.len()
         ))
-        .to_err());
+        .to_loco_error());
     }
     Ok(embeddings)
 }
@@ -1106,7 +1114,7 @@ async fn persist_chunks_and_vectors(
             .await
             .map_err(|e| {
                 KnowledgeBaseError::IndexingError(format!("Qdrant upsert failed: {e}"))
-                    .to_err()
+                    .to_loco_error()
             })
     }
     .instrument(tracing::info_span!(
@@ -1173,13 +1181,13 @@ async fn prepare_parsed_markdown(
         KnowledgeBaseError::ConfigError(
             "S3 client is required to persist parsed document assets".into(),
         )
-        .to_err()
+        .to_loco_error()
     })?;
     let bucket = p.s3_bucket.ok_or_else(|| {
         KnowledgeBaseError::ConfigError(
             "S3 config is required to persist parsed document assets".into(),
         )
-        .to_err()
+        .to_loco_error()
     })?;
 
     let mut asset_refs = Vec::with_capacity(assets.len());
@@ -1204,7 +1212,7 @@ async fn prepare_parsed_markdown(
                     "failed to upload parsed asset '{}': {e}",
                     asset.name
                 ))
-                .to_err()
+                .to_loco_error()
             })?;
 
         asset_refs.push((asset.name.clone(), key.clone()));
@@ -1466,7 +1474,7 @@ mod tests {
             crate::modules::knowledge_base::errors::KnowledgeBaseError::EmbeddingError(
                 "embedding request timed out".to_string(),
             )
-            .to_err();
+            .to_loco_error();
 
         assert_eq!(
             indexing_error_message(&err),

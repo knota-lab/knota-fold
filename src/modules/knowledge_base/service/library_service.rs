@@ -92,7 +92,7 @@ pub async fn get_library(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())
 }
 
 #[tracing::instrument(skip(db))]
@@ -214,7 +214,7 @@ pub async fn get_folder(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())
 }
 
 #[tracing::instrument(skip(db))]

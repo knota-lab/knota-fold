@@ -24,18 +24,19 @@ pub async fn revoke_notification(
         .one(db)
         .await
         .db_err()?
-        .ok_or_else(|| NotificationError::NotFound.to_err())?;
+        .ok_or_else(|| NotificationError::NotFound.to_loco_error())?;
 
     // 2. Check already revoked
     if notif.status == "revoked" {
-        return Err(NotificationError::AlreadyRevoked.to_err());
+        return Err(NotificationError::AlreadyRevoked.to_loco_error());
     }
 
     // 3. Permission check: non-super-admin can only revoke own tenant's notifications
     if !is_super_admin {
-        let tid = tenant_filter.ok_or_else(|| NotificationError::Forbidden.to_err())?;
+        let tid =
+            tenant_filter.ok_or_else(|| NotificationError::Forbidden.to_loco_error())?;
         if notif.tenant_id != Some(tid) {
-            return Err(NotificationError::Forbidden.to_err());
+            return Err(NotificationError::Forbidden.to_loco_error());
         }
     }
 

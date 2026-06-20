@@ -64,17 +64,19 @@ pub async fn create_notification(
     let recipient_user_ids = match notification_type {
         "platform" => resolve_platform_recipients(&txn).await?,
         "tenant_all" => {
-            let tid = tenant_id.ok_or_else(|| NotificationError::Forbidden.to_err())?;
+            let tid =
+                tenant_id.ok_or_else(|| NotificationError::Forbidden.to_loco_error())?;
             resolve_tenant_all_recipients(&txn, tid).await?
         }
         "tenant_role" => {
-            let tid = tenant_id.ok_or_else(|| NotificationError::Forbidden.to_err())?;
+            let tid =
+                tenant_id.ok_or_else(|| NotificationError::Forbidden.to_loco_error())?;
             let codes = target_role_codes
-                .ok_or_else(|| NotificationError::NoRolesSelected.to_err())?;
+                .ok_or_else(|| NotificationError::NoRolesSelected.to_loco_error())?;
             resolve_role_recipients(&txn, tid, codes).await?
         }
         _ => {
-            return Err(NotificationError::UnsupportedType.to_err());
+            return Err(NotificationError::UnsupportedType.to_loco_error());
         }
     };
 

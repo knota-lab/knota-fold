@@ -512,7 +512,7 @@ pub(crate) async fn delete(
     search_provider
         .delete_by_document(doc_id, tc.tenant_id)
         .await
-        .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()).to_err())?;
+        .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()).to_loco_error())?;
 
     let txn = ctx.db.begin().await.model_err()?;
     service::clear_index_records(&txn, doc_id, tc.tenant_id)
@@ -617,7 +617,7 @@ pub(crate) async fn promote(
     search_provider
         .promote_document_scope(doc_id, tc.tenant_id)
         .await
-        .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()).to_err())?;
+        .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()).to_loco_error())?;
 
     format::json(DocumentResponse::from_model(&doc))
 }
@@ -658,20 +658,22 @@ pub(crate) async fn reindex(
     search_provider
         .delete_by_document(doc_id, tc.tenant_id)
         .await
-        .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()).to_err())?;
+        .map_err(|e| KnowledgeBaseError::IndexingError(e.to_string()).to_loco_error())?;
 
     // Reset status to 'pending' — bypass transition validation by direct update
     let settings: AppSettings = ctx
         .config
         .typed_settings()
         .map_err(|e| {
-            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}")).to_err()
+            KnowledgeBaseError::ConfigError(format!("invalid settings: {e}"))
+                .to_loco_error()
         })?
         .ok_or_else(|| {
-            KnowledgeBaseError::ConfigError("settings missing".into()).to_err()
+            KnowledgeBaseError::ConfigError("settings missing".into()).to_loco_error()
         })?;
     let _kb_config = settings.knowledge_base.as_ref().ok_or_else(|| {
-        KnowledgeBaseError::ConfigError("knowledge base not configured".into()).to_err()
+        KnowledgeBaseError::ConfigError("knowledge base not configured".into())
+            .to_loco_error()
     })?;
 
     service::clear_index_records(&ctx.db, doc_id, tc.tenant_id)
@@ -686,7 +688,7 @@ pub(crate) async fn reindex(
         .one(&ctx.db)
         .await
         .model_err()?
-        .ok_or_else(|| KnowledgeBaseError::NotFound.to_err())?;
+        .ok_or_else(|| KnowledgeBaseError::NotFound.to_loco_error())?;
 
     let mut active: kd_models::ActiveModel = doc.into();
     active.status = ActiveValue::Set("pending".to_string());

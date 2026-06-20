@@ -47,7 +47,7 @@ impl NotificationError {
     /// Delegates to `from_info()` for unified location tracking via `#[track_caller]`.
     #[track_caller]
     #[must_use]
-    pub fn to_err(&self) -> loco_rs::Error {
+    pub fn to_loco_error(&self) -> loco_rs::Error {
         use crate::modules::notification::error_info as ei;
         let info = match self {
             Self::NotFound => ei::NOT_FOUND,
@@ -62,6 +62,6 @@ impl NotificationError {
     }
 
     pub fn to_response(&self) -> Result<Response> {
-        Err(self.to_err())
+        Err(self.to_loco_error())
     }
 }
