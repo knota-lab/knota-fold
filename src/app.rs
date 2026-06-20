@@ -9,10 +9,10 @@ use loco_rs::{
     db::{self, truncate_table},
     environment::Environment,
     task::Tasks,
-    Result,
+    Error, Result,
 };
 use migration::Migrator;
-use std::path::Path;
+use std::{net::TcpListener, path::Path};
 
 #[allow(unused_imports)]
 use crate::{
@@ -80,6 +80,7 @@ impl Hooks for App {
         environment: &Environment,
         config: Config,
     ) -> Result<BootResult> {
+        ensure_server_port_available(&mode, &config)?;
         create_app::<Self, Migrator>(mode, environment, config).await
     }
 
@@ -306,4 +307,26 @@ impl Hooks for App {
         .await?;
         Ok(())
     }
+}
+
+fn ensure_server_port_available(mode: &StartMode, config: &Config) -> Result<()> {
+    if !start_mode_uses_server(mode) {
+        return Ok(());
+    }
+
+    let addr = format!("{}:{}", config.server.binding, config.server.port);
+    let listener = TcpListener::bind(&addr).map_err(|err| {
+        Error::Message(format!(
+            "server address {addr} is not available: {err}. Stop the process using this port or change `server.binding` / `server.port`."
+        ))
+    })?;
+    drop(listener);
+    Ok(())
+}
+
+const fn start_mode_uses_server(mode: &StartMode) -> bool {
+    matches!(
+        mode,
+        StartMode::ServerOnly | StartMode::ServerAndWorker | StartMode::All
+    )
 }
