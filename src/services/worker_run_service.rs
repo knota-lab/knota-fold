@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::models::_entities::worker_runs;
 use crate::utils::error::IntoAppError;
+use crate::views::errors::err_internal;
 
 pub const STATUS_RUNNING: &str = "running";
 pub const STATUS_SUCCEEDED: &str = "succeeded";
@@ -182,9 +183,10 @@ impl WorkerRunTracker {
         message: Option<&str>,
     ) -> loco_rs::Result<()> {
         let stage = self.definition.stage(stage_code).ok_or_else(|| {
-            loco_rs::Error::string(&format!(
-                "worker run stage '{stage_code}' is not defined"
-            ))
+            err_internal(
+                "worker_run.stage_not_defined",
+                format!("worker run stage '{stage_code}' is not defined"),
+            )
         })?;
         let now = Utc::now().naive_utc();
         let model = worker_runs::ActiveModel {
@@ -217,9 +219,10 @@ impl WorkerRunTracker {
         message: Option<&str>,
     ) -> loco_rs::Result<()> {
         let stage = self.definition.stage(stage_code).ok_or_else(|| {
-            loco_rs::Error::string(&format!(
-                "worker run stage '{stage_code}' is not defined"
-            ))
+            err_internal(
+                "worker_run.stage_not_defined",
+                format!("worker run stage '{stage_code}' is not defined"),
+            )
         })?;
         let now = Utc::now().naive_utc();
         let model = worker_runs::ActiveModel {
@@ -275,7 +278,9 @@ impl WorkerRunTracker {
             .one(&self.db)
             .await
             .db_err()?
-            .ok_or_else(|| loco_rs::Error::string("worker run not found"))?;
+            .ok_or_else(|| {
+                err_internal("worker_run.not_found", "worker run not found")
+            })?;
         let duration_ms = existing
             .started_at
             .map(|started_at| (now - started_at).num_milliseconds());

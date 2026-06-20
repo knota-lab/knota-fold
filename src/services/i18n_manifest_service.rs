@@ -208,6 +208,7 @@ pub async fn apply_manifest(
     // memory just to compute a set difference.
     let backend = txn.get_database_backend();
     let stale_result = if entry_result.touched_ids.is_empty() {
+        // raw-sql-ok: bulk stale update avoids loading every active i18n entry into memory.
         txn.execute(Statement::from_sql_and_values(
             backend,
             "UPDATE i18n_entries \
@@ -233,6 +234,7 @@ pub async fn apply_manifest(
             .iter()
             .map(|id| sea_orm::Value::Uuid(Some(Box::new(*id))))
             .collect();
+        // raw-sql-ok: dynamic NOT IN placeholder list is needed for a single bulk update.
         txn.execute(Statement::from_sql_and_values(backend, sql, values))
             .await
             .db_err()?

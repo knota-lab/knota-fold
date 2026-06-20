@@ -302,6 +302,7 @@ pub async fn count_distinct_keys(
     );
 
     let total: i64 = db
+        // raw-sql-ok: distinct key count with NOT EXISTS filters is clearer than forcing SeaORM.
         .query_one(Statement::from_sql_and_values(backend, count_sql, binds))
         .await?
         .ok_or_else(|| DbErr::Custom("count query returned no row".into()))?
@@ -338,6 +339,7 @@ pub async fn paginate_distinct_keys(
     );
 
     let rows = db
+        // raw-sql-ok: distinct key pagination must match the count query exactly.
         .query_all(Statement::from_sql_and_values(
             backend, page_sql, page_binds,
         ))

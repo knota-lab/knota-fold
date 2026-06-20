@@ -127,6 +127,7 @@ where
 
     // Cascade — bump every existing tenant revision row.
     let backend = txn.get_database_backend();
+    // raw-sql-ok: one bulk revision bump is simpler and avoids per-tenant row updates.
     txn.execute(Statement::from_sql_and_values(
         backend,
         "UPDATE i18n_bundle_revisions \

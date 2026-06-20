@@ -192,6 +192,7 @@ impl Model {
     ///
     /// When could not find user  or DB query error
     pub async fn find_by_id_str(db: &DatabaseConnection, id: &str) -> ModelResult<Self> {
+        // no-map-err-to-model-error-any-ok: uuid parse is a third-party error, not SeaORM DbErr.
         let parse_uuid = Uuid::parse_str(id).map_err(|e| ModelError::Any(e.into()))?;
         let user = users::Entity::find()
             .filter(
@@ -263,6 +264,7 @@ impl Model {
             return Err(ModelError::EntityAlreadyExists {});
         }
 
+        // no-map-err-to-model-error-any-ok: password hashing returns a third-party error.
         let password_hash = hash::hash_password(&params.password)
             .map_err(|e| ModelError::Any(e.into()))?;
 
@@ -392,6 +394,7 @@ impl ActiveModel {
         password: &str,
     ) -> ModelResult<Model> {
         self.password = ActiveValue::set(
+            // no-map-err-to-model-error-any-ok: password hashing returns a third-party error.
             hash::hash_password(password).map_err(|e| ModelError::Any(e.into()))?,
         );
         self.reset_token = ActiveValue::Set(None);
