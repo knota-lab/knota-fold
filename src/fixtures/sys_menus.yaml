@@ -305,6 +305,21 @@
   created_at: "2023-11-12T12:34:56.789+00:00"
   updated_at: "2023-11-12T12:34:56.789+00:00"
 
+# 知识库
+- id: "cccccccc-cccc-cccc-cccc-ccccccccc040"
+  name: "知识库"
+  code: "knowledge_base"
+  icon: "Library"
+  path: "/knowledge-base"
+  menu_type: "menu"
+  is_cache: false
+  sort_order: 5
+  status: "active"
+  version: 1
+  updated_by: "11111111-1111-1111-1111-111111111111"
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"
+
 # 系统监控 (directory)
 - id: "cccccccc-cccc-cccc-cccc-ccccccccc100"
   name: "系统监控"
