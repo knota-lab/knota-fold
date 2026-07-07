@@ -2,9 +2,15 @@
 
 use axum::http::{HeaderName, HeaderValue};
 
-use knota_fold::{app::App, models::users, views::auth::LoginResponse};
+use knota_fold::{
+    app::App,
+    models::{_entities::sys_configs, users},
+    services::auth_policy,
+    views::auth::LoginResponse,
+};
 use loco_rs::TestServer;
 use loco_rs::{app::AppContext, testing::prelude::seed};
+use sea_orm::{sea_query::Expr, ColumnTrait, EntityTrait, QueryFilter};
 
 const USER_EMAIL: &str = "test@loco.com";
 const USER_PASSWORD: &str = "1234";
@@ -14,8 +20,28 @@ pub struct LoggedInUser {
     pub token: String,
 }
 
+async fn set_registration_enabled(ctx: &AppContext, enabled: bool) {
+    sys_configs::Entity::update_many()
+        .col_expr(sys_configs::Column::Value, Expr::value(enabled.to_string()))
+        .filter(sys_configs::Column::Key.eq(auth_policy::KEY_REGISTRATION_ENABLED))
+        .filter(sys_configs::Column::TenantId.is_null())
+        .exec(&ctx.db)
+        .await
+        .expect("failed to update registration config");
+
+    let _ = ctx
+        .cache
+        .remove(&format!(
+            "cfg:resolved:global:{}",
+            auth_policy::KEY_REGISTRATION_ENABLED
+        ))
+        .await;
+    let _ = ctx.cache.remove("cfg:all:global").await;
+}
+
 pub async fn init_user_login(request: &TestServer, ctx: &AppContext) -> LoggedInUser {
     seed::<App>(ctx).await.unwrap();
+    set_registration_enabled(ctx, true).await;
 
     let register_payload = serde_json::json!({
         "name": "loco",

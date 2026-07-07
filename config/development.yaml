@@ -19,7 +19,7 @@ logger:
 # Web server configuration
 server:
   # Port on which the server will listen. the server binding is 0.0.0.0:{PORT}
-  port: 5150
+  port: 6150
   # Binding for the server (which interface to bind to).
   # dev 绑 localhost，端口被 Docker staging 占用时直接报 "address in use"，
   # 避免无声打到容器里的旧版本。

@@ -107,3 +107,15 @@
   updated_by: ~
   created_at: "2023-11-12T12:34:56.789+00:00"
   updated_at: "2023-11-12T12:34:56.789+00:00"
+- id: "cccccccc-cccc-cccc-cccc-cccccccccc0a"
+  key: "auth.registration.enabled"
+  value: "false"
+  value_type: "bool"
+  category: "auth"
+  scope: "global"
+  tenant_id: ~
+  label: "开放用户注册"
+  description: "为 true 时允许通过公开注册接口创建用户；默认关闭，避免外部用户自行注册进入系统"
+  updated_by: ~
+  created_at: "2023-11-12T12:34:56.789+00:00"
+  updated_at: "2023-11-12T12:34:56.789+00:00"

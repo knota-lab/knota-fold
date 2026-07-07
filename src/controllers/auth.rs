@@ -1,11 +1,11 @@
 use crate::log_error;
 use crate::utils::error::{IntoLocoResult, IntoModelResult};
-use crate::views::errors::err_bad_request;
+use crate::views::errors::{err_bad_request, err_forbidden};
 use crate::{
     extractors::tenant::TenantContext,
     mailers::auth::AuthMailer,
     models::{_entities::users, roles, users::RegisterParams},
-    services::{auth_cache, captcha_service, login_guard},
+    services::{auth_cache, auth_policy, captcha_service, login_guard},
     views::auth::{
         CaptchaResponse, ChangePasswordRequest, CurrentResponse, LoginErrorResponse,
         LoginRequest, LoginResponse, UnlockAccountRequest, UpdateProfileRequest,
@@ -62,6 +62,13 @@ pub(crate) async fn register(
     State(ctx): State<AppContext>,
     Json(params): Json<RegisterParams>,
 ) -> Result<Response> {
+    if !auth_policy::registration_enabled(&ctx).await {
+        return Err(err_forbidden(
+            "auth.registration_disabled",
+            "用户注册已关闭",
+        ));
+    }
+
     let res = users::Model::create_with_password(&ctx.db, &params).await;
 
     let user = match res {

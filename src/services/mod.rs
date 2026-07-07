@@ -1,6 +1,7 @@
 pub mod api_key_service;
 pub mod audit_service;
 pub mod auth_cache;
+pub mod auth_policy;
 pub mod captcha_service;
 pub mod casbin_service;
 pub mod dict_service;

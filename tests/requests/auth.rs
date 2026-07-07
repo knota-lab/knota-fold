@@ -1,7 +1,12 @@
 use insta::{assert_debug_snapshot, with_settings};
-use knota_fold::{app::App, models::users};
-use loco_rs::testing::prelude::*;
+use knota_fold::{
+    app::App,
+    models::{_entities::sys_configs, users},
+    services::auth_policy,
+};
+use loco_rs::{app::AppContext, testing::prelude::*};
 use rstest::rstest;
+use sea_orm::{sea_query::Expr, ColumnTrait, EntityTrait, QueryFilter};
 use serial_test::serial;
 
 use super::prepare_data;
@@ -17,12 +22,56 @@ macro_rules! configure_insta {
     };
 }
 
+async fn set_registration_enabled(ctx: &AppContext, enabled: bool) {
+    sys_configs::Entity::update_many()
+        .col_expr(sys_configs::Column::Value, Expr::value(enabled.to_string()))
+        .filter(sys_configs::Column::Key.eq(auth_policy::KEY_REGISTRATION_ENABLED))
+        .filter(sys_configs::Column::TenantId.is_null())
+        .exec(&ctx.db)
+        .await
+        .expect("failed to update registration config");
+
+    let _ = ctx
+        .cache
+        .remove(&format!(
+            "cfg:resolved:global:{}",
+            auth_policy::KEY_REGISTRATION_ENABLED
+        ))
+        .await;
+    let _ = ctx.cache.remove("cfg:all:global").await;
+}
+
+#[tokio::test]
+#[serial]
+async fn register_is_disabled_by_default() {
+    configure_insta!();
+
+    request::<App, _, _>(|request, _ctx| async move {
+        let payload = serde_json::json!({
+            "name": "loco",
+            "email": "disabled@loco.com",
+            "password": "12341234"
+        });
+
+        let response = request.post("/api/auth/register").json(&payload).await;
+        assert_eq!(response.status_code(), 403);
+        response.assert_json(&serde_json::json!({
+            "code": "auth.registration_disabled",
+            "description": "用户注册已关闭",
+            "error": "Forbidden",
+        }));
+    })
+    .await;
+}
+
 #[tokio::test]
 #[serial]
 async fn can_register() {
     configure_insta!();
 
     request::<App, _, _>(|request, ctx| async move {
+        set_registration_enabled(&ctx, true).await;
+
         let email = "test@loco.com";
         let payload = serde_json::json!({
             "name": "loco",
@@ -66,6 +115,7 @@ async fn can_login_with_verify(#[case] test_name: &str, #[case] password: &str) 
 
     request::<App, _, _>(|request, ctx| async move {
         seed::<App>(&ctx).await.unwrap();
+        set_registration_enabled(&ctx, true).await;
 
         let email = "test@loco.com";
         let register_payload = serde_json::json!({
@@ -157,6 +207,7 @@ async fn can_login_without_verify() {
 
     request::<App, _, _>(|request, ctx| async move {
         seed::<App>(&ctx).await.unwrap();
+        set_registration_enabled(&ctx, true).await;
 
         let email = "test@loco.com";
         let password = "12341234";
@@ -421,6 +472,8 @@ async fn can_resend_verification_email() {
     configure_insta!();
 
     request::<App, _, _>(|request, ctx| async move {
+        set_registration_enabled(&ctx, true).await;
+
         let email = "test@loco.com";
         let payload = serde_json::json!({
             "name": "loco",
@@ -474,6 +527,8 @@ async fn cannot_resend_email_if_already_verified() {
     configure_insta!();
 
     request::<App, _, _>(|request, ctx| async move {
+        set_registration_enabled(&ctx, true).await;
+
         let email = "verified@loco.com";
         let payload = serde_json::json!({
             "name": "verified",

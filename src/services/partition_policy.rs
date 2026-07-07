@@ -121,7 +121,7 @@ pub fn compute(
 }
 
 #[cfg(test)]
-mod partition_policy {
+mod tests {
     use super::*;
 
     const GIB: u64 = 1024 * MIB;
