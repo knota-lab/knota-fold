@@ -85,10 +85,10 @@ pnpm run dev
 **4. 创建管理员账号**
 
 ```bash
-cargo loco task bootstrap_admin email:admin@example.com password:admin123
+cargo loco task bootstrap_admin email:admin@example.com password:<your-strong-password>
 ```
 
-> 首次启动后执行，幂等（邮箱已存在则跳过）。可选参数：`name:显示名称`、`tenant_id:租户UUID`。
+> 系统不会自动创建默认管理员账号。首次启动后必须显式执行该命令；命令幂等（邮箱已存在则跳过）。可选参数：`name:显示名称`、`tenant_id:租户UUID`。
 
 ### Staging / 线上开发环境
 

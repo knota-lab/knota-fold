@@ -31,7 +31,7 @@ services:
       LOCO_ENV: production
       PORT: ${PORT:-5150}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       APP_HOST: ${APP_HOST:?APP_HOST is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       CAPTCHA_SECRET_KEY: ${CAPTCHA_SECRET_KEY:?CAPTCHA_SECRET_KEY is required}

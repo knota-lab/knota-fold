@@ -25,6 +25,7 @@ data/docker/
 
 # Sisyphus AI workflow state (commit messages drafts, plans, transcripts)
 .sisyphus/
+.knota/
 .env
 .env.staging
 .env.prod

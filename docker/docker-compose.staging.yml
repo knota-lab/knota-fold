@@ -29,8 +29,8 @@ services:
     environment:
       LOCO_ENV: production
       PORT: ${PORT:-5150}
-      DATABASE_URL: ${DATABASE_URL:-postgres://knota:${POSTGRES_PASSWORD:-knota_staging_password}@db_postgres:5432/knota_fold}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       APP_HOST: ${APP_HOST:-http://localhost:5150}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       CAPTCHA_SECRET_KEY: ${CAPTCHA_SECRET_KEY:?CAPTCHA_SECRET_KEY is required}
@@ -65,9 +65,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-knota_fold}
       POSTGRES_USER: ${POSTGRES_USER:-knota}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-knota_staging_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     ports:
-      - "5432:5432"
+      - "${KNOTA_BIND_ADDR:-127.0.0.1}:5432:5432"
     volumes:
       - ${DATA_DIR:-../data/docker}/pg:/var/lib/postgresql/data
     healthcheck:
@@ -82,13 +82,13 @@ services:
   redis:
     image: redis:7.4.2-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     ports:
-      - "6379:6379"
+      - "${KNOTA_BIND_ADDR:-127.0.0.1}:6379:6379"
     volumes:
       - ${DATA_DIR:-../data/docker}/redis:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -105,8 +105,8 @@ services:
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
       MINIO_REGION_NAME: ${S3_REGION:-us-east-1}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${KNOTA_BIND_ADDR:-127.0.0.1}:9000:9000"
+      - "${KNOTA_BIND_ADDR:-127.0.0.1}:9001:9001"
     volumes:
       - ${DATA_DIR:-../data/docker}/minio:/data
     healthcheck:
@@ -137,8 +137,8 @@ services:
     image: qdrant/qdrant:latest
     restart: unless-stopped
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "${KNOTA_BIND_ADDR:-127.0.0.1}:6333:6333"
+      - "${KNOTA_BIND_ADDR:-127.0.0.1}:6334:6334"
     volumes:
       - ${DATA_DIR:-../data/docker}/qdrant:/qdrant/storage
     environment:

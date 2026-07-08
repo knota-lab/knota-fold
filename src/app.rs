@@ -321,6 +321,13 @@ impl Hooks for App {
     }
 
     async fn seed(ctx: &AppContext, base: &Path) -> Result<()> {
+        if ctx.environment != Environment::Test {
+            tracing::info!(
+                "default user fixtures are disabled outside tests; run `task bootstrap_admin` to create the first administrator"
+            );
+            return Ok(());
+        }
+
         db::seed::<users::ActiveModel>(
             &ctx.db,
             &base.join("users.yaml").display().to_string(),
