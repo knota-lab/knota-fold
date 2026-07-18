@@ -44,22 +44,43 @@
 - Node.js 22+ / pnpm 10+
 - Docker & Docker Compose（用于本地基础设施和部署）
 
+### 推荐：创建完整项目
+
+如果是创建新的业务项目，推荐使用独立 CLI [`knota-dev`](https://github.com/knota-lab/knota-dev)，它会下载 `knota-fold` 和 `knota-studio`，并基于 `knota-fold/docker/.env.example` 生成随机本地密钥：
+
+```bash
+cargo install knota-dev
+knota-dev new my-knota-app
+cd my-knota-app
+cp knota-fold/docker/.env.example knota-fold/docker/.env
+docker compose --env-file knota-fold/docker/.env -f knota-fold/docker/docker-compose.yml up -d
+```
+
+`knota-dev` 只负责项目脚手架，不接管运行时进程管理。
+
 ### 本地开发
+
+如果你只在本仓库内开发后端，先准备 Docker 环境变量：
+
+```bash
+cp docker/.env.example docker/.env
+# 编辑 docker/.env，至少确认 POSTGRES_PASSWORD、REDIS_PASSWORD、S3_ACCESS_KEY、S3_SECRET_KEY、JWT_SECRET 等值不是默认占位符。
+```
 
 **1. 启动基础设施**
 
 ```bash
 # MinIO（对象存储）+ Qdrant（向量数据库）+ Mailpit（邮件测试），默认启动
-docker compose -f docker/docker-compose.yml up -d
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
 
 # 如需 PostgreSQL（默认使用 SQLite，无需启动）
-docker compose -f docker/docker-compose.yml --profile postgresql up -d
+docker compose --env-file docker/.env -f docker/docker-compose.yml --profile postgresql up -d
 
 # 如需 Redis（默认使用 InMem 缓存，无需启动）
-docker compose -f docker/docker-compose.yml --profile redis up -d
+docker compose --env-file docker/.env -f docker/docker-compose.yml --profile redis up -d
 ```
 
-MinIO 管理面板：http://localhost:9001（`minioadmin` / `minioadmin`）
+MinIO 管理面板：http://localhost:9001（账号密码来自 `docker/.env` 的 `S3_ACCESS_KEY` / `S3_SECRET_KEY`）
 Mailpit 邮件面板：http://localhost:8025
 
 **2. 启动后端**
@@ -96,10 +117,10 @@ cargo loco task bootstrap_admin email:admin@example.com password:<your-strong-pa
 
 ```bash
 # 启动完整 staging 环境（Caddy + 后端 + PG + Redis + MinIO + Mailpit）
-docker compose -f docker/docker-compose.staging.yml up -d --build
+docker compose --env-file docker/.env.staging -f docker/docker-compose.staging.yml up -d --build
 
 # 同时启动 EasyTier（虚拟局域网，方便团队远程访问）
-docker compose -f docker/docker-compose.staging.yml --profile easytier up -d --build
+docker compose --env-file docker/.env.staging -f docker/docker-compose.staging.yml --profile easytier up -d --build
 ```
 
 自定义配置（复制并修改）：
@@ -112,14 +133,14 @@ cp docker/.env.example docker/.env.staging
 首次启动后创建管理员：
 
 ```bash
-docker compose -f docker/docker-compose.staging.yml exec backend \
+docker compose --env-file docker/.env.staging -f docker/docker-compose.staging.yml exec backend \
   knota_fold-cli task bootstrap_admin email:admin@example.com password:your_password
 ```
 
 也可通过环境变量传入（适合 CI/CD）：
 
 ```bash
-docker compose -f docker/docker-compose.staging.yml exec -e BOOTSTRAP_ADMIN_EMAIL=admin@example.com -e BOOTSTRAP_ADMIN_PASSWORD=your_password backend \
+docker compose --env-file docker/.env.staging -f docker/docker-compose.staging.yml exec -e BOOTSTRAP_ADMIN_EMAIL=admin@example.com -e BOOTSTRAP_ADMIN_PASSWORD=your_password backend \
   knota_fold-cli task bootstrap_admin
 ```
 
@@ -131,13 +152,13 @@ cp docker/.env.example docker/.env.production
 # 编辑 .env.production，所有标记为 required 的变量必须填写
 
 # 启动（Caddy + PG + Redis + MinIO + 后端）
-docker compose -f docker/docker-compose.prod.yml up -d --build
+docker compose --env-file docker/.env.production -f docker/docker-compose.prod.yml up -d --build
 ```
 
 首次启动后创建管理员：
 
 ```bash
-docker compose -f docker/docker-compose.prod.yml exec backend \
+docker compose --env-file docker/.env.production -f docker/docker-compose.prod.yml exec backend \
   knota_fold-cli task bootstrap_admin email:admin@example.com password:your_password
 ```
 
@@ -153,15 +174,15 @@ docker compose -f docker/docker-compose.prod.yml exec backend \
 
 | 场景 | 命令 |
 |------|------|
-| 本地基础设施 | `docker compose -f docker/docker-compose.yml up -d` |
+| 本地基础设施 | `docker compose --env-file docker/.env -f docker/docker-compose.yml up -d` |
 | 本地 + PG | 加 `--profile postgresql` |
 | 本地 + PG + Redis | 加 `--profile postgresql --profile redis` |
-| Staging 全栈 | `docker compose -f docker/docker-compose.staging.yml up -d --build` |
+| Staging 全栈 | `docker compose --env-file docker/.env.staging -f docker/docker-compose.staging.yml up -d --build` |
 | Staging + EasyTier | 加 `--profile easytier` |
-| 生产部署 | `docker compose -f docker/docker-compose.prod.yml up -d --build` |
-| 查看日志 | `docker compose -f docker/docker-compose.staging.yml logs -f backend` |
-| 停止 | `docker compose -f docker/docker-compose.staging.yml down` |
-| 清理数据 | `docker compose -f docker/docker-compose.staging.yml down -v` |
+| 生产部署 | `docker compose --env-file docker/.env.production -f docker/docker-compose.prod.yml up -d --build` |
+| 查看日志 | `docker compose --env-file docker/.env.staging -f docker/docker-compose.staging.yml logs -f backend` |
+| 停止 | `docker compose --env-file docker/.env.staging -f docker/docker-compose.staging.yml down` |
+| 清理数据 | `docker compose --env-file docker/.env.staging -f docker/docker-compose.staging.yml down -v` |
 
 ## EasyTier（虚拟局域网）
 
