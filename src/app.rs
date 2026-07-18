@@ -221,9 +221,14 @@ impl Hooks for App {
             )
             .add_route(
                 crate::modules::knowledge_base::controller::folder_routes()
+                    .layer(authz_layer.clone()),
+            )
+            // Knowledge base — reads + QA shared by JWT and API Key clients.
+            .add_route(
+                crate::modules::knowledge_base::controller::access_routes()
                     .layer(authz_layer),
             )
-            // Knowledge base — user routes (search + QA, JWT only)
+            // Frontend Agent bridge — JWT only.
             .add_route(crate::modules::knowledge_base::controller::user_routes())
             // Chat sessions — JWT only (session CRUD)
             .add_route(crate::modules::knowledge_base::controller::chat_routes())

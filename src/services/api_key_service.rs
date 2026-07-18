@@ -62,6 +62,9 @@ impl GeneratedKey {
 pub struct ApiKeyIdentity {
     pub api_key_id: Uuid,
     pub tenant_id: Uuid,
+    pub tenant_code: String,
+    pub tenant_name: String,
+    pub created_by: Uuid,
     pub role_code: String,
     pub key_name: String,
 }
@@ -94,6 +97,9 @@ impl ApiKeyIdentity {
         Ok(Self {
             api_key_id: api_key.id,
             tenant_id: api_key.tenant_id,
+            tenant_code: tenant.code,
+            tenant_name: tenant.name,
+            created_by: api_key.created_by,
             role_code: role.code,
             key_name: api_key.name,
         })

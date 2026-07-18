@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 fn deserialize_page_contexts<'de, D>(
     deserializer: D,
@@ -20,7 +21,7 @@ where
 }
 
 /// QA request from the client.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QaRequest {
     pub instruction: String,
@@ -38,7 +39,7 @@ pub struct QaRequest {
     pub page_context: Vec<PageContextMinimal>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MaterialInput {
     #[serde(default = "default_use_knowledge_base")]
@@ -59,7 +60,7 @@ const fn default_use_knowledge_base() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Citation {
     pub document_id: uuid::Uuid,
@@ -72,7 +73,7 @@ pub struct Citation {
     pub score: f64,
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenUsage {
     pub prompt_tokens: i32,
@@ -85,7 +86,7 @@ pub struct TokenUsage {
 // ---------------------------------------------------------------------------
 
 /// A tool schema definition sent by the frontend for page-level tools.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PageToolDefinition {
     pub name: String,
@@ -94,7 +95,7 @@ pub struct PageToolDefinition {
 }
 
 /// Minimal page context injected into the system prompt (~30 tokens).
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PageContextMinimal {
     pub route: String,

@@ -4,17 +4,27 @@ use loco_rs::prelude::*;
 use crate::extractors::TenantContext;
 use crate::modules::knowledge_base::service;
 use crate::modules::knowledge_base::views::{
-    CreateFolderRequest, FolderListQuery, FolderResponse, UpdateFolderRequest,
+    CreateFolderRequest, FolderListQuery, FolderResponse, MutationSuccessResponse,
+    UpdateFolderRequest,
 };
 use crate::utils::error::IntoModelResult;
-use crate::views::errors::parse_uuid;
+use crate::views::errors::{parse_uuid, CodedErrorResponse};
 
 #[utoipa::path(
     post,
     path = "/api/kb-folders",
     tag = "知识库",
     description = "创建知识库目录",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    request_body = CreateFolderRequest,
+    responses(
+        (status = 200, description = "Created", body = FolderResponse),
+        (status = 400, description = "Invalid library, parent, or request", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "Library or parent folder not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn create(
@@ -43,7 +53,15 @@ pub(crate) async fn create(
     path = "/api/kb-folders",
     tag = "知识库",
     description = "查询知识库目录列表",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(FolderListQuery),
+    responses(
+        (status = 200, description = "Tenant-scoped folder list", body = [FolderResponse]),
+        (status = 400, description = "Invalid query", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn list(
@@ -68,7 +86,17 @@ pub(crate) async fn list(
     path = "/api/kb-folders/{id}",
     tag = "知识库",
     description = "更新知识库目录",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Folder UUID")),
+    request_body = UpdateFolderRequest,
+    responses(
+        (status = 200, description = "Updated", body = FolderResponse),
+        (status = 400, description = "Invalid request", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "Folder not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn update(
@@ -97,7 +125,16 @@ pub(crate) async fn update(
     path = "/api/kb-folders/{id}",
     tag = "知识库",
     description = "删除空知识库目录",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Folder UUID")),
+    responses(
+        (status = 200, description = "Deleted", body = MutationSuccessResponse),
+        (status = 400, description = "Folder is not empty or UUID is invalid", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "Folder not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn delete(
@@ -109,5 +146,5 @@ pub(crate) async fn delete(
     service::delete_folder(&ctx.db, tc.tenant_id, folder_id)
         .await
         .model_err()?;
-    format::json(serde_json::json!({"success": true}))
+    format::json(MutationSuccessResponse { success: true })
 }

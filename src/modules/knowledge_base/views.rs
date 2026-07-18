@@ -6,10 +6,11 @@ use crate::services::worker_run_service::{
     STATUS_FAILED, STATUS_SUCCEEDED,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 
 // ---- Request types ----
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateDocumentRequest {
     pub title: String,
@@ -27,7 +28,7 @@ pub struct CreateDocumentRequest {
     pub content: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentListQuery {
     pub page: Option<u64>,
@@ -38,7 +39,7 @@ pub struct DocumentListQuery {
     pub scope: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchRequest {
     pub query: String,
@@ -48,13 +49,13 @@ pub struct SearchRequest {
     pub document_ids: Option<Vec<uuid::Uuid>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PresignDocumentAssetsRequest {
     pub asset_keys: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateLibraryRequest {
     pub name: String,
@@ -63,7 +64,7 @@ pub struct CreateLibraryRequest {
     pub sort_order: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateLibraryRequest {
     pub name: String,
@@ -72,14 +73,14 @@ pub struct UpdateLibraryRequest {
     pub sort_order: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderListQuery {
     pub library_id: uuid::Uuid,
     pub parent_id: Option<uuid::Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateFolderRequest {
     pub library_id: uuid::Uuid,
@@ -89,7 +90,7 @@ pub struct CreateFolderRequest {
     pub sort_order: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateFolderRequest {
     pub name: String,
@@ -99,7 +100,7 @@ pub struct UpdateFolderRequest {
 
 // ---- Response types ----
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexingProgressResponse {
     pub stage: String,
@@ -115,7 +116,7 @@ pub struct IndexingProgressResponse {
     pub stale_reason: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentResponse {
     pub id: String,
@@ -414,7 +415,7 @@ mod tests {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryResponse {
     pub id: String,
@@ -441,7 +442,7 @@ impl LibraryResponse {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderResponse {
     pub id: String,
@@ -474,7 +475,7 @@ impl FolderResponse {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResultResponse {
     pub chunk_id: String,
@@ -484,7 +485,7 @@ pub struct SearchResultResponse {
     pub score: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChunkResponse {
     pub id: String,
@@ -497,7 +498,7 @@ pub struct ChunkResponse {
     pub char_end: Option<i32>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentAssetResponse {
     pub id: String,
@@ -507,7 +508,7 @@ pub struct DocumentAssetResponse {
     pub size: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentPreviewResponse {
     pub document_id: String,
@@ -516,7 +517,7 @@ pub struct DocumentPreviewResponse {
     pub assets: Vec<DocumentAssetResponse>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PresignedDocumentAssetResponse {
     pub asset_key: String,
@@ -524,8 +525,14 @@ pub struct PresignedDocumentAssetResponse {
     pub expires_in: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PresignDocumentAssetsResponse {
     pub items: Vec<PresignedDocumentAssetResponse>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MutationSuccessResponse {
+    pub success: bool,
 }

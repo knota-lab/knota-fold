@@ -17,8 +17,9 @@ use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::service;
 use crate::modules::knowledge_base::views::{
     CreateDocumentRequest, DocumentAssetResponse, DocumentListQuery,
-    DocumentPreviewResponse, DocumentResponse, PresignDocumentAssetsRequest,
-    PresignDocumentAssetsResponse, PresignedDocumentAssetResponse,
+    DocumentPreviewResponse, DocumentResponse, MutationSuccessResponse,
+    PresignDocumentAssetsRequest, PresignDocumentAssetsResponse,
+    PresignedDocumentAssetResponse,
 };
 use crate::services::audit_service;
 use crate::services::file_reference_service::{self, AttachRequest};
@@ -28,6 +29,7 @@ use crate::utils::error::IntoModelResult;
 use crate::views::audit_logs::{AuditAction, AuditContext, KbDocumentAuditSnapshot};
 use crate::views::errors::{
     err_bad_request, err_forbidden, err_internal, err_not_found, parse_uuid,
+    CodedErrorResponse,
 };
 use crate::views::pagination::PaginatedResponse;
 use crate::workers::indexing_worker::{IndexingWorker, IndexingWorkerArgs};
@@ -38,8 +40,17 @@ const ASSET_PRESIGN_TTL_SECONDS: u64 = 3600;
     post,
     path = "/api/kb-documents",
     tag = "知识库",
-    description = "上传文档",
-    responses((status = 200, description = "Success"))
+    description = "创建知识库文档并异步入库。传入已完成上传的 fileId，或直接传入 content；两者至少提供一个。",
+    security(("bearerAuth" = [])),
+    request_body = CreateDocumentRequest,
+    responses(
+        (status = 200, description = "Document accepted for indexing", body = DocumentResponse),
+        (status = 400, description = "Invalid source, scope, library, or folder", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "File, library, or folder not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Internal or queue error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn create(
@@ -267,7 +278,15 @@ fn infer_mime_from_name(name: &str) -> Option<String> {
     path = "/api/kb-documents",
     tag = "知识库",
     description = "查询文档列表",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(DocumentListQuery),
+    responses(
+        (status = 200, description = "Tenant-scoped paginated documents", body = PaginatedResponse<DocumentResponse>),
+        (status = 400, description = "Invalid query", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn list(
@@ -338,7 +357,16 @@ pub(crate) async fn list(
     path = "/api/kb-documents/{id}",
     tag = "知识库",
     description = "查询文档详情",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Document UUID")),
+    responses(
+        (status = 200, description = "Document details and indexing progress", body = DocumentResponse),
+        (status = 400, description = "Invalid UUID", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "Document not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn get(
@@ -370,7 +398,16 @@ pub(crate) async fn get(
     path = "/api/kb/documents/{id}/preview",
     tag = "知识库",
     description = "获取文档预览 Markdown 与解析资源列表",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Document UUID")),
+    responses(
+        (status = 200, description = "Parsed Markdown and registered assets", body = DocumentPreviewResponse),
+        (status = 400, description = "Document parsing has not completed", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role, scope, or ownership denied", body = CodedErrorResponse),
+        (status = 404, description = "Document not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Invalid metadata or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn preview(
@@ -404,7 +441,17 @@ pub(crate) async fn preview(
     path = "/api/kb/documents/{id}/assets/presign",
     tag = "知识库",
     description = "批量获取文档解析资源的短期访问 URL",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Document UUID")),
+    request_body = PresignDocumentAssetsRequest,
+    responses(
+        (status = 200, description = "Presigned URLs for registered document assets", body = PresignDocumentAssetsResponse),
+        (status = 400, description = "Invalid UUID or request", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Asset, role, scope, or ownership denied", body = CodedErrorResponse),
+        (status = 404, description = "Document not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Storage or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn presign_assets(
@@ -481,8 +528,17 @@ pub(crate) async fn presign_assets(
     delete,
     path = "/api/kb-documents/{id}",
     tag = "知识库",
-    description = "删除文档",
-    responses((status = 200, description = "Success"))
+    description = "逻辑删除文档，并清理关系库分块和向量索引",
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Document UUID")),
+    responses(
+        (status = 200, description = "Deleted", body = MutationSuccessResponse),
+        (status = 400, description = "Invalid UUID", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "Document not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Index or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn delete(
@@ -536,7 +592,7 @@ pub(crate) async fn delete(
     .model_err()?;
     txn.commit().await.model_err()?;
 
-    format::json(serde_json::json!({"success": true}))
+    format::json(MutationSuccessResponse { success: true })
 }
 
 fn ensure_document_readable(
@@ -591,7 +647,16 @@ fn ensure_valid_asset_key(asset_key: &str) -> Result<()> {
     path = "/api/kb-documents/{id}/promote",
     tag = "知识库",
     description = "将文档从private提升为tenant共享",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Document UUID")),
+    responses(
+        (status = 200, description = "Promoted document", body = DocumentResponse),
+        (status = 400, description = "Invalid state or UUID", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role or ownership denied", body = CodedErrorResponse),
+        (status = 404, description = "Document not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Index or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn promote(
@@ -627,7 +692,16 @@ pub(crate) async fn promote(
     path = "/api/kb-documents/{id}/reindex",
     tag = "知识库",
     description = "重新索引文档",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Document UUID")),
+    responses(
+        (status = 200, description = "Reindex job enqueued", body = MutationSuccessResponse),
+        (status = 400, description = "Invalid UUID", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "Document not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Configuration, index, queue, or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn reindex(
@@ -711,5 +785,5 @@ pub(crate) async fn reindex(
     .await
     .model_err()?;
 
-    format::json(serde_json::json!({"success": true}))
+    format::json(MutationSuccessResponse { success: true })
 }

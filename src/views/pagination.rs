@@ -1,5 +1,6 @@
 use loco_rs::prelude::model::query;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 const fn default_page() -> u64 {
     1
@@ -50,7 +51,7 @@ impl From<PaginationParams> for query::PaginationQuery {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,

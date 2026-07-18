@@ -1,7 +1,8 @@
 use serde::Serialize;
+use utoipa::ToSchema;
 
 /// SSE event payload sent from the streaming QA pipeline to the frontend.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(tag = "type", content = "data", rename_all_fields = "camelCase")]
 pub enum QaEvent {
     Started {
@@ -33,7 +34,7 @@ pub enum QaEvent {
 }
 
 /// Granular phase indicator so the frontend can render progress.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(tag = "type", content = "detail", rename_all_fields = "camelCase")]
 pub enum QaPhase {
     MaterialProcessing {
@@ -45,7 +46,7 @@ pub enum QaPhase {
 }
 
 /// Final response returned in the `Completed` event.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QaStreamResponse {
     pub answer: String,

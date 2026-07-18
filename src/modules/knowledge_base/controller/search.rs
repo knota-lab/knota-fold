@@ -21,19 +21,27 @@ use crate::modules::knowledge_base::providers::{SharedEmbeddingClient, SharedQaC
 use crate::modules::knowledge_base::service::tools::tool_result_broker::{
     ResolveOutcome, ToolResult, ToolResultBroker,
 };
-use crate::modules::knowledge_base::service::{self, QaRequest};
+use crate::modules::knowledge_base::service::{self, QaEvent, QaRequest};
 use crate::modules::knowledge_base::views::{
     ChunkResponse, SearchRequest, SearchResultResponse,
 };
 use crate::utils::error::IntoModelResult;
-use crate::views::errors::parse_uuid;
+use crate::views::errors::{parse_uuid, CodedErrorResponse};
 
 #[utoipa::path(
     post,
     path = "/api/kb/search",
     tag = "知识库",
-    description = "语义搜索",
-    responses((status = 200, description = "Success"))
+    description = "在当前租户内执行混合语义搜索，可按知识库、目录或文档范围过滤。",
+    security(("bearerAuth" = [])),
+    request_body = SearchRequest,
+    responses(
+        (status = 200, description = "Ranked matching chunks", body = [SearchResultResponse]),
+        (status = 400, description = "Invalid query or scope", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 500, description = "Embedding, vector search, configuration, or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn search(
@@ -116,7 +124,16 @@ pub(crate) async fn search(
     path = "/api/kb/documents/{id}/chunks",
     tag = "知识库",
     description = "查询文档分块列表",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Document UUID")),
+    responses(
+        (status = 200, description = "Chunks ordered by chunkIndex", body = [ChunkResponse]),
+        (status = 400, description = "Invalid UUID", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "Document not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn chunks(
@@ -253,8 +270,17 @@ fn resolve_qa_v3_deps(ctx: &AppContext) -> Result<QaV3StreamDeps> {
     post,
     path = "/api/kb/qa/v3/stream",
     tag = "知识库",
-    description = "智能问答v3（流式）",
-    responses((status = 200, description = "SSE stream"))
+    description = "知识库智能问答 SSE。每条 `data:` 为 QaEvent JSON；事件依次可能包含 Started、PhaseChanged、AnswerToken、ToolCallStarted、ToolCallCompleted、Completed 或 Error。服务每 15 秒发送一次 `ping` keep-alive。API Key 客户端不得提交 pageTools。",
+    security(("bearerAuth" = [])),
+    request_body = QaRequest,
+    responses(
+        (status = 200, description = "Server-Sent Events stream", body = QaEvent, content_type = "text/event-stream"),
+        (status = 400, description = "Invalid instruction, scope, session, or API Key pageTools", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT or API Key", body = CodedErrorResponse),
+        (status = 403, description = "Role permission or knowledge scope denied", body = CodedErrorResponse),
+        (status = 404, description = "Session, library, folder, or document not found", body = CodedErrorResponse),
+        (status = 500, description = "LLM, embedding, search, configuration, or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 #[allow(clippy::significant_drop_tightening, clippy::redundant_clone)]
@@ -268,6 +294,13 @@ pub(crate) async fn qa_v3_stream(
         return Err(crate::views::errors::err_bad_request(
             "knowledge_base.instruction_empty",
             "instruction cannot be empty",
+        ));
+    }
+
+    if tc.is_api_key() && !params.page_tools.is_empty() {
+        return Err(crate::views::errors::err_bad_request(
+            "knowledge_base.api_key_page_tools_not_supported",
+            "API Key clients cannot register frontend page tools",
         ));
     }
 
@@ -353,6 +386,7 @@ pub(crate) struct ToolResultRequest {
 )]
 #[debug_handler]
 pub(crate) async fn receive_tool_result(
+    _tc: TenantContext,
     State(ctx): State<AppContext>,
     Json(params): Json<ToolResultRequest>,
 ) -> Result<Response> {

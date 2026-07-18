@@ -15,7 +15,7 @@ use crate::views::api_key_exchange_tokens::{
     CreateExchangeTokenRequest, CreateExchangeTokenResponse, ExchangeInfoQuery,
     ExchangeInfoResponse, ExchangeKeyResponse, ExchangeRequest, ExchangeTokenResponse,
 };
-use crate::views::errors::{err_bad_request, parse_uuid};
+use crate::views::errors::{err_bad_request, parse_uuid, CodedErrorResponse};
 
 const INVALID_EXCHANGE_TOKEN_MESSAGE: &str = "无效或已过期的兑换令牌";
 
@@ -34,7 +34,13 @@ async fn load_role(
     path = "/api/api-key-exchange-tokens",
     tag = "API Key",
     description = "查询交换令牌列表",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Tenant-scoped exchange tokens", body = [ExchangeTokenResponse]),
+        (status = 401, description = "Invalid JWT", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn list(
@@ -55,8 +61,16 @@ pub(crate) async fn list(
     post,
     path = "/api/api-key-exchange-tokens",
     tag = "API Key",
-    description = "创建交换令牌",
-    responses((status = 200, description = "Success"))
+    description = "为当前租户和指定角色创建一次性或限次兑换令牌。兑换令牌明文仅在本响应中返回。",
+    security(("bearerAuth" = [])),
+    request_body = CreateExchangeTokenRequest,
+    responses(
+        (status = 200, description = "Exchange token created", body = CreateExchangeTokenResponse),
+        (status = 400, description = "Invalid role, expiry, usage, or tenant limit", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn create(
@@ -147,7 +161,16 @@ pub(crate) async fn create(
     path = "/api/api-key-exchange-tokens/{id}",
     tag = "API Key",
     description = "查询交换令牌详情",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "Exchange token UUID")),
+    responses(
+        (status = 200, description = "Exchange token details without plaintext secret", body = ExchangeTokenResponse),
+        (status = 400, description = "Invalid UUID", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "Exchange token not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn detail(
@@ -168,8 +191,13 @@ pub(crate) async fn detail(
     get,
     path = "/api/public/api-keys/exchange-info",
     tag = "API Key",
-    description = "兑换信息预览",
-    responses((status = 200, description = "Success"))
+    description = "公开预览兑换令牌对应的租户、角色和有效期，不返回 API Key。",
+    params(ExchangeInfoQuery),
+    responses(
+        (status = 200, description = "Exchange token preview", body = ExchangeInfoResponse),
+        (status = 400, description = "Invalid, expired, or consumed exchange token", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn get_exchange_info(
@@ -200,8 +228,13 @@ pub(crate) async fn get_exchange_info(
     post,
     path = "/api/public/api-keys/exchange",
     tag = "API Key",
-    description = "执行兑换并返回 API Key 明文",
-    responses((status = 200, description = "Success"))
+    description = "公开兑换接口。用交换令牌换取 API Key；API Key 明文仅在本响应中返回，后续通过 `Authorization: Bearer <apiKey>` 使用。",
+    request_body = ExchangeRequest,
+    responses(
+        (status = 200, description = "API Key issued", body = ExchangeKeyResponse),
+        (status = 400, description = "Invalid, expired, consumed token or tenant key limit reached", body = CodedErrorResponse),
+        (status = 500, description = "Policy synchronization or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn exchange_key(

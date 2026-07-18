@@ -5,6 +5,7 @@ mod file_references;
 mod file_uploads;
 mod files;
 mod i18n;
+mod kb_api_keys;
 mod kb_documents;
 mod menus;
 mod multi_tenant;

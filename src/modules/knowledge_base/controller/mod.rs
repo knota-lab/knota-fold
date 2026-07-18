@@ -70,8 +70,10 @@ pub fn folder_routes() -> Routes {
         )
 }
 
-/// User routes — JWT only, no Casbin (search + QA).
-pub fn user_routes() -> Routes {
+/// Knowledge-base read and QA routes shared by JWT and API Key clients.
+///
+/// Callers must attach [`crate::middleware::casbin_authz::CasbinAuthzLayer`].
+pub fn access_routes() -> Routes {
     Routes::new()
         .prefix("/api/kb")
         .add(
@@ -81,13 +83,6 @@ pub fn user_routes() -> Routes {
         .add(
             "/qa/v3/stream",
             openapi(post(search::qa_v3_stream), routes!(search::qa_v3_stream)),
-        )
-        .add(
-            "/qa/v3/tool-result",
-            openapi(
-                post(search::receive_tool_result),
-                routes!(search::receive_tool_result),
-            ),
         )
         .add(
             "/documents/{id}/chunks",
@@ -104,6 +99,18 @@ pub fn user_routes() -> Routes {
                 routes!(documents::presign_assets),
             ),
         )
+}
+
+/// Frontend Agent bridge routes. These remain JWT-only and are not part of the
+/// third-party API Key surface.
+pub fn user_routes() -> Routes {
+    Routes::new().prefix("/api/kb").add(
+        "/qa/v3/tool-result",
+        openapi(
+            post(search::receive_tool_result),
+            routes!(search::receive_tool_result),
+        ),
+    )
 }
 
 /// Chat session routes — JWT only (session CRUD).

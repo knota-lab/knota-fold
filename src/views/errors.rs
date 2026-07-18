@@ -35,13 +35,14 @@ use axum::response::{IntoResponse, Response};
 use loco_rs::controller::ErrorDetail;
 use loco_rs::prelude::*;
 use serde::Serialize;
+use utoipa::ToSchema;
 
 // ---------------------------------------------------------------------------
 // Response body
 // ---------------------------------------------------------------------------
 
 /// Canonical error body with an optional machine-readable `code`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CodedErrorResponse {
     /// HTTP status text (e.g. "Bad Request"). Kept for backward compat with

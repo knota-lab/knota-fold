@@ -18,7 +18,7 @@ use crate::utils::error::OptionErrInto;
 use crate::views::api_keys::{
     ApiKeyResponse, ChangeApiKeyRoleRequest, UpdateApiKeyRequest,
 };
-use crate::views::errors::parse_uuid;
+use crate::views::errors::{parse_uuid, CodedErrorResponse};
 
 async fn load_role_name(
     db: &DatabaseConnection,
@@ -35,7 +35,13 @@ async fn load_role_name(
     path = "/api/api-keys",
     tag = "API Key",
     description = "查询 API Key 列表",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Tenant-scoped API Keys without plaintext secrets", body = [ApiKeyResponse]),
+        (status = 401, description = "Invalid JWT", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn list(
@@ -61,7 +67,16 @@ pub(crate) async fn list(
     path = "/api/api-keys/{id}",
     tag = "API Key",
     description = "查询 API Key 详情",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "API Key UUID")),
+    responses(
+        (status = 200, description = "API Key metadata without plaintext secret", body = ApiKeyResponse),
+        (status = 400, description = "Invalid UUID", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "API Key not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn detail(
@@ -82,7 +97,17 @@ pub(crate) async fn detail(
     path = "/api/api-keys/{id}",
     tag = "API Key",
     description = "更新 API Key",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "API Key UUID")),
+    request_body = UpdateApiKeyRequest,
+    responses(
+        (status = 200, description = "Updated", body = ApiKeyResponse),
+        (status = 400, description = "Invalid UUID or request", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "API Key not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn update(
@@ -114,7 +139,16 @@ pub(crate) async fn update(
     path = "/api/api-keys/{id}/revoke",
     tag = "API Key",
     description = "吊销 API Key",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "API Key UUID")),
+    responses(
+        (status = 200, description = "Revoked", body = ApiKeyResponse),
+        (status = 400, description = "Invalid UUID", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "API Key not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Policy synchronization or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn revoke(
@@ -162,7 +196,17 @@ pub(crate) async fn revoke(
     path = "/api/api-keys/{id}/role",
     tag = "API Key",
     description = "切换 API Key 角色",
-    responses((status = 200, description = "Success"))
+    security(("bearerAuth" = [])),
+    params(("id" = String, Path, description = "API Key UUID")),
+    request_body = ChangeApiKeyRoleRequest,
+    responses(
+        (status = 200, description = "Role changed", body = ApiKeyResponse),
+        (status = 400, description = "Invalid API Key or role UUID", body = CodedErrorResponse),
+        (status = 401, description = "Invalid JWT", body = CodedErrorResponse),
+        (status = 403, description = "Role permission denied", body = CodedErrorResponse),
+        (status = 404, description = "API Key or role not found in current tenant", body = CodedErrorResponse),
+        (status = 500, description = "Policy synchronization or internal error", body = CodedErrorResponse)
+    )
 )]
 #[debug_handler]
 pub(crate) async fn change_role(

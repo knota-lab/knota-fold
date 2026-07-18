@@ -6,12 +6,19 @@ use uuid::Uuid;
 
 use crate::models::roles;
 use crate::models::tenants;
+use crate::services::api_key_service::ApiKeyIdentity;
 use crate::services::auth_cache;
 use crate::utils::error::IntoModelResult;
 use crate::views::errors::auth as auth_err;
 
 const SUPER_ADMIN_ROLE: &str = "SUPER_ADMIN";
 const TENANT_ADMIN_ROLE: &str = "TENANT_ADMIN";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthenticationType {
+    Jwt,
+    ApiKey,
+}
 
 #[derive(Debug, Clone)]
 pub struct TenantContext {
@@ -21,6 +28,8 @@ pub struct TenantContext {
     pub tenant_name: String,
     pub is_super_admin: bool,
     pub is_tenant_admin: bool,
+    pub auth_type: AuthenticationType,
+    pub api_key_id: Option<Uuid>,
 }
 
 impl TenantContext {
@@ -32,6 +41,11 @@ impl TenantContext {
             Some(self.tenant_id)
         }
     }
+
+    #[must_use]
+    pub const fn is_api_key(&self) -> bool {
+        matches!(self.auth_type, AuthenticationType::ApiKey)
+    }
 }
 
 impl FromRequestParts<AppContext> for TenantContext {
@@ -41,6 +55,19 @@ impl FromRequestParts<AppContext> for TenantContext {
         parts: &mut Parts,
         state: &AppContext,
     ) -> Result<Self, Self::Rejection> {
+        if let Some(identity) = parts.extensions.get::<ApiKeyIdentity>() {
+            return Ok(Self {
+                user_id: identity.created_by,
+                tenant_id: identity.tenant_id,
+                tenant_code: identity.tenant_code.clone(),
+                tenant_name: identity.tenant_name.clone(),
+                is_super_admin: false,
+                is_tenant_admin: identity.role_code == TENANT_ADMIN_ROLE,
+                auth_type: AuthenticationType::ApiKey,
+                api_key_id: Some(identity.api_key_id),
+            });
+        }
+
         let token = extract_token_from_header(parts)?;
         let jwt_secret = state.config.get_jwt_config()?;
         let claims = jwt::JWT::new(&jwt_secret.secret)
@@ -97,6 +124,8 @@ impl FromRequestParts<AppContext> for TenantContext {
             tenant_name: tenant.name.clone(),
             is_super_admin,
             is_tenant_admin,
+            auth_type: AuthenticationType::Jwt,
+            api_key_id: None,
         })
     }
 }

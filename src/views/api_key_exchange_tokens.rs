@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 
 use crate::models::_entities::api_key_exchange_tokens;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExchangeTokenResponse {
     pub id: String,
@@ -39,7 +40,7 @@ impl ExchangeTokenResponse {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateExchangeTokenResponse {
     pub id: String,
@@ -54,7 +55,7 @@ pub struct CreateExchangeTokenResponse {
     pub created_at: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateExchangeTokenRequest {
     pub name: String,
@@ -65,19 +66,19 @@ pub struct CreateExchangeTokenRequest {
     pub max_usage: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExchangeRequest {
     pub exchange_token: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct ExchangeInfoQuery {
     pub token: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExchangeInfoResponse {
     pub tenant_name: String,
@@ -86,7 +87,7 @@ pub struct ExchangeInfoResponse {
     pub already_used: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExchangeKeyResponse {
     pub api_key_id: String,
