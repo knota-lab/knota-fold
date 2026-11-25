@@ -5,6 +5,7 @@
 //! ```bash
 //! KNOWLEDGE_BASE_ENABLED=true \
 //! EMBEDDING_BASE_URL=http://10.124.124.3:11434/v1 \
+//! EMBEDDING_MODEL=bge-m3 \
 //! QA_LLM_BASE_URL=http://10.124.124.3:11434/v1 \
 //! QA_LLM_MODEL=qwen3.5:9b \
 //! QDRANT_URL=http://localhost:6334 \
@@ -15,6 +16,7 @@
 //! ```
 
 use knota_fold::app::App;
+use knota_fold::config::{AppSettings, ConfigExt};
 use knota_fold::modules::knowledge_base::providers::SharedEmbeddingClient;
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
@@ -117,30 +119,46 @@ async fn embedding_and_qdrant_are_reachable() {
             .shared_store
             .get::<SharedEmbeddingClient>()
             .expect("knowledge base initializer must be enabled");
-        let model = client.0.embedding("bge-m3", None);
+        let settings: AppSettings = ctx
+            .config
+            .typed_settings()
+            .expect("settings should parse")
+            .expect("settings should be present");
+        let kb = settings
+            .knowledge_base
+            .expect("knowledge base settings should be present");
+
+        let model = client.0.embedding(kb.embedding.model.as_str(), None);
         let embedding = model
             .embed_text("knota-fold smoke test")
             .await
-            .expect("bge-m3 embedding should succeed");
-        assert_eq!(embedding.vec.len(), 1024, "bge-m3 is 1024-dimensional");
+            .expect("embedding should succeed");
+        assert_eq!(
+            embedding.vec.len(),
+            kb.embedding.dimension,
+            "{} must return {} dimensions",
+            kb.embedding.model,
+            kb.embedding.dimension
+        );
 
-        let base_url = "http://localhost:6334";
-        let qdrant = qdrant_client::Qdrant::from_url(base_url)
+        let qdrant = qdrant_client::Qdrant::from_url(&kb.qdrant.url)
             .build()
             .expect("qdrant client");
         assert!(
             qdrant
-                .collection_exists("kb_chunks_test")
+                .collection_exists(&kb.qdrant.collection_name)
                 .await
-                .expect("kb_chunks_test query"),
-            "kb_chunks_test collection should exist"
+                .expect("kb collection query"),
+            "{} collection should exist",
+            kb.qdrant.collection_name
         );
         assert!(
             qdrant
-                .collection_exists("chat_memory")
+                .collection_exists(&kb.qdrant.chat_collection_name)
                 .await
-                .expect("chat_memory query"),
-            "chat_memory collection should exist"
+                .expect("chat memory collection query"),
+            "{} collection should exist",
+            kb.qdrant.chat_collection_name
         );
     })
     .await;

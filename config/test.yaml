@@ -85,10 +85,10 @@ settings:
     enabled: <%= get_env(name="KNOWLEDGE_BASE_ENABLED", default="false") %>
     embedding:
       provider: openai
-      model: bge-m3
+      model: <%= get_env(name="EMBEDDING_MODEL", default="bge-m3") %>
       apiKey: <%= get_env(name="EMBEDDING_API_KEY", default="ollama") %>
       baseUrl: <%= get_env(name="EMBEDDING_BASE_URL", default="http://localhost:11434/v1") %>
-      dimension: 1024
+      dimension: <%= get_env(name="EMBEDDING_DIMENSION", default="1024") %>
       cacheSize: 10000
       timeoutSecs: <%= get_env(name="EMBEDDING_TIMEOUT_SECS", default="30") %>
     qdrant:
