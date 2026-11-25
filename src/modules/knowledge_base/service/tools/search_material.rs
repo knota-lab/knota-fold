@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig::tool::{Tool, ToolContext};
 
 use super::MaterialRegistry;
 
@@ -78,36 +77,40 @@ impl Tool for SearchMaterialTool {
     type Args = SearchMaterialArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "在当前会话的材料中搜索关键词。返回匹配的行及其上下文（前后各 3 行）和行号。如果材料很长，先搜索定位再精确读取效率更高。".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "搜索关键词"
-                    },
-                    "material_id": {
-                        "type": "string",
-                        "description": "限定搜索的材料 ID（文档 UUID 或内联文本 ID），不指定则搜索全部材料"
-                    },
-                    "top_k": {
-                        "type": "integer",
-                        "description": "最大返回结果数（默认 10，最大 20）"
-                    }
+    fn description(&self) -> String {
+        "在当前会话的材料中搜索关键词。返回匹配的行及其上下文（前后各 3 行）和行号。如果材料很长，先搜索定位再精确读取效率更高。".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "搜索关键词"
                 },
-                "required": ["query"]
-            }),
-        }
+                "material_id": {
+                    "type": "string",
+                    "description": "限定搜索的材料 ID（文档 UUID 或内联文本 ID），不指定则搜索全部材料"
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "最大返回结果数（默认 10，最大 20）"
+                }
+            },
+            "required": ["query"]
+        })
     }
 
     #[tracing::instrument(
         skip(self, args),
         fields(tool = "search_material", query = %args.query)
     )]
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _ctx: &mut ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let top_k = args.top_k.unwrap_or(DEFAULT_TOP_K).min(MAX_TOP_K) as usize;
         let query_lower = args.query.to_lowercase();
 

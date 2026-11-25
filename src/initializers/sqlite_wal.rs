@@ -23,7 +23,7 @@ impl Initializer for SqliteWalInitializer {
         let db = &ctx.db;
 
         let result = db
-            .execute(Statement::from_string(
+            .execute_raw(Statement::from_string(
                 DatabaseBackend::Sqlite,
                 "PRAGMA journal_mode = WAL",
             ))
@@ -48,7 +48,7 @@ impl Initializer for SqliteWalInitializer {
         // Also enable busy_timeout so short contention resolves gracefully
         // instead of immediately returning SQLITE_BUSY.
         let timeout_result = db
-            .execute(Statement::from_string(
+            .execute_raw(Statement::from_string(
                 DatabaseBackend::Sqlite,
                 "PRAGMA busy_timeout = 30000",
             ))

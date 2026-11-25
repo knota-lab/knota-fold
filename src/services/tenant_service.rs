@@ -231,7 +231,7 @@ pub async fn update_tenant(
                 .one(db)
                 .await
                 .db_err()?
-                .or_err(crate::error_info::common::NOT_FOUND)?;
+                .or_err_into(crate::error_info::common::NOT_FOUND)?;
             if tenant.code == "DEFAULT" {
                 return Err(err_bad_request(
                     "tenant.default_cannot_disable",

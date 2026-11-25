@@ -1,8 +1,8 @@
 use std::fmt;
 use std::sync::Arc;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig::tool::{Tool, ToolContext};
+use sea_orm::ExprTrait;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
@@ -65,55 +65,59 @@ impl Tool for ReadKnowledgeBaseLinesTool {
     type Args = ReadKnowledgeBaseLinesArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "按行读取知识库文档原文上下文。search_knowledge_base 返回文档ID、分块ID或行号后，可用此工具读取命中片段前后的原文行。".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "documentId": {
-                        "type": "string",
-                        "description": "知识库文档ID。按行号读取时必填。"
-                    },
-                    "chunkId": {
-                        "type": "string",
-                        "description": "知识库分块ID。传入后会自动定位该分块所在行。"
-                    },
-                    "startLine": {
-                        "type": "integer",
-                        "description": "起始行号（1-indexed）。未传 chunkId 时必填。"
-                    },
-                    "endLine": {
-                        "type": "integer",
-                        "description": "结束行号（1-indexed，默认等于 startLine）。"
-                    },
-                    "beforeLines": {
-                        "type": "integer",
-                        "description": "额外读取命中范围前多少行（默认0，最大100）。"
-                    },
-                    "afterLines": {
-                        "type": "integer",
-                        "description": "额外读取命中范围后多少行（默认0，最大100）。"
-                    }
+    fn description(&self) -> String {
+        "按行读取知识库文档原文上下文。search_knowledge_base 返回文档ID、分块ID或行号后，可用此工具读取命中片段前后的原文行。".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "documentId": {
+                    "type": "string",
+                    "description": "知识库文档ID。按行号读取时必填。"
                 },
-                "required": []
-            }),
-        }
+                "chunkId": {
+                    "type": "string",
+                    "description": "知识库分块ID。传入后会自动定位该分块所在行。"
+                },
+                "startLine": {
+                    "type": "integer",
+                    "description": "起始行号（1-indexed）。未传 chunkId 时必填。"
+                },
+                "endLine": {
+                    "type": "integer",
+                    "description": "结束行号（1-indexed，默认等于 startLine）。"
+                },
+                "beforeLines": {
+                    "type": "integer",
+                    "description": "额外读取命中范围前多少行（默认0，最大100）。"
+                },
+                "afterLines": {
+                    "type": "integer",
+                    "description": "额外读取命中范围后多少行（默认0，最大100）。"
+                }
+            },
+            "required": []
+        })
     }
 
     #[tracing::instrument(
         skip(self, args),
         fields(tool = "read_knowledge_base_lines", tenant_id = %self.tenant_id)
     )]
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _ctx: &mut ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let before = args.before_lines.unwrap_or(0).clamp(0, 100);
         let after = args.after_lines.unwrap_or(0).clamp(0, 100);
 
         let target = self.resolve_target(&args).await?;
         let document = self.visible_document(target.document_id).await?;
-        let start_line = target.start_line.saturating_sub(before).max(1);
-        let end_line = target.end_line.saturating_add(after).max(start_line);
+        let start_line = std::cmp::max(target.start_line.saturating_sub(before), 1);
+        let end_line = std::cmp::max(target.end_line.saturating_add(after), start_line);
         let lines = self
             .read_lines(target.document_id, start_line, end_line)
             .await?;
@@ -153,8 +157,8 @@ impl ReadKnowledgeBaseLinesTool {
                 "documentId is required when chunkId is not provided".to_string(),
             )
         })?;
-        let start_line = args.start_line.unwrap_or(1).max(1);
-        let end_line = args.end_line.unwrap_or(start_line).max(start_line);
+        let start_line = std::cmp::max(args.start_line.unwrap_or(1), 1);
+        let end_line = std::cmp::max(args.end_line.unwrap_or(start_line), start_line);
         Ok(LineTarget {
             document_id,
             start_line,
@@ -189,13 +193,14 @@ impl ReadKnowledgeBaseLinesTool {
                 .char_end
                 .unwrap_or_else(|| chunk.char_start.unwrap_or(0)),
         )
-        .saturating_sub(1)
-        .max(i64::from(chunk.char_start.unwrap_or(0)));
+        .saturating_sub(1);
+        let end_offset =
+            std::cmp::max(end_offset, i64::from(chunk.char_start.unwrap_or(0)));
         let end_line = char_offset_to_line(end_offset, &lines).unwrap_or(start_line);
         Ok(LineTarget {
             document_id: chunk.document_id,
             start_line,
-            end_line: end_line.max(start_line),
+            end_line: std::cmp::max(end_line, start_line),
         })
     }
 

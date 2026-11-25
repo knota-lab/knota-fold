@@ -1,4 +1,4 @@
-//! SSE-aware hook for rig-core's multi-turn streaming agent loop.
+//! SSE-aware recorder for rig's multi-turn streaming agent loop.
 //!
 //! Implements [`PromptHook`] to emit `ToolCallStarted` / `ToolCallCompleted`
 //! events through an mpsc channel so the frontend can show live tool progress.
@@ -7,8 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use rig::agent::{HookAction, PromptHook, ToolCallHookAction};
-use rig::completion::CompletionModel;
+use rig::message::{ToolCall, ToolResult};
 use tokio::sync::mpsc;
 
 use super::super::qa_stream_types::QaEvent;
@@ -78,7 +77,6 @@ pub enum ContentPart {
 /// Pending call data stored between `on_tool_call` and `on_tool_result`.
 #[derive(Debug, Clone)]
 struct PendingCall {
-    tool_call_id: String,
     arguments: serde_json::Value,
 }
 
@@ -253,114 +251,92 @@ async fn send_event(tx: &mpsc::Sender<String>, event: QaEvent) {
 }
 
 // ---------------------------------------------------------------------------
-// PromptHook implementation
+// Stream-driven recording
 // ---------------------------------------------------------------------------
 
-impl<M> PromptHook<M> for QaV3Hook
-where
-    M: CompletionModel,
-{
-    /// Record the start time and emit a [`QaEvent::ToolCallStarted`] SSE event.
-    async fn on_tool_call(
-        &self,
-        tool_name: &str,
-        tool_call_id: Option<String>,
-        internal_call_id: &str,
-        args: &str,
-    ) -> ToolCallHookAction {
-        // LLMs like Ollama/qwen may not generate a tool_call ID.
-        // Fall back to the internal_call_id so every event has a traceable ID.
-        let call_id = tool_call_id.unwrap_or_else(|| internal_call_id.to_owned());
+impl QaV3Hook {
+    /// Record a text delta for `content_parts` ordering.
+    pub fn on_text_delta(&self, text_delta: &str) {
+        self.append_text_delta(text_delta);
+    }
 
-        // Record start time under the internal_call_id.
+    /// Record a tool call committed by the run, and emit `ToolCallStarted`
+    /// unless the frontend owns the call's SSE event.
+    pub async fn on_tool_call(&self, tool_call: &ToolCall) {
+        let call_id = tool_call.id.wire().to_string();
+        let tool_name = tool_call.function.name.as_str().to_owned();
+        let arguments = serde_json::Value::Object(tool_call.function.arguments.clone());
+
         if let Ok(mut map) = self.timings.lock() {
-            map.insert(internal_call_id.to_owned(), Instant::now());
+            map.insert(call_id.clone(), Instant::now());
         }
 
-        let arguments: serde_json::Value =
-            serde_json::from_str(args).unwrap_or(serde_json::Value::Null);
-
-        // Flush any pending text before the tool call starts
+        // Flush any pending text before the tool call starts.
         if let (Ok(mut parts), Ok(mut text)) =
             (self.content_parts.lock(), self.pending_text.lock())
         {
             Self::flush_pending_text(&mut parts, &mut text);
         }
 
-        // Save pending call data for use in on_tool_result
         if let Ok(mut map) = self.pending_calls.lock() {
             map.insert(
-                internal_call_id.to_owned(),
+                call_id.clone(),
                 PendingCall {
-                    tool_call_id: call_id.clone(),
                     arguments: arguments.clone(),
                 },
             );
         }
 
-        // For frontend tools: record timing + pending data but skip SSE emission.
-        // The FrontendToolStub itself emits ToolCallStarted in its call() method.
-        if !is_frontend_tool(tool_name) {
+        // Frontend tools emit their own ToolCallStarted from the stub.
+        if !is_frontend_tool(&tool_name) {
             let event = QaEvent::ToolCallStarted {
-                tool_name: tool_name.to_owned(),
+                tool_name,
                 tool_call_id: call_id,
                 arguments,
             };
             send_event(&self.tx, event).await;
         }
-        ToolCallHookAction::cont()
     }
 
-    /// Calculate elapsed time and emit a [`QaEvent::ToolCallCompleted`] SSE event.
-    async fn on_tool_result(
-        &self,
-        tool_name: &str,
-        tool_call_id: Option<String>,
-        internal_call_id: &str,
-        args: &str,
-        result: &str,
-    ) -> HookAction {
+    /// Record a committed tool result, emit `ToolCallCompleted`, and extract
+    /// citations from knowledge-base tools.
+    pub async fn on_tool_result(&self, tool_result: &ToolResult) {
+        let call_id = tool_result.call.wire().to_string();
+        let tool_name = tool_result.name.as_str().to_owned();
+        let result_text = tool_result_text(tool_result);
+
         let duration_ms = self
             .timings
             .lock()
             .ok()
-            .and_then(|mut map| map.remove(internal_call_id))
+            .and_then(|mut map| map.remove(&call_id))
             .map_or(0, |start| {
                 u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
             });
 
-        let result_preview = truncate_str(result, 500).to_owned();
-        let result_full = truncate_str(result, 50_000).to_owned();
+        let result_preview = truncate_str(&result_text, 500).to_owned();
+        let result_full = truncate_str(&result_text, 50_000).to_owned();
 
-        // Retrieve saved pending call data
         let pending = self
             .pending_calls
             .lock()
             .ok()
-            .and_then(|mut map| map.remove(internal_call_id));
+            .and_then(|mut map| map.remove(&call_id));
+        let arguments = pending.map_or(serde_json::Value::Null, |p| p.arguments);
 
-        let (saved_call_id, saved_args) = pending.map_or_else(
-            || {
-                let parsed_args: serde_json::Value =
-                    serde_json::from_str(args).unwrap_or(serde_json::Value::Null);
-                (tool_call_id.clone().unwrap_or_default(), parsed_args)
-            },
-            |p| (p.tool_call_id, p.arguments),
-        );
-
-        // Record completed tool call for persistence/export (legacy flat list)
+        // Legacy flat list.
         if let Ok(mut records) = self.tool_records.lock() {
             records.push(ToolCallRecord {
-                tool_name: tool_name.to_owned(),
-                tool_call_id: saved_call_id.clone(),
-                arguments: saved_args.clone(),
+                tool_name: tool_name.clone(),
+                tool_call_id: call_id.clone(),
+                arguments: arguments.clone(),
                 duration_ms,
                 result_preview: result_preview.clone(),
                 result_full: result_full.clone(),
             });
         }
 
-        // Record tool round for debug export (complete interaction trace)
+        // Debug export.
         let round_num = self.tool_round_counter.lock().map_or(1, |mut g| {
             *g += 1;
             *g
@@ -368,20 +344,20 @@ where
         if let Ok(mut rounds) = self.tool_rounds.lock() {
             rounds.push(ToolRound {
                 round: round_num,
-                tool_name: tool_name.to_owned(),
-                tool_call_id: saved_call_id.clone(),
-                arguments: saved_args.clone(),
+                tool_name: tool_name.clone(),
+                tool_call_id: call_id.clone(),
+                arguments: arguments.clone(),
                 result_full: result_full.clone(),
                 duration_ms,
             });
         }
 
-        // Record completed tool call as an ordered content part
+        // Ordered content parts.
         if let Ok(mut parts) = self.content_parts.lock() {
             parts.push(ContentPart::ToolCall {
-                tool_name: tool_name.to_owned(),
-                tool_call_id: saved_call_id.clone(),
-                arguments: saved_args.clone(),
+                tool_name: tool_name.clone(),
+                tool_call_id: call_id.clone(),
+                arguments,
                 duration_ms,
                 result_preview: result_preview.clone(),
                 result_full,
@@ -390,44 +366,38 @@ where
         }
 
         let event = QaEvent::ToolCallCompleted {
-            tool_name: tool_name.to_owned(),
-            tool_call_id: saved_call_id,
+            tool_name: tool_name.clone(),
+            tool_call_id: call_id,
             result_preview,
             duration_ms,
         };
-
         send_event(&self.tx, event).await;
 
-        // H6: Extract citations from search_knowledge_base results.
         if tool_name == "search_knowledge_base" {
-            extract_citations_from_result(result, &self.citations);
+            extract_citations_from_result(&result_text, &self.citations);
         } else if tool_name == "read_knowledge_base_lines" {
-            merge_line_read_citation(result, &self.citations);
+            merge_line_read_citation(&result_text, &self.citations);
         }
-
-        HookAction::cont()
     }
+}
 
-    /// Track text deltas for `content_parts` ordering.
-    async fn on_text_delta(
-        &self,
-        text_delta: &str,
-        _aggregated_text: &str,
-    ) -> HookAction {
-        self.append_text_delta(text_delta);
-        HookAction::cont()
-    }
-
-    /// NO-OP — tool call deltas are not needed for SSE progress.
-    async fn on_tool_call_delta(
-        &self,
-        _tool_call_id: &str,
-        _internal_call_id: &str,
-        _tool_name: Option<&str>,
-        _tool_call_delta: &str,
-    ) -> HookAction {
-        HookAction::cont()
-    }
+/// Concatenate the textual blocks of a tool result.
+fn tool_result_text(result: &ToolResult) -> String {
+    result
+        .content
+        .iter()
+        .map(|content| {
+            content.as_text().map_or_else(
+                || {
+                    content
+                        .as_json()
+                        .map_or_else(String::new, ToString::to_string)
+                },
+                str::to_owned,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -699,5 +669,58 @@ mod tests {
         assert_eq!(guard[0].start_line, Some(33));
         assert_eq!(guard[0].end_line, Some(45));
         assert_eq!(guard[0].chunk_id, Some(chunk_id));
+    }
+
+    #[tokio::test]
+    async fn records_tool_call_and_result_from_stream_items() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let hook = QaV3Hook::new(tx);
+
+        let content = rig::completion::message::AssistantContent::tool_call(
+            "call-1",
+            rig::message::ToolName::new("search_material").unwrap(),
+            serde_json::json!({"query": "abc"}),
+        );
+        let call = content.as_tool_call().expect("tool call").clone();
+        hook.on_tool_call(&call).await;
+
+        let started = rx.try_recv().expect("tool call started event");
+        assert!(started.contains("search_material"));
+        assert!(started.contains("call-1"));
+
+        let result = rig::message::ToolResult {
+            call: rig::message::CallId::from_wire("call-1"),
+            name: rig::message::ToolName::new("search_material").unwrap(),
+            content: vec![rig::message::ToolResultContent::text("found 2 lines")],
+            is_error: false,
+        };
+        hook.on_tool_result(&result).await;
+
+        let completed = rx.try_recv().expect("tool call completed event");
+        assert!(completed.contains("found 2 lines"));
+
+        let records = hook.take_tool_records();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tool_name, "search_material");
+        assert_eq!(records[0].tool_call_id, "call-1");
+        assert_eq!(records[0].arguments["query"], "abc");
+        assert!(records[0].result_full.contains("found 2 lines"));
+        assert_eq!(hook.take_content_parts().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn frontend_tool_start_is_left_to_the_stub() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let hook = QaV3Hook::new(tx);
+
+        let content = rig::completion::message::AssistantContent::tool_call(
+            "call-page",
+            rig::message::ToolName::new("page_execute_action").unwrap(),
+            serde_json::json!({}),
+        );
+        let call = content.as_tool_call().expect("tool call").clone();
+        hook.on_tool_call(&call).await;
+
+        assert!(rx.try_recv().is_err(), "stub owns the started event");
     }
 }

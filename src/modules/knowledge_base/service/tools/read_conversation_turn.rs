@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig::tool::{Tool, ToolContext};
 
 use crate::models::_entities::chat_messages;
 use crate::modules::knowledge_base::service::chat_service;
@@ -89,32 +88,36 @@ impl Tool for ReadConversationTurnTool {
     type Args = ReadConversationTurnArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "读取指定轮次（或范围）的完整对话内容。单轮时 start_turn 与 end_turn 传相同值；多轮时自行控制范围。每条消息截断到 2000 字符。".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "start_turn": {
-                        "type": "integer",
-                        "description": "起始轮次号（从 1 开始）"
-                    },
-                    "end_turn": {
-                        "type": "integer",
-                        "description": "结束轮次号（含，与 start_turn 相同时只读一轮）— 默认等于 start_turn"
-                    }
+    fn description(&self) -> String {
+        "读取指定轮次（或范围）的完整对话内容。单轮时 start_turn 与 end_turn 传相同值；多轮时自行控制范围。每条消息截断到 2000 字符。".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "start_turn": {
+                    "type": "integer",
+                    "description": "起始轮次号（从 1 开始）"
                 },
-                "required": ["start_turn"]
-            }),
-        }
+                "end_turn": {
+                    "type": "integer",
+                    "description": "结束轮次号（含，与 start_turn 相同时只读一轮）— 默认等于 start_turn"
+                }
+            },
+            "required": ["start_turn"]
+        })
     }
 
     #[tracing::instrument(
         skip(self, args),
         fields(tool = "read_conversation_turn", start_turn = %args.start_turn)
     )]
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _ctx: &mut ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let messages = chat_service::get_session_messages(
             &self.db,
             self.session_id,

@@ -2,7 +2,7 @@
 FROM rust:1.85-bookworm AS builder
 # Note: rustup installs the actual toolchain below; the base image version
 # doesn't matter — we use 1.85-bookworm for Debian compatibility.
-ARG RUST_VERSION=1.94.0
+ARG RUST_VERSION=1.97.1
 
 RUN rustup toolchain install ${RUST_VERSION} --profile minimal \
     && rustup default ${RUST_VERSION}

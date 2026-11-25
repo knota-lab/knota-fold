@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use sea_orm::ExprTrait;
 use sea_orm::{
     sea_query::{Alias, Expr, Func, Order as SqOrder, Query as SqQuery},
     ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
@@ -93,7 +94,7 @@ pub async fn list_namespaces(
     }
 
     let builder = db.get_database_backend();
-    let rows = db.query_all(builder.build(&query)).await?;
+    let rows = db.query_all_raw(builder.build(&query)).await?;
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
@@ -102,8 +103,8 @@ pub async fn list_namespaces(
         let locale_count: i64 = row.try_get("", "locale_count")?;
         out.push(NamespaceCount {
             namespace,
-            key_count: key_count.max(0).cast_unsigned(),
-            locale_count: locale_count.max(0).cast_unsigned(),
+            key_count: std::cmp::max(key_count, 0).cast_unsigned(),
+            locale_count: std::cmp::max(locale_count, 0).cast_unsigned(),
         });
     }
     Ok(out)
@@ -142,7 +143,7 @@ pub async fn list_tenant_namespaces(
         .to_owned();
 
     let builder = db.get_database_backend();
-    let rows = db.query_all(builder.build(&query)).await?;
+    let rows = db.query_all_raw(builder.build(&query)).await?;
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
@@ -151,8 +152,8 @@ pub async fn list_tenant_namespaces(
         let locale_count: i64 = row.try_get("", "locale_count")?;
         out.push(NamespaceCount {
             namespace,
-            key_count: key_count.max(0).cast_unsigned(),
-            locale_count: locale_count.max(0).cast_unsigned(),
+            key_count: std::cmp::max(key_count, 0).cast_unsigned(),
+            locale_count: std::cmp::max(locale_count, 0).cast_unsigned(),
         });
     }
     Ok(out)
@@ -303,12 +304,12 @@ pub async fn count_distinct_keys(
 
     let total: i64 = db
         // raw-sql-ok: distinct key count with NOT EXISTS filters is clearer than forcing SeaORM.
-        .query_one(Statement::from_sql_and_values(backend, count_sql, binds))
+        .query_one_raw(Statement::from_sql_and_values(backend, count_sql, binds))
         .await?
         .ok_or_else(|| DbErr::Custom("count query returned no row".into()))?
         .try_get("", "cnt")?;
 
-    Ok(total.max(0).cast_unsigned())
+    Ok(std::cmp::max(total, 0).cast_unsigned())
 }
 
 /// # Errors
@@ -340,7 +341,7 @@ pub async fn paginate_distinct_keys(
 
     let rows = db
         // raw-sql-ok: distinct key pagination must match the count query exactly.
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             backend, page_sql, page_binds,
         ))
         .await?;

@@ -526,7 +526,7 @@ async fn load_upload<C: ConnectionTrait>(
         .one(db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)
+        .or_err_into(crate::error_info::common::NOT_FOUND)
 }
 
 async fn load_upload_optional<C: ConnectionTrait>(
@@ -660,7 +660,7 @@ async fn fetch_completed_file<C: ConnectionTrait>(
         .one(db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)
+        .or_err_into(crate::error_info::common::NOT_FOUND)
 }
 
 fn parse_completed_file_id(upload: &file_uploads::Model) -> loco_rs::Result<Uuid> {
@@ -983,16 +983,11 @@ async fn insert_file_row(
     };
 
     files::Entity::insert(active_model)
-        .on_conflict(
-            OnConflict::columns([
-                files::Column::TenantId,
-                files::Column::ContentHash,
-                files::Column::Size,
-            ])
-            .do_nothing()
-            .to_owned(),
-        )
-        .do_nothing()
+        .on_conflict_do_nothing_on([
+            files::Column::TenantId,
+            files::Column::ContentHash,
+            files::Column::Size,
+        ])
         .exec(txn)
         .await
 }

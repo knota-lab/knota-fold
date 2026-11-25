@@ -393,7 +393,7 @@ pub async fn detach(
         .one(db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if row.deleted_at.is_some() {
         // Already detached. Idempotent.

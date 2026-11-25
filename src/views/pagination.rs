@@ -69,8 +69,8 @@ impl<T: Serialize> PaginatedResponse<T> {
     ) -> Self {
         Self {
             items: pr.page.iter().map(map_fn).collect(),
-            total_pages: pr.total_pages,
-            total_items: pr.total_items,
+            total_pages: pr.meta.total_pages,
+            total_items: pr.meta.total_items,
             page: pagination.page,
             page_size: pagination.page_size,
         }

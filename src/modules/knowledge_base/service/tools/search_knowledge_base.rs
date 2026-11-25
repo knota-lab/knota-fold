@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig::tool::{Tool, ToolContext};
+use sea_orm::ExprTrait;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::initializers::knowledge_base::SharedSearchProvider;
@@ -118,35 +118,39 @@ impl Tool for SearchKnowledgeBaseTool {
     type Args = SearchKnowledgeBaseArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
+    fn description(&self) -> String {
         let scope_description = self.scope_description();
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: format!(
-                "在知识库已上传的文档中进行语义搜索。返回最相关的文档片段。当你需要查找材料中没有的信息时使用此工具。{scope_description}"
-            ),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "搜索查询文本"
-                    },
-                    "top_k": {
-                        "type": "integer",
-                        "description": "返回的最大结果数量（默认5，最大20）"
-                    }
+        format!(
+            "在知识库已上传的文档中进行语义搜索。返回最相关的文档片段。当你需要查找材料中没有的信息时使用此工具。{scope_description}"
+        )
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "搜索查询文本"
                 },
-                "required": ["query"]
-            }),
-        }
+                "top_k": {
+                    "type": "integer",
+                    "description": "返回的最大结果数量（默认5，最大20）"
+                }
+            },
+            "required": ["query"]
+        })
     }
 
     #[tracing::instrument(
         skip(self, args),
         fields(tool = "search_knowledge_base", tenant_id = %self.tenant_id)
     )]
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _ctx: &mut ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let top_k = args.top_k.unwrap_or(5).clamp(1, 20);
 
         let results = search_service::hybrid_search(
@@ -377,11 +381,13 @@ fn line_range_for_result(
     let start = i64::from(result.char_start?);
     let end_exclusive = i64::from(result.char_end?);
     let start_line = char_offset_to_line(start, lines)?;
-    let end_line =
-        char_offset_to_line(end_exclusive.saturating_sub(1).max(start), lines)?;
+    let end_line = char_offset_to_line(
+        std::cmp::max(end_exclusive.saturating_sub(1), start),
+        lines,
+    )?;
     Some(LineRange {
         start_line,
-        end_line: end_line.max(start_line),
+        end_line: std::cmp::max(end_line, start_line),
     })
 }
 

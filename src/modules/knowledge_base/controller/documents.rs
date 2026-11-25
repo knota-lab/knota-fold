@@ -179,6 +179,7 @@ async fn enqueue_document_indexing(
         },
     )
     .await
+    .map(|_job_id| ())
     .model_err()
 }
 

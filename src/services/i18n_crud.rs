@@ -121,7 +121,7 @@ pub async fn update_global_translation_by_id(
         .one(&ctx.db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if existing.tenant_id.is_some() {
         return Err(err_bad_request(
@@ -171,7 +171,7 @@ pub async fn delete_global_translation_by_id(
         .one(&ctx.db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
     if existing.tenant_id.is_some() {
         return Err(err_bad_request(
             "i18n.global_delete_only",
@@ -317,7 +317,7 @@ pub async fn delete_tenant_override_by_id(
         .one(&ctx.db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if existing.tenant_id != Some(tenant_id) {
         // Hide existence across tenants.

@@ -106,7 +106,7 @@ pub(crate) async fn update(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_user.tenant_id != tc.tenant_id {
         return crate::views::errors::user::cross_tenant("修改用户");
@@ -158,7 +158,7 @@ pub(crate) async fn toggle_status(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_user.tenant_id != tc.tenant_id {
         return crate::views::errors::user::cross_tenant("修改用户");
@@ -204,7 +204,7 @@ pub(crate) async fn reset_password(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_user.tenant_id != tc.tenant_id {
         return crate::views::errors::user::cross_tenant("重置密码");
@@ -287,7 +287,7 @@ pub(crate) async fn get_user_roles(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_user.tenant_id != tc.tenant_id {
         return crate::views::errors::user::cross_tenant("查看角色");

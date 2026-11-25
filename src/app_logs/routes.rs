@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query};
 use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{AssertSqlSafe, FromRow};
 
 use crate::app_logs::writer;
 use crate::utils::error::IntoLocoResult;
@@ -212,7 +212,7 @@ pub async fn list(Query(params): Query<ListParams>) -> Result<Json<ListResponse>
 
     // Count.
     let count_sql = format!("SELECT COUNT(*) FROM request_logs {where_sql}");
-    let count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+    let count_q = sqlx::query_scalar::<_, i64>(AssertSqlSafe(count_sql));
     let count_q = bind_log_params!(count_q, params);
     let total_items: i64 = count_q.fetch_one(db).await.loco_err()?;
 
@@ -223,7 +223,7 @@ pub async fn list(Query(params): Query<ListParams>) -> Result<Json<ListResponse>
           FROM request_logs {where_sql} \
          ORDER BY timestamp DESC LIMIT ? OFFSET ?"
     );
-    let data_q = sqlx::query_as::<_, RequestLogItem>(&data_sql);
+    let data_q = sqlx::query_as::<_, RequestLogItem>(AssertSqlSafe(data_sql));
     let mut data_q = bind_log_params!(data_q, params);
     data_q = data_q.bind(page_size).bind(offset);
 

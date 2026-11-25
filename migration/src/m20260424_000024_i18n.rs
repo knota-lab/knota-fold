@@ -425,7 +425,7 @@ async fn seed_supported_locales(m: &SchemaManager<'_>) -> Result<(), DbErr> {
     ];
 
     for (locale, label, enabled, sort) in rows {
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             backend,
             "INSERT INTO i18n_supported_locales (id, locale, label, is_enabled, sort_order) \
              VALUES ($1, $2, $3, $4, $5)",
@@ -494,7 +494,7 @@ async fn seed_translations_and_revisions(m: &SchemaManager<'_>) -> Result<(), Db
         entry_keys.insert((*ns, *key));
     }
     for (ns, key) in &entry_keys {
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             backend,
             "INSERT INTO i18n_entries (id, namespace, key, status) VALUES ($1, $2, $3, 'active')",
             [new_id().into(), (*ns).to_string().into(), (*key).to_string().into()],
@@ -504,7 +504,7 @@ async fn seed_translations_and_revisions(m: &SchemaManager<'_>) -> Result<(), Db
 
     // Insert i18n_translations (all global, scope='global', tenant_id=NULL).
     for (ns, key, locale, value) in translations {
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             backend,
             "INSERT INTO i18n_translations \
              (id, namespace, key, locale, value, scope, tenant_id, updated_by) \
@@ -529,7 +529,7 @@ async fn seed_translations_and_revisions(m: &SchemaManager<'_>) -> Result<(), Db
         ("en-US", "CommonError"),
     ];
     for (locale, ns) in bundle_rows {
-        conn.execute(Statement::from_sql_and_values(
+        conn.execute_raw(Statement::from_sql_and_values(
             backend,
             "INSERT INTO i18n_bundle_revisions \
              (id, locale, namespace, scope, tenant_id, revision) \

@@ -105,14 +105,11 @@ fn simple_hash(s: &str) -> u32 {
 
 /// Embed a single text using the shared embedding client and model name.
 async fn embed_text(
-    embedding_client: &rig::providers::openai::Client,
+    embedding_client: &rig::providers::openai::OpenAI,
     model_name: &str,
     text: &str,
 ) -> Result<Vec<f32>, KnowledgeBaseError> {
-    use rig::client::EmbeddingsClient;
-    use rig::embeddings::EmbeddingModel;
-
-    let model = embedding_client.embedding_model(model_name);
+    let model = embedding_client.embedding(model_name, None);
     let embedding: rig::embeddings::Embedding = model
         .embed_text(text)
         .await
@@ -140,7 +137,7 @@ pub struct IndexMessageParams {
 /// after persisting the message to `SQLite`.
 #[tracing::instrument(skip(embedding_client, memory_provider, params))]
 pub async fn index_message(
-    embedding_client: &rig::providers::openai::Client,
+    embedding_client: &rig::providers::openai::OpenAI,
     memory_provider: &qdrant_client::Qdrant,
     params: &IndexMessageParams,
 ) -> Result<(), KnowledgeBaseError> {
@@ -202,7 +199,7 @@ struct VectorRecallParams<'a> {
 
 /// Core vector recall: hybrid search (dense + sparse + RRF) on `chat_memory` collection.
 async fn vector_recall(
-    embedding_client: &rig::providers::openai::Client,
+    embedding_client: &rig::providers::openai::OpenAI,
     memory_provider: &qdrant_client::Qdrant,
     model_name: &str,
     session_id: Uuid,
@@ -341,7 +338,7 @@ pub struct RecallHistoryParams<'a> {
     params
 ))]
 pub async fn recall_history(
-    embedding_client: &rig::providers::openai::Client,
+    embedding_client: &rig::providers::openai::OpenAI,
     memory_provider: &qdrant_client::Qdrant,
     collection_name: &str,
     model_name: &str,

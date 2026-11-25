@@ -1,6 +1,6 @@
 //! v3 streaming QA orchestration service.
 //!
-//! Uses rig-core tools + `PromptHook` + multi-turn streaming for a tool-augmented
+//! Uses rig tools + stream-driven tool events + multi-turn streaming for a tool-augmented
 //! QA pipeline that can read materials, search documents, and answer questions
 //! in a multi-turn conversation.
 
@@ -8,8 +8,7 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use rig::agent::{MultiTurnStreamItem, StreamingResult};
-use rig::client::CompletionClient;
-use rig::streaming::{StreamedAssistantContent, StreamingChat};
+use rig::streaming::{Item, StreamEvent};
 use tokio::sync::mpsc;
 use tracing::Instrument;
 use uuid::Uuid;
@@ -699,21 +698,18 @@ async fn run_agent_stream(
     records_hook: &QaV3Hook,
     debug: TurnDebugData,
 ) -> QaTurnResult {
-    let mut agent_builder = ctx
-        .qa_client
-        .0
-        .agent(&ctx.config.model)
-        .preamble(&debug.system_prompt)
-        .hook(records_hook.clone())
-        .tool(ListMaterialsTool {
-            registry: materials.registry.clone(),
-        })
-        .tool(ReadMaterialTool {
-            registry: materials.registry.clone(),
-        })
-        .tool(SearchMaterialTool {
-            registry: materials.registry.clone(),
-        });
+    let mut agent_builder =
+        rig::agent::AgentBuilder::new(ctx.qa_client.0.chat(ctx.config.model.as_str()))
+            .preamble(debug.system_prompt.as_str())
+            .tool(ListMaterialsTool {
+                registry: materials.registry.clone(),
+            })
+            .tool(ReadMaterialTool {
+                registry: materials.registry.clone(),
+            })
+            .tool(SearchMaterialTool {
+                registry: materials.registry.clone(),
+            });
 
     let conversation_db = std::sync::Arc::new(ctx.db.clone());
     if ctx.request.material.use_knowledge_base {
@@ -782,7 +778,7 @@ async fn run_agent_stream(
         });
 
     for stub in build_page_tool_stubs(ctx) {
-        agent_builder = agent_builder.tool(stub);
+        agent_builder = agent_builder.dynamic_tool(stub.into_dynamic());
     }
 
     let mut agent_builder = agent_builder.default_max_turns(15);
@@ -792,11 +788,12 @@ async fn run_agent_stream(
         }));
     }
 
-    let mut stream = agent_builder
-        .build()
-        .stream_chat(&debug.user_prompt, debug.chat_history)
-        .multi_turn(15)
-        .await;
+    let agent = agent_builder.build();
+    let mut stream = agent
+        .prompt(debug.user_prompt.as_str())
+        .history(debug.chat_history)
+        .max_turns(15)
+        .stream();
     consume_agent_stream(ctx, session, records_hook, &mut stream).await
 }
 
@@ -837,7 +834,7 @@ async fn consume_agent_stream(
     ctx: &QaStreamCtx<'_>,
     session: &chat_sessions::Model,
     records_hook: &QaV3Hook,
-    stream: &mut StreamingResult<rig::providers::deepseek::StreamingCompletionResponse>,
+    stream: &mut StreamingResult,
 ) -> QaTurnResult {
     let mut final_answer = String::new();
     let mut tool_call_count = 0;
@@ -846,11 +843,12 @@ async fn consume_agent_stream(
 
     while let Some(item) = stream.next().await {
         match item {
-            Ok(MultiTurnStreamItem::StreamAssistantItem(
-                StreamedAssistantContent::Text(text),
-            )) => {
-                final_answer.push_str(&text.text);
-                if send_event(ctx.tx, QaEvent::AnswerToken { token: text.text })
+            Ok(MultiTurnStreamItem::StreamAssistantItem(Item::Event(
+                StreamEvent::Text { text, .. },
+            ))) => {
+                final_answer.push_str(&text);
+                records_hook.on_text_delta(&text);
+                if send_event(ctx.tx, QaEvent::AnswerToken { token: text })
                     .await
                     .is_err()
                 {
@@ -858,10 +856,12 @@ async fn consume_agent_stream(
                     break;
                 }
             }
-            Ok(MultiTurnStreamItem::StreamAssistantItem(
-                StreamedAssistantContent::ToolCall { .. },
-            )) => {
+            Ok(MultiTurnStreamItem::ToolCall { tool_call }) => {
                 tool_call_count += 1;
+                records_hook.on_tool_call(&tool_call).await;
+            }
+            Ok(MultiTurnStreamItem::ToolResult { tool_result }) => {
+                records_hook.on_tool_result(&tool_result).await;
             }
             Ok(MultiTurnStreamItem::FinalResponse(fin)) => {
                 captured_usage = Some(fin.usage());
@@ -924,7 +924,8 @@ fn set_turn_debug_context(
                     "role": "user",
                     "content_count": content.len()
                 }),
-                Message::Assistant { content, .. } => {
+                Message::Assistant(assistant) => {
+                    let content = &assistant.content;
                     let text_count = content.iter().filter(|c| matches!(c, AssistantContent::Text(_))).count();
                     let has_tool_calls = content.iter().any(|c| matches!(c, AssistantContent::ToolCall(_)));
                     serde_json::json!({
@@ -1065,9 +1066,12 @@ async fn persist_successful_turn(
         let (prompt_tokens, completion_tokens, total_tokens) =
             turn_result.captured_usage.map_or((0, 0, 0), |u| {
                 (
-                    i32::try_from(u.input_tokens).unwrap_or(i32::MAX),
-                    i32::try_from(u.output_tokens).unwrap_or(i32::MAX),
-                    i32::try_from(u.total_tokens).unwrap_or(i32::MAX),
+                    u.input_tokens
+                        .map_or(0, |v| i32::try_from(v).unwrap_or(i32::MAX)),
+                    u.output_tokens
+                        .map_or(0, |v| i32::try_from(v).unwrap_or(i32::MAX)),
+                    u.total_tokens
+                        .map_or(0, |v| i32::try_from(v).unwrap_or(i32::MAX)),
                 )
             });
 

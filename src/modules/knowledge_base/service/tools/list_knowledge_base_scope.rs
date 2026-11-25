@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig::tool::{Tool, ToolContext};
+use sea_orm::ExprTrait;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
@@ -56,32 +56,36 @@ impl Tool for ListKnowledgeBaseScopeTool {
     type Args = ListKnowledgeBaseScopeArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "列出当前用户可见的知识库和目录范围摘要。适合回答“你现在能访问哪些知识库/目录”。只返回结构摘要，不返回文档正文。".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "maxLibraries": {
-                        "type": "integer",
-                        "description": "返回的最大知识库数量（默认20，最大50）"
-                    },
-                    "maxFolders": {
-                        "type": "integer",
-                        "description": "返回的最大目录数量（默认80，最大200）"
-                    }
+    fn description(&self) -> String {
+        "列出当前用户可见的知识库和目录范围摘要。适合回答“你现在能访问哪些知识库/目录”。只返回结构摘要，不返回文档正文。".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "maxLibraries": {
+                    "type": "integer",
+                    "description": "返回的最大知识库数量（默认20，最大50）"
                 },
-                "required": []
-            }),
-        }
+                "maxFolders": {
+                    "type": "integer",
+                    "description": "返回的最大目录数量（默认80，最大200）"
+                }
+            },
+            "required": []
+        })
     }
 
     #[tracing::instrument(
         skip(self, args),
         fields(tool = "list_knowledge_base_scope", tenant_id = %self.tenant_id)
     )]
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _ctx: &mut ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let max_libraries = args.max_libraries.unwrap_or(20).clamp(1, 50);
         let max_folders = args.max_folders.unwrap_or(80).clamp(1, 200);
 

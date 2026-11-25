@@ -209,7 +209,7 @@ pub async fn apply_manifest(
     let backend = txn.get_database_backend();
     let stale_result = if entry_result.touched_ids.is_empty() {
         // raw-sql-ok: bulk stale update avoids loading every active i18n entry into memory.
-        txn.execute(Statement::from_sql_and_values(
+        txn.execute_raw(Statement::from_sql_and_values(
             backend,
             "UPDATE i18n_entries \
              SET status = 'stale', updated_at = CURRENT_TIMESTAMP \
@@ -232,10 +232,10 @@ pub async fn apply_manifest(
         let values: Vec<sea_orm::Value> = entry_result
             .touched_ids
             .iter()
-            .map(|id| sea_orm::Value::Uuid(Some(Box::new(*id))))
+            .map(|id| sea_orm::Value::Uuid(Some(*id)))
             .collect();
         // raw-sql-ok: dynamic NOT IN placeholder list is needed for a single bulk update.
-        txn.execute(Statement::from_sql_and_values(backend, sql, values))
+        txn.execute_raw(Statement::from_sql_and_values(backend, sql, values))
             .await
             .db_err()?
     };

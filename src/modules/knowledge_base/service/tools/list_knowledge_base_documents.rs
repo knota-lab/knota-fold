@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig::tool::{Tool, ToolContext};
+use sea_orm::ExprTrait;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
@@ -58,35 +58,39 @@ impl Tool for ListKnowledgeBaseDocumentsTool {
     type Args = ListKnowledgeBaseDocumentsArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: format!(
-                "列出当前知识库范围内你可见的文档清单。适合回答“有哪些资料/文档可用”。{}",
-                self.scope_description()
-            ),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "limit": {
-                        "type": "integer",
-                        "description": "返回的最大文档数（默认50，最大100）"
-                    },
-                    "includeNonReady": {
-                        "type": "boolean",
-                        "description": "是否包含入库中或失败的文档（默认false，只返回可用文档）"
-                    }
+    fn description(&self) -> String {
+        format!(
+            "列出当前知识库范围内你可见的文档清单。适合回答“有哪些资料/文档可用”。{}",
+            self.scope_description()
+        )
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "返回的最大文档数（默认50，最大100）"
                 },
-                "required": []
-            }),
-        }
+                "includeNonReady": {
+                    "type": "boolean",
+                    "description": "是否包含入库中或失败的文档（默认false，只返回可用文档）"
+                }
+            },
+            "required": []
+        })
     }
 
     #[tracing::instrument(
         skip(self, args),
         fields(tool = "list_knowledge_base_documents", tenant_id = %self.tenant_id)
     )]
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _ctx: &mut ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let limit = args.limit.unwrap_or(50).clamp(1, 100);
         let docs = self
             .query_documents(limit, args.include_non_ready.unwrap_or(false))

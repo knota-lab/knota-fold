@@ -202,7 +202,7 @@ pub(crate) async fn get_i18n_me(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     format::json(i18n_views::I18nMeResponse {
         preferred_locale: user.preferred_locale,
@@ -227,7 +227,7 @@ pub(crate) async fn update_i18n_me(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     // Validate: if set, locale must be a known enabled locale.
     if let Some(ref locale) = req.preferred_locale {

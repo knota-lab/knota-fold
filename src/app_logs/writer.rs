@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use sqlx::SqlitePool;
+use sqlx::{AssertSqlSafe, SqlitePool};
 
 use super::config::AppLogsConfig;
 use super::layer::{EntryPayload, LogEntry};
@@ -208,10 +208,12 @@ pub fn spawn_cleanup(retention_days: u32) {
             let cutoff = unix_ms() - (i64::from(retention_days) * 86_400_000);
 
             for table in ["request_logs", "log_entries"] {
-                let _ = sqlx::query(&format!("DELETE FROM {table} WHERE timestamp < ?"))
-                    .bind(cutoff)
-                    .execute(db)
-                    .await;
+                let _ = sqlx::query(AssertSqlSafe(format!(
+                    "DELETE FROM {table} WHERE timestamp < ?"
+                )))
+                .bind(cutoff)
+                .execute(db)
+                .await;
             }
             // trace_spans uses start_time, not timestamp.
             let _ = sqlx::query("DELETE FROM trace_spans WHERE start_time < ?")

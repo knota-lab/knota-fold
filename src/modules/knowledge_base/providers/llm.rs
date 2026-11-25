@@ -1,19 +1,23 @@
 use std::time::Duration;
 
+use rig::providers::openai::wire::DEEPSEEK;
+use rig::providers::openai::{OpenAI, OpenAIConfig};
+
 use crate::config::KnowledgeBaseConfig;
 
 // Newtype wrappers so shared_store (TypeId-based) can distinguish them.
-// Without these, both clients are the same `openai::Client` type and the
+// Without these, both clients are the same `OpenAI` type and the
 // second insert() overwrites the first.
 
 #[derive(Clone)]
-pub struct EmbeddingClient(pub rig::providers::openai::Client);
+pub struct EmbeddingClient(pub OpenAI);
 
 // Both Ollama and DeepSeek are OpenAI-compatible at /chat/completions.
-// deepseek::Client uses the standard chat completions protocol (NOT /responses),
-// so it works with any OpenAI-compatible provider including Ollama.
+// The DeepSeek dialect uses the standard chat completions protocol (NOT
+// /responses), so it works with any OpenAI-compatible provider including
+// Ollama. The base URL is overridden per deployment.
 #[derive(Clone)]
-pub struct QaClient(pub rig::providers::deepseek::Client);
+pub struct QaClient(pub OpenAI);
 
 pub type SharedEmbeddingClient = EmbeddingClient;
 pub type SharedQaClient = QaClient;
@@ -29,16 +33,16 @@ pub fn create_rig_clients(
         timeout_secs = config.embedding.timeout_secs,
         "Creating embedding client"
     );
-    let embedding_http_client = rig::http_client::ReqwestClient::builder()
+
+    // rig 0.47 moved the bundled transport into `rig-reqwest`: build a
+    // reqwest 0.13 client and wrap it as the rig HTTP client.
+    let embedding_http = rig::rig_reqwest::reqwest::Client::builder()
         .timeout(Duration::from_secs(config.embedding.timeout_secs))
         .build()
         .expect("failed to create embedding HTTP client");
-    let embedding_client = rig::providers::openai::Client::builder()
-        .api_key(&config.embedding.api_key)
-        .base_url(&config.embedding.base_url)
-        .http_client(embedding_http_client)
-        .build()
-        .expect("failed to create embedding client");
+    let embedding_client = OpenAIConfig::new(config.embedding.api_key.clone())
+        .with_base_url(config.embedding.base_url.clone())
+        .connect(rig::http_client::ReqwestClient::from(embedding_http));
 
     let qa_api_key = config
         .qa
@@ -57,11 +61,9 @@ pub fn create_rig_clients(
         provider = %config.qa.provider,
         "Creating QA client (chat completions API)"
     );
-    let qa_client = rig::providers::deepseek::Client::builder()
-        .api_key(qa_api_key)
-        .base_url(qa_base_url)
-        .build()
-        .expect("failed to create QA client");
+    let qa_client = OpenAIConfig::with_key(&DEEPSEEK, qa_api_key.to_owned())
+        .with_base_url(qa_base_url.to_owned())
+        .client();
 
     (EmbeddingClient(embedding_client), QaClient(qa_client))
 }

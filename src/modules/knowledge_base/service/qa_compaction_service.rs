@@ -4,8 +4,6 @@
 //! for long-running conversation context management.
 
 use chrono::Utc;
-use rig::client::CompletionClient;
-use rig::completion::Prompt;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
@@ -218,7 +216,7 @@ pub struct CompactHistoryParams {
 #[tracing::instrument(skip(db, qa_client, history, params))]
 pub async fn compact_history(
     db: &sea_orm::DatabaseConnection,
-    qa_client: &rig::providers::deepseek::Client,
+    qa_client: &rig::providers::openai::OpenAI,
     history: &[chat_messages::Model],
     summary_model: &str,
     compaction_threshold: usize,
@@ -313,12 +311,12 @@ pub async fn compact_history(
         "Running compaction LLM call"
     );
 
-    let summary: String = qa_client
-        .agent(summary_model)
+    let summary: String = rig::agent::AgentBuilder::new(qa_client.chat(summary_model))
         .preamble(SUMMARY_PREAMBLE)
         .build()
         .prompt(&prompt)
         .await
+        .map(|response| response.to_string())
         .map_err(|e: rig::completion::PromptError| {
             tracing::error!(error = %e, "Compaction LLM call failed");
             KnowledgeBaseError::ProviderError(e.to_string())

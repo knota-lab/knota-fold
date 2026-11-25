@@ -97,7 +97,7 @@ impl MigrationTrait for Migration {
                      ON file_references (tenant_id, file_id, resource_type, resource_id, field_name) \
                      WHERE deleted_at IS NULL"
                 }
-                sea_orm::DatabaseBackend::MySql => {
+                _ => {
                     // MySQL has no partial indexes; fall back to a non-unique
                     // index and rely on application-layer enforcement. We do
                     // not target MySQL but keep the branch compilable.
@@ -116,7 +116,7 @@ impl MigrationTrait for Migration {
                     "CREATE INDEX IF NOT EXISTS idx_file_refs_active_file \
                      ON file_references (file_id) WHERE deleted_at IS NULL"
                 }
-                sea_orm::DatabaseBackend::MySql => {
+                _ => {
                     "CREATE INDEX IF NOT EXISTS idx_file_refs_active_file \
                      ON file_references (file_id)"
                 }
@@ -131,7 +131,7 @@ impl MigrationTrait for Migration {
                     "CREATE INDEX IF NOT EXISTS idx_file_refs_active_resource \
                      ON file_references (tenant_id, resource_type, resource_id) WHERE deleted_at IS NULL"
                 }
-                sea_orm::DatabaseBackend::MySql => {
+                _ => {
                     "CREATE INDEX IF NOT EXISTS idx_file_refs_active_resource \
                      ON file_references (tenant_id, resource_type, resource_id)"
                 }

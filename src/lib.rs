@@ -2,6 +2,8 @@
 
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
+// loco-rs `Error` is intentionally large; box at API boundaries is not worth the churn.
+#![allow(clippy::result_large_err)]
 
 pub mod app;
 pub mod app_logs;

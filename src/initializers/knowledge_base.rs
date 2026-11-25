@@ -128,7 +128,7 @@ impl Initializer for KnowledgeBaseInitializer {
             url = %kb_config.qdrant.url,
             collection = %kb_config.qdrant.collection_name,
             chat_collection = %kb_config.qdrant.chat_collection_name,
-            "Knowledge base module initialized (rig-core + Qdrant)"
+            "Knowledge base module initialized (rig + Qdrant)"
         );
 
         Ok(())

@@ -87,7 +87,7 @@ pub(crate) async fn detail(
     let id = parse_uuid(id)?;
     let item = api_keys::Model::find_by_id_and_tenant(&ctx.db, id, tc.tenant_id)
         .await?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
     let role_name = load_role_name(&ctx.db, item.role_id, tc.tenant_id).await?;
     format::json(ApiKeyResponse::from_model(&item, role_name))
 }
@@ -119,7 +119,7 @@ pub(crate) async fn update(
     let id = parse_uuid(id)?;
     let item = api_keys::Model::find_by_id_and_tenant(&ctx.db, id, tc.tenant_id)
         .await?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let mut active_model: api_keys::ActiveModel = item.into();
     if let Some(name) = params.name {
@@ -159,7 +159,7 @@ pub(crate) async fn revoke(
     let id = parse_uuid(id)?;
     let item = api_keys::Model::find_by_id_and_tenant(&ctx.db, id, tc.tenant_id)
         .await?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let mut active_model: api_keys::ActiveModel = item.into();
     active_model.revoked_at = ActiveValue::Set(Some(Utc::now().fixed_offset()));
@@ -182,7 +182,7 @@ pub(crate) async fn revoke(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             loco_rs::controller::ErrorDetail::new(
                 "casbin.sync_failed",
-                &format!("Casbin 策略同步失败: {e}"),
+                format!("Casbin 策略同步失败: {e}"),
             ),
         )
     })?;
@@ -222,7 +222,7 @@ pub(crate) async fn change_role(
         roles::Model::find_by_id_and_tenant(&ctx.db, role_id, tc.tenant_id).await?;
     let item = api_keys::Model::find_by_id_and_tenant(&ctx.db, id, tc.tenant_id)
         .await?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let mut active_model: api_keys::ActiveModel = item.into();
     active_model.role_id = ActiveValue::Set(role.id);
@@ -246,7 +246,7 @@ pub(crate) async fn change_role(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             loco_rs::controller::ErrorDetail::new(
                 "casbin.sync_failed",
-                &format!("Casbin 策略同步失败: {e}"),
+                format!("Casbin 策略同步失败: {e}"),
             ),
         )
     })?;

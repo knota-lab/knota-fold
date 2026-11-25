@@ -182,7 +182,7 @@ pub(crate) async fn detail(
     let item =
         api_key_exchange_tokens::Model::find_by_id_and_tenant(&ctx.db, id, tc.tenant_id)
             .await?
-            .or_err(crate::error_info::common::NOT_FOUND)?;
+            .or_err_into(crate::error_info::common::NOT_FOUND)?;
     let role = load_role(&ctx.db, item.role_id, tc.tenant_id).await?;
     format::json(ExchangeTokenResponse::from_model(&item, role.name))
 }
@@ -318,7 +318,7 @@ pub(crate) async fn exchange_key(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             loco_rs::controller::ErrorDetail::new(
                 "casbin.sync_failed",
-                &format!("Casbin 策略同步失败: {e}"),
+                format!("Casbin 策略同步失败: {e}"),
             ),
         )
     })?;

@@ -193,7 +193,7 @@ fn classify_db_err(err: &DbErr) -> (StatusCode, &'static str, &'static str) {
     )
 }
 
-const fn extract_sqlx_error(err: &DbErr) -> Option<&sqlx::Error> {
+fn extract_sqlx_error(err: &DbErr) -> Option<&sqlx::Error> {
     match err {
         DbErr::Exec(RuntimeErr::SqlxError(e))
         | DbErr::Query(RuntimeErr::SqlxError(e))
@@ -396,7 +396,7 @@ impl<T, E> ErrIntoDesc<T> for Result<T, E> {
     }
 }
 
-// ─── .or_err() — Option → loco Result ──────────────────────────────
+// ─── .or_err_into() — Option → loco Result ──────────────────────────────
 
 /// Convert `Option<T>` into `loco_rs::Result<T>` using an `ErrorInfo`.
 ///
@@ -407,16 +407,16 @@ impl<T, E> ErrIntoDesc<T> for Result<T, E> {
 /// .ok_or_else(|| from_info(error_info::role::NOT_FOUND))?
 ///
 /// // After
-/// .or_err(error_info::role::NOT_FOUND)?
+/// .or_err_into(error_info::role::NOT_FOUND)?
 /// ```
 pub trait OptionErrInto<T> {
     #[track_caller]
-    fn or_err(self, info: crate::error_info::ErrorInfo) -> Result<T>;
+    fn or_err_into(self, info: crate::error_info::ErrorInfo) -> Result<T>;
 }
 
 impl<T> OptionErrInto<T> for Option<T> {
     #[track_caller]
-    fn or_err(self, info: crate::error_info::ErrorInfo) -> Result<T> {
+    fn or_err_into(self, info: crate::error_info::ErrorInfo) -> Result<T> {
         self.map_or_else(|| Err(crate::views::errors::from_info(info)), Ok)
     }
 }

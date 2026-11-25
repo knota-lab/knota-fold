@@ -60,7 +60,7 @@ pub async fn delete_entry_cascade(
         .one(&ctx.db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let before = serde_json::json!({
         "namespace": entry.namespace,

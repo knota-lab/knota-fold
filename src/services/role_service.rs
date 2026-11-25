@@ -236,7 +236,7 @@ pub async fn toggle_role_status(
         .one(db)
         .await
         .db_err()?
-        .or_err(crate::error_info::role::NOT_FOUND)?;
+        .or_err_into(crate::error_info::role::NOT_FOUND)?;
     let before = RoleAuditSnapshot::from(&existing);
 
     let role = roles_model::Model::toggle_status(db, id, tenant_id, new_status)

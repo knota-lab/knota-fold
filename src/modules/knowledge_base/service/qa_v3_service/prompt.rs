@@ -133,7 +133,7 @@ fn build_chat_history(
     history: &[chat_messages::Model],
 ) -> Vec<rig::completion::message::Message> {
     use rig::completion::message::{AssistantContent, Message};
-    use rig::OneOrMany;
+    use rig::message::{CallId, ToolName};
 
     let mut messages = Vec::new();
 
@@ -149,7 +149,7 @@ fn build_chat_history(
                     {
                         if !tool_calls.is_empty() {
                             let mut assistant_parts: Vec<AssistantContent> = Vec::new();
-                            let mut tool_results: Vec<(String, String, String)> =
+                            let mut tool_results: Vec<(String, ToolName, String)> =
                                 Vec::new();
 
                             if !msg.content.is_empty() {
@@ -177,38 +177,37 @@ fn build_chat_history(
 
                                 // Use tool_call_with_call_id to satisfy Ollama's
                                 // OpenAI Responses API requirement (call_id is mandatory).
-                                assistant_parts.push(
-                                    AssistantContent::tool_call_with_call_id(
-                                        &tool_call_id,
-                                        tool_call_id.clone(),
-                                        tool_name,
-                                        tc.get("arguments")
-                                            .cloned()
-                                            .unwrap_or_else(|| serde_json::json!({})),
-                                    ),
-                                );
+                                let typed_name =
+                                    ToolName::new(tool_name).unwrap_or_else(|_| {
+                                        ToolName::new("unknown").expect("non-empty")
+                                    });
+                                assistant_parts.push(AssistantContent::tool_call(
+                                    &tool_call_id,
+                                    typed_name.clone(),
+                                    tc.get("arguments")
+                                        .cloned()
+                                        .unwrap_or_else(|| serde_json::json!({})),
+                                ));
 
                                 tool_results.push((
-                                    tool_call_id.clone(),
                                     tool_call_id,
+                                    typed_name,
                                     format!("[历史工具调用结果] {result_preview}"),
                                 ));
                             }
 
                             if !assistant_parts.is_empty() {
-                                messages.push(Message::Assistant {
-                                    id: None,
-                                    content: OneOrMany::many(assistant_parts)
-                                        .unwrap_or_else(|_| {
-                                            OneOrMany::one(AssistantContent::text(""))
-                                        }),
-                                });
+                                messages.push(Message::Assistant(
+                                    rig::completion::message::AssistantMessage::new(
+                                        assistant_parts,
+                                    ),
+                                ));
                             }
 
-                            for (id, call_id, result_text) in tool_results {
-                                messages.push(Message::tool_result_with_call_id(
-                                    id,
-                                    Some(call_id),
+                            for (call_id, tool_name, result_text) in tool_results {
+                                messages.push(Message::tool_result(
+                                    CallId::from_wire(call_id),
+                                    tool_name,
                                     result_text,
                                 ));
                             }

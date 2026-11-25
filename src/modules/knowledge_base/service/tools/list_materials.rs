@@ -4,8 +4,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig::tool::{Tool, ToolContext};
 
 use super::MaterialRegistry;
 
@@ -52,20 +51,24 @@ impl Tool for ListMaterialsTool {
     type Args = ListMaterialsArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "列出当前会话中所有可用的材料（文档和内联文本）。返回每份材料的 ID、标题、字符数、行数和类型。".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        }
+    fn description(&self) -> String {
+        "列出当前会话中所有可用的材料（文档和内联文本）。返回每份材料的 ID、标题、字符数、行数和类型。".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
     }
 
     #[tracing::instrument(skip(self, _args))]
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _ctx: &mut ToolContext,
+        _args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let materials = self.registry.all_materials();
 
         if materials.is_empty() {

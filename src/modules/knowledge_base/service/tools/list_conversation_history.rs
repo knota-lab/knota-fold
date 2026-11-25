@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig::tool::{Tool, ToolContext};
 
 use crate::modules::knowledge_base::service::chat_service;
 
@@ -60,20 +59,24 @@ impl Tool for ListConversationHistoryTool {
     type Args = ListConversationHistoryArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "浏览当前会话的对话历史概览。返回每轮对话的摘要（角色、内容前 100 字符、字符数、是否含工具调用），帮助你快速定位想回顾的轮次。".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        }
+    fn description(&self) -> String {
+        "浏览当前会话的对话历史概览。返回每轮对话的摘要（角色、内容前 100 字符、字符数、是否含工具调用），帮助你快速定位想回顾的轮次。".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
     }
 
     #[tracing::instrument(skip(self, _args))]
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _ctx: &mut ToolContext,
+        _args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let messages = chat_service::get_session_messages(
             &self.db,
             self.session_id,

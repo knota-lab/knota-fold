@@ -20,6 +20,7 @@ use loco_rs::{
     controller::ErrorDetail,
     prelude::{model::query, *},
 };
+use sea_orm::ExprTrait;
 use sea_orm::{
     sea_query::{Expr, OnConflict, Query},
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -364,7 +365,7 @@ pub async fn get_by_id<C: ConnectionTrait>(
         .one(db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)
+        .or_err_into(crate::error_info::common::NOT_FOUND)
 }
 
 #[tracing::instrument(skip_all)]
@@ -418,7 +419,7 @@ pub async fn sys_get_by_id<C: ConnectionTrait>(
         .one(db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)
+        .or_err_into(crate::error_info::common::NOT_FOUND)
 }
 
 /// POST /api/files — direct (small) upload.
@@ -531,16 +532,11 @@ async fn insert_and_resolve_conflict(
     params: &SmallUploadRequest,
 ) -> loco_rs::Result<files::Model> {
     let insert_result = files::Entity::insert(active_model)
-        .on_conflict(
-            OnConflict::columns([
-                files::Column::TenantId,
-                files::Column::ContentHash,
-                files::Column::Size,
-            ])
-            .do_nothing()
-            .to_owned(),
-        )
-        .do_nothing()
+        .on_conflict_do_nothing_on([
+            files::Column::TenantId,
+            files::Column::ContentHash,
+            files::Column::Size,
+        ])
         .exec(&txn)
         .await;
 
@@ -973,7 +969,7 @@ pub async fn soft_delete(
         .one(&txn)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if model.deleted_at.is_some() || model.status == DELETED_STATUS {
         return Err(crate::views::errors::err_custom(
@@ -1027,7 +1023,7 @@ pub async fn restore(
         .one(&txn)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if model.deleted_at.is_none() || model.status != DELETED_STATUS {
         return Err(crate::views::errors::err_custom(
@@ -1095,7 +1091,7 @@ pub async fn get_download_url(
         .one(&ctx.db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
     let s3_client = require_shared_s3_client(ctx)?;
 
     let presign_config =
@@ -1147,7 +1143,7 @@ pub async fn sys_get_download_url(
         .one(&ctx.db)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
     let s3_client = require_shared_s3_client(ctx)?;
 
     let presign_config =

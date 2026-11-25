@@ -124,6 +124,6 @@ impl Task for BootstrapAdmin {
 fn resolve(vars: &task::Vars, arg: &str, env: &str) -> Option<String> {
     vars.cli_arg(arg)
         .ok()
-        .cloned()
+        .map(str::to_owned)
         .or_else(|| std::env::var(env).ok())
 }

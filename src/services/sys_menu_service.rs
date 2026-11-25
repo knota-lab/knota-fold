@@ -199,7 +199,7 @@ pub async fn delete_sys_menu(
         .one(db)
         .await
         .model_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
     let before = SysMenuAuditSnapshot::from(&existing);
 
     // Check for active children

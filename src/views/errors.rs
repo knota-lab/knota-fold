@@ -86,7 +86,7 @@ pub fn from_info_with_desc(
         info.status().as_u16(),
         "error constructed with custom description"
     );
-    Error::CustomError(info.status(), ErrorDetail::new(info.code(), &desc.into()))
+    Error::CustomError(info.status(), ErrorDetail::new(info.code(), desc.into()))
 }
 
 /// Build a `CustomError` from raw parts. Replaces the 9 identical `fn custom_error`

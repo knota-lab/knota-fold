@@ -92,7 +92,7 @@ pub async fn get_password_iat(
     let user = users::Entity::find_by_id(user_id)
         .one(db)
         .await?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let ts = user
         .password_changed_at
@@ -118,7 +118,7 @@ pub async fn get_user_profile(
     let user = users::Entity::find_by_id(user_id)
         .one(db)
         .await?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let profile = CachedUserProfile::from_model(&user);
     let _ = cache.insert_with_expiry(&key, &profile, PROFILE_TTL).await;

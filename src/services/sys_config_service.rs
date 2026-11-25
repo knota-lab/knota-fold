@@ -252,7 +252,7 @@ pub async fn update_global_config(
     let existing = sys_configs_model::Model::find_global_by_key(&ctx.db, key)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     validate_value(&params.value, &existing.value_type)?;
 
@@ -309,7 +309,7 @@ pub async fn delete_global_config(
     let existing = sys_configs_model::Model::find_global_by_key(&ctx.db, key)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let before = serde_json::json!({
         "key": existing.key,
@@ -449,7 +449,7 @@ pub async fn delete_tenant_config(
     let existing = sys_configs_model::Model::find_tenant_by_key(&ctx.db, key, tenant_id)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let before = serde_json::json!({
         "key": existing.key,

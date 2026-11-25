@@ -5,10 +5,11 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+
+use rig::message::ToolName;
+use rig::tool::{DynamicTool, ToolExecutionError, ToolOutput};
 
 use super::tool_result_broker::{ReceiverError, ToolResultBroker, ToolResultReceiver};
 use crate::modules::knowledge_base::service::qa_stream_types::QaEvent;
@@ -108,28 +109,31 @@ pub struct FrontendToolStub {
     pub sse_tx: mpsc::Sender<String>,
 }
 
-impl Tool for FrontendToolStub {
-    const NAME: &'static str = "frontend_tool_stub";
+impl FrontendToolStub {
+    /// Build a runtime-named rig tool. Frontend tools get their name from the
+    /// page capability registry, so they cannot use `Tool`'s const `NAME`.
+    #[must_use]
+    pub fn into_dynamic(self) -> DynamicTool {
+        let name = ToolName::new(self.name.clone())
+            .expect("frontend tool names are validated to be non-empty");
+        let description = self.description.clone();
+        let parameters = self.parameters.clone();
 
-    type Error = FrontendToolError;
-    type Args = FrontendToolArgs;
-    type Output = String;
-
-    /// Override the default name-based routing with the dynamic name.
-    fn name(&self) -> String {
-        self.name.clone()
-    }
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: self.name.clone(),
-            description: self.description.clone(),
-            parameters: self.parameters.clone(),
-        }
+        DynamicTool::new(name, description, parameters, move |args_value| {
+            let this = self.clone();
+            Box::pin(async move {
+                let args: FrontendToolArgs = serde_json::from_value(args_value)
+                    .map_err(|e| ToolExecutionError::invalid_args(e.to_string()))?;
+                this.execute(args)
+                    .await
+                    .map(ToolOutput::text)
+                    .map_err(|e| ToolExecutionError::other(e.to_string()))
+            })
+        })
     }
 
     #[tracing::instrument(skip(self, args))]
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn execute(&self, args: FrontendToolArgs) -> Result<String, FrontendToolError> {
         // 1. Generate unique call_id
         let call_id = format!("page-{}", uuid::Uuid::now_v7().simple());
 

@@ -34,9 +34,6 @@ use crate::services::worker_run_service::{
     KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION, KNOWLEDGE_BASE_INDEXING_WORKER_NAME,
 };
 use crate::utils::mime::detect_mime;
-use rig::client::EmbeddingsClient;
-use rig::embeddings::EmbeddingModel;
-
 const MAX_INDEX_FILE_BYTES: i64 = 50 * 1024 * 1024;
 const EMBEDDING_PROGRESS_BATCH_SIZE: usize = 16;
 const LEGACY_TEXT_SOURCE_TYPES: &[&str] = &["kb_upload", "chat_upload", "api", "sync"];
@@ -1009,7 +1006,7 @@ async fn generate_embeddings(
     p: &PipelineParams<'_>,
     chunks: &[chunking_service::RawChunk],
 ) -> Result<Vec<rig::embeddings::Embedding>> {
-    let model = p.embedding_client.0.embedding_model(p.embedding_model_name);
+    let model = p.embedding_client.0.embedding(p.embedding_model_name, None);
     let embedding_span = tracing::info_span!(
         "kb.index.embedding",
         document_id = %p.document_id,
@@ -1030,10 +1027,14 @@ async fn generate_embeddings(
             .iter()
             .map(|chunk| chunk.content.clone())
             .collect();
-        let batch_embeddings = model.embed_texts(texts).await.map_err(|e| {
-            KnowledgeBaseError::EmbeddingError(format!("embedding failed: {e}"))
-                .to_loco_error()
-        })?;
+        let batch_embeddings = model
+            .call(texts)
+            .await
+            .map(|response| response.embeddings)
+            .map_err(|e| {
+                KnowledgeBaseError::EmbeddingError(format!("embedding failed: {e}"))
+                    .to_loco_error()
+            })?;
         embeddings.extend(batch_embeddings);
         update_embedding_progress(db, p, embeddings.len(), total_chunks).await;
     }

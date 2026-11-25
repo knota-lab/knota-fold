@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig::tool::{Tool, ToolContext};
 
 use super::{DocumentContent, InlineText, MaterialRegistry};
 
@@ -97,36 +96,40 @@ impl Tool for ReadMaterialTool {
     type Args = ReadMaterialArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "读取指定材料的内容。可以指定起始行和结束行来分页浏览，每次最多读取 500 行。行号为 1-indexed。".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "material_id": {
-                        "type": "string",
-                        "description": "材料的 ID（文档 UUID 或内联文本 ID）"
-                    },
-                    "start_line": {
-                        "type": "integer",
-                        "description": "起始行号（1-indexed，默认为 1）"
-                    },
-                    "end_line": {
-                        "type": "integer",
-                        "description": "结束行号（1-indexed，默认为 start_line + 500）"
-                    }
+    fn description(&self) -> String {
+        "读取指定材料的内容。可以指定起始行和结束行来分页浏览，每次最多读取 500 行。行号为 1-indexed。".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "material_id": {
+                    "type": "string",
+                    "description": "材料的 ID（文档 UUID 或内联文本 ID）"
                 },
-                "required": ["material_id"]
-            }),
-        }
+                "start_line": {
+                    "type": "integer",
+                    "description": "起始行号（1-indexed，默认为 1）"
+                },
+                "end_line": {
+                    "type": "integer",
+                    "description": "结束行号（1-indexed，默认为 start_line + 500）"
+                }
+            },
+            "required": ["material_id"]
+        })
     }
 
     #[tracing::instrument(
         skip(self, args),
         fields(tool = "read_material", material_id = %args.material_id)
     )]
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _ctx: &mut ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         // Resolve material: try UUID first, then inline ID
         let material = match Uuid::parse_str(&args.material_id) {
             Ok(uuid) => self

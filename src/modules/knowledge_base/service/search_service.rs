@@ -29,11 +29,8 @@ pub async fn hybrid_search(
     search_provider: &SharedSearchProvider,
     params: &HybridSearchParams,
 ) -> Result<Vec<SearchResult>, KnowledgeBaseError> {
-    use rig::client::EmbeddingsClient;
-    use rig::embeddings::EmbeddingModel;
-
     // Embed the query
-    let model = embedding_client.0.embedding_model(&params.model_name);
+    let model = embedding_client.0.embedding(&params.model_name, None);
     let embedding: rig::embeddings::Embedding = model
         .embed_text(&params.query)
         .await

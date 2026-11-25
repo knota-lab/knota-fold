@@ -207,7 +207,7 @@ pub async fn toggle_user_status(
         .filter(users::Column::TenantId.eq(tenant_id))
         .one(db)
         .await?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     if new_status == "disabled" {
         // Guard 1: Admins cannot disable themselves

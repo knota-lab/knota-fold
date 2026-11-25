@@ -192,7 +192,7 @@ pub(crate) async fn sync_user_roles(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::role::NOT_FOUND)?;
+        .or_err_into(crate::error_info::role::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_user.tenant_id != tc.tenant_id {
         return crate::views::errors::role::cross_tenant("分配角色");
@@ -243,7 +243,7 @@ pub(crate) async fn sync_role_permissions(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::role::NOT_FOUND)?;
+        .or_err_into(crate::error_info::role::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_role.tenant_id != tc.tenant_id {
         return crate::views::errors::role::cross_tenant("分配权限");
@@ -287,7 +287,7 @@ pub(crate) async fn get_role_permissions(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::role::NOT_FOUND)?;
+        .or_err_into(crate::error_info::role::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_role.tenant_id != tc.tenant_id {
         return crate::views::errors::role::cross_tenant("查看权限");
@@ -321,7 +321,7 @@ pub(crate) async fn assignable_permissions(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::role::NOT_FOUND)?;
+        .or_err_into(crate::error_info::role::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_role.tenant_id != tc.tenant_id {
         return crate::views::errors::role::cross_tenant("查看权限");
@@ -362,7 +362,7 @@ pub(crate) async fn get_role_menus(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::role::NOT_FOUND)?;
+        .or_err_into(crate::error_info::role::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_role.tenant_id != tc.tenant_id {
         return crate::views::errors::role::cross_tenant("查看菜单");
@@ -397,7 +397,7 @@ pub(crate) async fn sync_role_menus(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::role::NOT_FOUND)?;
+        .or_err_into(crate::error_info::role::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_role.tenant_id != tc.tenant_id {
         return crate::views::errors::role::cross_tenant("同步菜单");
@@ -439,7 +439,7 @@ pub(crate) async fn assignable_menus(
         .one(&ctx.db)
         .await
         .model_err()?
-        .or_err(crate::error_info::role::NOT_FOUND)?;
+        .or_err_into(crate::error_info::role::NOT_FOUND)?;
 
     if !tc.is_super_admin && target_role.tenant_id != tc.tenant_id {
         return crate::views::errors::role::cross_tenant("查看菜单");

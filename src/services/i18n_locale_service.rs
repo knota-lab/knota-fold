@@ -147,7 +147,7 @@ pub async fn update(
     let existing = locales_model::Model::find_by_locale(&ctx.db, locale)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let before = serde_json::json!({
         "locale": existing.locale,
@@ -209,7 +209,7 @@ pub async fn delete(
     let existing = locales_model::Model::find_by_locale(&ctx.db, locale)
         .await
         .db_err()?
-        .or_err(crate::error_info::common::NOT_FOUND)?;
+        .or_err_into(crate::error_info::common::NOT_FOUND)?;
 
     let before = serde_json::json!({
         "locale": existing.locale,
