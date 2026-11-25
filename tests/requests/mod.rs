@@ -12,6 +12,7 @@ mod multi_tenant;
 mod notifications;
 mod permissions;
 mod prepare_data;
+mod qa_smoke;
 mod roles;
 pub mod sys_file_uploads;
 mod sys_files;
