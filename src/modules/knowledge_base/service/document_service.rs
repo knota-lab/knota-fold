@@ -371,6 +371,15 @@ pub async fn soft_delete_document(
     active.update(db).await.db_err()
 }
 
+/// Rows per multi-row INSERT.
+///
+/// SQLite allows at most 32,766 bound parameters per statement (older builds
+/// 999); PostgreSQL allows 65,535. With 6 columns per `document_lines` row and
+/// 11 per `kb_chunks` row, 500 rows stays well below both limits. A large PDF
+/// can easily produce tens of thousands of lines, so inserting everything in
+/// one statement fails with "too many SQL variables".
+const INSERT_BATCH_ROWS: usize = 500;
+
 /// Batch insert `kb_chunks` records.
 #[tracing::instrument(skip(db, chunks))]
 pub async fn insert_chunks(
@@ -380,10 +389,12 @@ pub async fn insert_chunks(
     if chunks.is_empty() {
         return Ok(());
     }
-    kb_chunks::Entity::insert_many(chunks)
-        .exec(db)
-        .await
-        .db_err()?;
+    for batch in chunks.chunks(INSERT_BATCH_ROWS) {
+        kb_chunks::Entity::insert_many(batch.to_vec())
+            .exec(db)
+            .await
+            .db_err()?;
+    }
     Ok(())
 }
 
@@ -396,10 +407,12 @@ pub async fn insert_lines(
     if lines.is_empty() {
         return Ok(());
     }
-    document_lines::Entity::insert_many(lines)
-        .exec(db)
-        .await
-        .db_err()?;
+    for batch in lines.chunks(INSERT_BATCH_ROWS) {
+        document_lines::Entity::insert_many(batch.to_vec())
+            .exec(db)
+            .await
+            .db_err()?;
+    }
     Ok(())
 }
 
