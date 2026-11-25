@@ -487,8 +487,7 @@ fn estimate_tokens(text: &str) -> i32 {
 /// Count tokens using the `cl100k_base` tokenizer.
 fn count_tokens(text: &str) -> i32 {
     let bpe = cl100k_base_singleton();
-    let locked = bpe.lock();
-    i32::try_from(locked.encode_with_special_tokens(text).len()).unwrap_or(i32::MAX)
+    i32::try_from(bpe.encode_with_special_tokens(text).len()).unwrap_or(i32::MAX)
 }
 
 /// Render a start tag back to Markdown-ish source text.

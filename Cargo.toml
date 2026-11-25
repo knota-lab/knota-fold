@@ -64,9 +64,9 @@ sha2 = "0.11"
 # Wave 2 - Knowledge base (Qdrant + rig + parsing)
 rig = { version = "0.47", default-features = false, features = ["agent", "reqwest", "rustls"] }
 dotenvy = "0.15"
-qdrant-client = "1.17"
-pulldown-cmark = "0.12"
-tiktoken-rs = "0.6"
+qdrant-client = "1.20"
+pulldown-cmark = "0.13"
+tiktoken-rs = "0.12"
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
 
 [[bin]]
