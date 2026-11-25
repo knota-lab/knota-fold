@@ -17,7 +17,7 @@ loco-rs = { version = "1.3" }
 loco-rs = { workspace = true, features = ["cache_redis"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
-tokio = { version = "1.45", default-features = false, features = [
+tokio = { version = "1.54", default-features = false, features = [
   "rt-multi-thread",
 ] }
 dashmap = "6"
@@ -27,7 +27,7 @@ tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-opentelemetry = { version = "0.29" }
 opentelemetry = { version = "0.28" }
-regex = { version = "1.11" }
+regex = { version = "1.13" }
 num-traits = "0.2"
 migration = { path = "migration" }
 sea-orm = { version = "2.0", features = [
@@ -38,7 +38,7 @@ sea-orm = { version = "2.0", features = [
 ] }
 chrono = { version = "0.4" }
 validator = { version = "0.20" }
-uuid = { version = "1.6", features = ["v4", "v7", "serde"] }
+uuid = { version = "1.29", features = ["v4", "v7", "serde"] }
 casbin = { version = "2", default-features = false, features = ["runtime-tokio"] }
 sea-orm-adapter = { path = "vendor/sea-orm-adapter", default-features = false, features = ["runtime-tokio-rustls"] }
 include_dir = { version = "0.7" }
@@ -56,18 +56,18 @@ tokio-util = { version = "0.7", features = ["io"] }
 tree_magic_mini = { version = "3" }
 # Stateless CAPTCHA for login (image + JWT-encoded answer, no server-side state)
 captcha-rs = { version = "0.5", features = ["stateless"] }
-flume = "0.11"
+flume = "0.12"
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "runtime-tokio", "derive"] }
-base64 = "0.22"
-cron = "0.15"
-sha2 = "0.10"
+base64 = "0.23"
+cron = "0.17"
+sha2 = "0.11"
 # Wave 2 - Knowledge base (Qdrant + rig + parsing)
 rig = { version = "0.47", default-features = false, features = ["agent", "reqwest", "rustls"] }
 dotenvy = "0.15"
 qdrant-client = "1.17"
 pulldown-cmark = "0.12"
 tiktoken-rs = "0.6"
-reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
 
 [[bin]]
 name = "knota_fold-cli"
