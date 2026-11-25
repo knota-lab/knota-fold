@@ -75,32 +75,25 @@ jobs:
     steps:
       - name: Checkout the code
         uses: actions/checkout@v4
-      - name: Start MinIO
+      - name: Start LocalStack S3
         run: |
-          docker run -d --name minio \
-            -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            quay.io/minio/minio:latest server /data
+          docker run -d --name localstack \
+            -p 4566:4566 \
+            -e SERVICES=s3 \
+            -e DEBUG=0 \
+            localstack/localstack:3
 
           for i in {1..30}; do
-            if curl -fsS http://localhost:9000/minio/health/ready; then
+            if curl -fsS http://localhost:4566/_localstack/health; then
               exit 0
             fi
             sleep 2
           done
 
-          docker logs minio
+          docker logs localstack
           exit 1
-      - name: Create MinIO test bucket
-        run: |
-          docker run --rm --network host \
-            --entrypoint /bin/sh \
-            quay.io/minio/mc:latest -c "
-            mc alias set local http://localhost:9000 minioadmin minioadmin;
-            mc mb --ignore-existing local/knota-fold-test;
-            exit 0;
-            "
+      - name: Create LocalStack test bucket
+        run: docker exec localstack awslocal s3 mb s3://knota-fold-test
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -111,10 +104,11 @@ jobs:
         env:
           REDIS_URL: redis://localhost:${{job.services.redis.ports[6379]}}
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres_test
-          S3_ENDPOINT: http://localhost:9000
-          S3_ACCESS_KEY: minioadmin
-          S3_SECRET_KEY: minioadmin
+          S3_ENDPOINT: http://localhost:4566
+          S3_ACCESS_KEY: test
+          S3_SECRET_KEY: test
           S3_BUCKET: knota-fold-test
+          S3_TEST_BUCKET: knota-fold-test
           S3_FORCE_PATH_STYLE: true
           S3_REGION: us-east-1
 

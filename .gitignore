@@ -29,3 +29,6 @@ data/docker/
 .env
 .env.staging
 .env.prod
+
+# OpenIDE local state
+.openidea/

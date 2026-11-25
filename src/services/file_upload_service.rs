@@ -1464,7 +1464,6 @@ async fn upsert_part_and_finalize(
     Ok(response)
 }
 
-#[must_use]
 pub fn complete_upload<'a>(
     ctx: &'a AppContext,
     tenant_id: Uuid,

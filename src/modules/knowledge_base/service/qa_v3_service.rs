@@ -1180,6 +1180,9 @@ async fn send_completed_event(
 /// 4. Streaming loop
 /// 5. Persistence
 /// 6. Complete
+// `()` is an internal sentinel: the streaming task only needs to know whether
+// the turn failed, and the caller logs the failure.
+#[allow(clippy::result_unit_err)]
 #[tracing::instrument(
     skip(db, embedding_client, qa_client, params),
     fields(tenant_id = %params.tenant_id, user_id = %params.user_id)

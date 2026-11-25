@@ -56,8 +56,7 @@ jobs:
       EMBEDDING_MODEL: ${{ github.event.inputs.embedding_model || vars.EMBEDDING_MODEL || 'bge-m3' }}
       EMBEDDING_DIMENSION: ${{ github.event.inputs.embedding_dimension || vars.EMBEDDING_DIMENSION || '1024' }}
       QDRANT_IMAGE: ${{ vars.QDRANT_IMAGE || 'qdrant/qdrant:latest' }}
-      MINIO_IMAGE: ${{ vars.MINIO_IMAGE || 'quay.io/minio/minio:latest' }}
-      MC_IMAGE: ${{ vars.MC_IMAGE || 'quay.io/minio/mc:latest' }}
+      LOCALSTACK_IMAGE: ${{ vars.LOCALSTACK_IMAGE || 'localstack/localstack:3' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -75,24 +74,20 @@ jobs:
           docker logs qa-smoke-qdrant
           exit 1
 
-      - name: Start MinIO and create the smoke bucket
+      - name: Start LocalStack S3 and create the smoke bucket
         run: |
-          docker run -d --name qa-smoke-minio \
-            -p 19000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            "$MINIO_IMAGE" server /data
+          docker run -d --name qa-smoke-localstack \
+            -p 19000:4566 \
+            -e SERVICES=s3 \
+            -e DEBUG=0 \
+            "$LOCALSTACK_IMAGE"
           for i in {1..30}; do
-            if curl -fsS http://localhost:19000/minio/health/ready; then
+            if curl -fsS http://localhost:19000/_localstack/health; then
               break
             fi
             sleep 2
           done
-          docker run --rm --network host --entrypoint /bin/sh \
-            "$MC_IMAGE" -c "
-              mc alias set local http://localhost:19000 minioadmin minioadmin;
-              mc mb --ignore-existing local/knota-fold-test-smoke;
-              exit 0;"
+          docker exec qa-smoke-localstack awslocal s3 mb s3://knota-fold-test-smoke
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -110,8 +105,8 @@ jobs:
           QA_LLM_PROVIDER: ollama
           QDRANT_URL: http://localhost:16334
           S3_ENDPOINT: http://localhost:19000
-          S3_ACCESS_KEY: minioadmin
-          S3_SECRET_KEY: minioadmin
+          S3_ACCESS_KEY: test
+          S3_SECRET_KEY: test
           S3_TEST_BUCKET: knota-fold-test-smoke
           S3_FORCE_PATH_STYLE: "true"
           S3_REGION: us-east-1
@@ -121,8 +116,8 @@ jobs:
         if: failure()
         run: |
           docker logs qa-smoke-qdrant || true
-          docker logs qa-smoke-minio || true
+          docker logs qa-smoke-localstack || true
 
       - name: Cleanup
         if: always()
-        run: docker rm -f qa-smoke-qdrant qa-smoke-minio || true
+        run: docker rm -f qa-smoke-qdrant qa-smoke-localstack || true

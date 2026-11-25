@@ -218,7 +218,8 @@ where
                     }
                     Ok(response)
                 }
-                Err(e) => Err(e),
+                // `inner` is an axum Router whose error type is Infallible.
+                Err(never) => match never {},
             }
         })
     }
