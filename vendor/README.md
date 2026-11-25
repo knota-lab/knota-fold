@@ -7,7 +7,8 @@ pre-1.0 Loco / SeaORM. Remove them once upstream ships compatible versions.
 
 - Upstream: <https://github.com/loco-rs/loco-openapi-Initializer> (last commit 2025-08)
 - Patch: `loco-rs` dependency `0.16` → `1.3` (source unchanged; compiles against
-  Loco 1.3 with axum 0.8).
+  Loco 1.3 with axum 0.8). It now uses `utoipa` 6, `utoipa-axum` 0.3,
+  `utoipa-swagger-ui` 10, `utoipa-redoc` 7 and `utoipa-scalar` 0.4.
 - Consumed by ~37 controller/route files through `loco_openapi::prelude::*` and
   the `openapi(...)` / `routes!(...)` helpers.
 

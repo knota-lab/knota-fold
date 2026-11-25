@@ -63,24 +63,24 @@ features = ["derive"]
 version = "1"
 
 [dependencies.utoipa]
-version = "5.0.0"
+version = "6.0.0"
 features = ["yaml"]
 
 [dependencies.utoipa-axum]
-version = "0.2.0"
+version = "0.3.0"
 
 [dependencies.utoipa-redoc]
-version = "6.0.0"
+version = "7.0.0"
 features = ["axum"]
 optional = true
 
 [dependencies.utoipa-scalar]
-version = "0.3.0"
+version = "0.4.0"
 features = ["axum"]
 optional = true
 
 [dependencies.utoipa-swagger-ui]
-version = "9.0.0"
+version = "10.0.2"
 features = [
     "axum",
     "vendored",

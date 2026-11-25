@@ -25,8 +25,6 @@ async-trait = { version = "0.1" }
 axum = { version = "0.8" }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-opentelemetry = { version = "0.29" }
-opentelemetry = { version = "0.28" }
 regex = { version = "1.13" }
 num-traits = "0.2"
 migration = { path = "migration" }
@@ -42,7 +40,7 @@ uuid = { version = "1.29", features = ["v4", "v7", "serde"] }
 casbin = { version = "2", default-features = false, features = ["runtime-tokio"] }
 sea-orm-adapter = { path = "vendor/sea-orm-adapter", default-features = false, features = ["runtime-tokio-rustls"] }
 include_dir = { version = "0.7" }
-utoipa = { version = "5", features = ["macros", "uuid"] }
+utoipa = { version = "6", features = ["macros", "uuid"] }
 loco-openapi = { path = "vendor/loco-openapi", features = ["full"] }
 futures-util = { version = "0.3" }
 tower = { version = "0.5" }
