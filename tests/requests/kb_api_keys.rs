@@ -353,3 +353,195 @@ async fn issue_api_key(
         plain_key: body["apiKey"].as_str().unwrap().to_string(),
     }
 }
+
+#[tokio::test]
+#[serial]
+async fn api_key_exchanges_for_short_lived_jwt() {
+    request::<App, _, _>(|request, ctx| async move {
+        let super_admin = prepare_data::login_super_admin(&request, &ctx).await;
+        let admin = prepare_data::create_tenant_and_login_admin(
+            &request,
+            &super_admin.token,
+            "API key JWT exchange tenant",
+            "API_KEY_JWT_EXCHANGE",
+            "api-key-jwt-exchange@test.com",
+            "admin1234",
+            "API key JWT exchange admin",
+        )
+        .await;
+        let role_id = find_role_id(
+            &request,
+            &admin.token,
+            "API_KEY_JWT_EXCHANGE",
+            "TENANT_ADMIN",
+        )
+        .await;
+        let api_key =
+            issue_api_key(&request, &admin.token, &role_id, "JWT exchange key").await;
+
+        let (key, value) = prepare_data::auth_header(&api_key.plain_key);
+        let exchange_response = request
+            .post("/api/auth/api-key/exchange")
+            .add_header(key, value)
+            .await;
+        assert_eq!(
+            exchange_response.status_code(),
+            200,
+            "API key exchange should succeed: {}",
+            exchange_response.text()
+        );
+        let body: serde_json::Value =
+            serde_json::from_str(&exchange_response.text()).unwrap();
+        let token = body["token"]
+            .as_str()
+            .expect("exchange response should contain token")
+            .to_string();
+        assert_eq!(body["tokenType"].as_str(), Some("Bearer"));
+        assert_eq!(body["apiKeyId"].as_str(), Some(api_key.id.as_str()));
+        assert!(body["expiresIn"].as_u64().unwrap_or_default() > 0);
+        assert!(
+            body["expiresIn"].as_u64().unwrap_or_default() <= 300,
+            "session token should be short-lived"
+        );
+
+        let payload = token.split('.').nth(1).expect("JWT payload segment");
+        use base64::Engine as _;
+        let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .expect("JWT payload should be base64url");
+        let claims: serde_json::Value =
+            serde_json::from_slice(&decoded).expect("JWT payload should be JSON");
+        assert_eq!(claims["auth_type"].as_str(), Some("api_key"));
+        assert_eq!(claims["api_key_id"].as_str(), Some(api_key.id.as_str()));
+        assert_eq!(claims["role"].as_str(), Some("TENANT_ADMIN"));
+
+        let (key, value) = prepare_data::auth_header(&token);
+        let list_response = request
+            .get("/api/kb-libraries")
+            .add_header(key, value)
+            .await;
+        assert_eq!(
+            list_response.status_code(),
+            200,
+            "exchanged JWT should access KB libraries: {}",
+            list_response.text()
+        );
+
+        let (key, value) = prepare_data::auth_header(&token);
+        let current_response = request
+            .get("/api/auth/current")
+            .add_header(key, value)
+            .await;
+        assert_eq!(
+            current_response.status_code(),
+            200,
+            "exchanged JWT should populate TenantContext on auth routes: {}",
+            current_response.text()
+        );
+
+        let (key, value) = prepare_data::auth_header(&token);
+        let retry_response = request
+            .post("/api/auth/api-key/exchange")
+            .add_header(key, value)
+            .await;
+        assert_eq!(
+            retry_response.status_code(),
+            401,
+            "a session JWT must not be accepted as an API key"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+#[serial]
+async fn invalid_and_revoked_api_keys_cannot_exchange_for_jwt() {
+    request::<App, _, _>(|request, ctx| async move {
+        let (key, value) = prepare_data::auth_header("sk_live_invalid_key");
+        let invalid_response = request
+            .post("/api/auth/api-key/exchange")
+            .add_header(key, value)
+            .await;
+        assert_eq!(invalid_response.status_code(), 401);
+
+        let admin = prepare_data::login_super_admin(&request, &ctx).await;
+        let role_id =
+            find_role_id(&request, &admin.token, "DEFAULT", "TENANT_ADMIN").await;
+        let revoked =
+            issue_api_key(&request, &admin.token, &role_id, "Revoked JWT key").await;
+
+        let (key, value) = prepare_data::auth_header(&admin.token);
+        let revoke_response = request
+            .post(&format!("/api/api-keys/{}/revoke", revoked.id))
+            .add_header(key, value)
+            .await;
+        assert_eq!(revoke_response.status_code(), 200);
+
+        let (key, value) = prepare_data::auth_header(&revoked.plain_key);
+        let revoked_response = request
+            .post("/api/auth/api-key/exchange")
+            .add_header(key, value)
+            .await;
+        assert_eq!(
+            revoked_response.status_code(),
+            401,
+            "revoked API key must not mint a session token"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+#[serial]
+async fn exchanged_jwt_keeps_api_key_permissions() {
+    request::<App, _, _>(|request, ctx| async move {
+        let super_admin = prepare_data::login_super_admin(&request, &ctx).await;
+        let tenant = prepare_data::create_tenant_and_login_admin(
+            &request,
+            &super_admin.token,
+            "API key JWT denied tenant",
+            "API_KEY_JWT_DENIED",
+            "api-key-jwt-denied@test.com",
+            "admin1234",
+            "API key JWT denied admin",
+        )
+        .await;
+        let member_role_id =
+            find_role_id(&request, &tenant.token, "API_KEY_JWT_DENIED", "MEMBER").await;
+        let api_key = issue_api_key(
+            &request,
+            &tenant.token,
+            &member_role_id,
+            "No KB permission JWT",
+        )
+        .await;
+
+        let (key, value) = prepare_data::auth_header(&api_key.plain_key);
+        let exchange_response = request
+            .post("/api/auth/api-key/exchange")
+            .add_header(key, value)
+            .await;
+        assert_eq!(
+            exchange_response.status_code(),
+            200,
+            "exchange itself should succeed: {}",
+            exchange_response.text()
+        );
+        let body: serde_json::Value =
+            serde_json::from_str(&exchange_response.text()).unwrap();
+        let token = body["token"].as_str().unwrap();
+
+        let (key, value) = prepare_data::auth_header(token);
+        let denied_response = request
+            .get("/api/kb-libraries")
+            .add_header(key, value)
+            .await;
+        assert_eq!(
+            denied_response.status_code(),
+            403,
+            "exchanged JWT must keep apikey:<id> Casbin subject: {}",
+            denied_response.text()
+        );
+    })
+    .await;
+}

@@ -6,7 +6,9 @@ use uuid::Uuid;
 
 use crate::models::roles;
 use crate::models::tenants;
-use crate::services::api_key_service::ApiKeyIdentity;
+use crate::services::api_key_service::{
+    identity_from_session_claims, is_api_key_session, ApiKeyIdentity,
+};
 use crate::services::auth_cache;
 use crate::utils::error::IntoModelResult;
 use crate::views::errors::auth as auth_err;
@@ -75,6 +77,26 @@ impl FromRequestParts<AppContext> for TenantContext {
             .map_err(|_| auth_err::err_invalid_token())?;
 
         let user_claims = claims.claims;
+
+        // API-key minted JWT: the signed claims already contain the tenant and
+        // role, so no users/tenants/roles lookups are needed here either.
+        if is_api_key_session(&user_claims.claims) {
+            let Some(identity) =
+                identity_from_session_claims(&user_claims.claims, &user_claims.pid)
+            else {
+                return Err(auth_err::err_invalid_token());
+            };
+            return Ok(Self {
+                user_id: identity.created_by,
+                tenant_id: identity.tenant_id,
+                tenant_code: identity.tenant_code,
+                tenant_name: identity.tenant_name,
+                is_super_admin: false,
+                is_tenant_admin: identity.role_code == TENANT_ADMIN_ROLE,
+                auth_type: AuthenticationType::ApiKey,
+                api_key_id: Some(identity.api_key_id),
+            });
+        }
 
         let user_id = Uuid::parse_str(&user_claims.pid)
             .map_err(|_| auth_err::err_invalid_user_id())?;

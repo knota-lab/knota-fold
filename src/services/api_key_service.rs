@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use loco_rs::{app::AppContext, controller::ErrorDetail, prelude::*};
+use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -9,6 +10,11 @@ use crate::models::{api_keys, roles, tenants};
 
 const EXCHANGE_TOKEN_PREFIX: &str = "ex_";
 const SUPER_ADMIN_ROLE: &str = "SUPER_ADMIN";
+
+/// Short-lived session token returned by the API-key exchange endpoint.
+pub const API_KEY_SESSION_TTL_SECS: u64 = 300;
+/// Claim marker for JWTs minted from an API key.
+pub const API_KEY_SESSION_AUTH_TYPE: &str = "api_key";
 
 #[derive(Debug, Clone)]
 pub struct GeneratedKey {
@@ -67,6 +73,50 @@ pub struct ApiKeyIdentity {
     pub created_by: Uuid,
     pub role_code: String,
     pub key_name: String,
+}
+
+/// Returns true when the JWT claims were minted by the API-key exchange flow.
+#[must_use]
+pub fn is_api_key_session(claims: &Map<String, Value>) -> bool {
+    claims.get("auth_type").and_then(Value::as_str) == Some(API_KEY_SESSION_AUTH_TYPE)
+}
+
+/// Rebuild the API-key identity from signed session claims without touching
+/// the database. Returns `None` for malformed or non-API-key claims.
+#[must_use]
+pub fn identity_from_session_claims(
+    claims: &Map<String, Value>,
+    subject: &str,
+) -> Option<ApiKeyIdentity> {
+    if !is_api_key_session(claims) {
+        return None;
+    }
+
+    let api_key_id = Uuid::parse_str(claims.get("api_key_id")?.as_str()?).ok()?;
+    let tenant_id = Uuid::parse_str(claims.get("tenant_id")?.as_str()?).ok()?;
+    let created_by = Uuid::parse_str(subject).ok()?;
+    let role_code = claims.get("role")?.as_str()?.to_string();
+    if role_code == SUPER_ADMIN_ROLE {
+        return None;
+    }
+
+    Some(ApiKeyIdentity {
+        api_key_id,
+        tenant_id,
+        tenant_code: claims.get("tenant_code")?.as_str()?.to_string(),
+        tenant_name: claims
+            .get("tenant_name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        created_by,
+        role_code,
+        key_name: claims
+            .get("key_name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    })
 }
 
 impl ApiKeyIdentity {

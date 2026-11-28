@@ -194,6 +194,31 @@ docker compose --env-file docker/.env.production -f docker/docker-compose.prod.y
 
 详见 `docker/easytier/` 目录下的配置模板。
 
+## API Key 认证
+
+API Key 有两种用法：
+
+1. 直接作为 Bearer token（兼容旧客户端）：
+
+```http
+Authorization: Bearer sk_live_xxxxxxxx
+```
+
+2. 先兑换短期 JWT，后续请求使用 JWT（推荐）：
+
+```bash
+curl -X POST https://your-host/api/auth/api-key/exchange \
+  -H "Authorization: Bearer sk_live_xxxxxxxx"
+```
+
+响应中的 `token` 默认 5 分钟有效，之后使用：
+
+```http
+Authorization: Bearer <短期JWT>
+```
+
+兑换后的 JWT 带有 `auth_type=api_key`、`api_key_id`、`tenant_id`、`role` 等签名 claims，鉴权走 `apikey:<id>` 的 Casbin 策略，不再每请求查询 users/tenants/roles。API Key 被撤销后，已签发的 JWT 最多在 TTL（默认 300 秒）后失效；需要立即失效时请缩短 TTL 或等待后续 epoch 支持。
+
 ## 项目结构
 
 ```

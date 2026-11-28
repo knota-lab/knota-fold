@@ -1,23 +1,33 @@
 use crate::log_error;
 use crate::utils::error::{IntoLocoResult, IntoModelResult};
-use crate::views::errors::{err_bad_request, err_forbidden};
+use crate::views::errors::{err_bad_request, err_forbidden, err_unauthorized};
 use crate::{
     extractors::tenant::TenantContext,
     mailers::auth::AuthMailer,
     models::{_entities::users, roles, users::RegisterParams},
-    services::{auth_cache, auth_policy, captcha_service, login_guard},
+    services::{
+        api_key_service::{
+            ApiKeyIdentity, API_KEY_SESSION_AUTH_TYPE, API_KEY_SESSION_TTL_SECS,
+        },
+        auth_cache, auth_policy, captcha_service, login_guard,
+    },
     views::auth::{
-        CaptchaResponse, ChangePasswordRequest, CurrentResponse, LoginErrorResponse,
-        LoginRequest, LoginResponse, UnlockAccountRequest, UpdateProfileRequest,
+        ApiKeyExchangeResponse, CaptchaResponse, ChangePasswordRequest, CurrentResponse,
+        LoginErrorResponse, LoginRequest, LoginResponse, UnlockAccountRequest,
+        UpdateProfileRequest,
     },
 };
-use axum::http::StatusCode;
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use chrono::{Duration, Utc};
 use loco_openapi::prelude::*;
+use loco_rs::auth::jwt::JWT;
 use loco_rs::prelude::*;
 use regex::Regex;
 use sea_orm::ActiveValue;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::sync::OnceLock;
+use uuid::Uuid;
 
 pub static EMAIL_DOMAIN_RE: OnceLock<Regex> = OnceLock::new();
 
@@ -646,12 +656,133 @@ pub(crate) async fn change_password(
     format::json(())
 }
 
+/// Exchange a long-lived API key for a short-lived JWT.
+///
+/// The API key is only sent to this endpoint; subsequent requests use the
+/// returned JWT. The JWT carries the API key's tenant/role context and is
+/// accepted by the authorization middleware without per-request database
+/// lookups of users, tenants, or roles.
+#[utoipa::path(
+    post,
+    path = "/api/auth/api-key/exchange",
+    tag = "认证",
+    description = "用 API Key 兑换短期 JWT（默认 5 分钟）。API Key 只在本次请求中传输，后续请求使用返回的 JWT。",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "短期 JWT", body = ApiKeyExchangeResponse),
+        (status = 401, description = "API Key 无效、过期或已撤销")
+    )
+)]
+#[debug_handler]
+pub(crate) async fn exchange_api_key(
+    State(ctx): State<AppContext>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    let key = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| err_unauthorized("auth.missing_api_key", "缺少 API Key"))?;
+
+    let identity = ApiKeyIdentity::authenticate(&ctx.db, key)
+        .await
+        .map_err(|error| {
+            tracing::warn!(error = %error, "API key exchange failed");
+            err_unauthorized("auth.api_key_invalid", "API Key 无效、已过期或已撤销")
+        })?;
+
+    let jwt_config = ctx.config.get_jwt_config()?;
+    let expires_in = API_KEY_SESSION_TTL_SECS;
+    let expires_at =
+        Utc::now() + Duration::seconds(i64::try_from(expires_in).unwrap_or(300));
+
+    let mut claims = Map::new();
+    claims.insert(
+        "tenant_code".to_string(),
+        Value::String(identity.tenant_code.clone()),
+    );
+    claims.insert(
+        "tenant_name".to_string(),
+        Value::String(identity.tenant_name.clone()),
+    );
+    claims.insert(
+        "password_iat".to_string(),
+        Value::Number(serde_json::Number::from(0)),
+    );
+    claims.insert(
+        "auth_type".to_string(),
+        Value::String(API_KEY_SESSION_AUTH_TYPE.to_string()),
+    );
+    claims.insert(
+        "api_key_id".to_string(),
+        Value::String(identity.api_key_id.to_string()),
+    );
+    claims.insert(
+        "tenant_id".to_string(),
+        Value::String(identity.tenant_id.to_string()),
+    );
+    claims.insert(
+        "role".to_string(),
+        Value::String(identity.role_code.clone()),
+    );
+    claims.insert(
+        "key_name".to_string(),
+        Value::String(identity.key_name.clone()),
+    );
+    claims.insert("jti".to_string(), Value::String(Uuid::now_v7().to_string()));
+
+    let token = match JWT::new(&jwt_config.secret).generate_token(
+        expires_in,
+        identity.created_by.to_string(),
+        claims,
+    ) {
+        Ok(token) => token,
+        Err(error) => {
+            tracing::error!(error = %error, "failed to generate API key session JWT");
+            return crate::views::errors::internal(
+                "auth.jwt_generation_failed",
+                "生成会话令牌失败",
+            );
+        }
+    };
+
+    tracing::info!(
+        api_key_id = %identity.api_key_id,
+        tenant_id = %identity.tenant_id,
+        "API key exchanged for short-lived JWT"
+    );
+
+    let mut response = format::json(ApiKeyExchangeResponse {
+        token,
+        token_type: "Bearer".to_string(),
+        expires_in,
+        expires_at: expires_at.to_rfc3339(),
+        api_key_id: identity.api_key_id.to_string(),
+        tenant_id: identity.tenant_id.to_string(),
+        tenant_code: identity.tenant_code,
+        role: identity.role_code,
+    })?;
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+        .headers_mut()
+        .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    Ok(response)
+}
+
 pub fn routes() -> Routes {
     Routes::new()
         .prefix("/api/auth")
         .add("/register", openapi(post(register), routes!(register)))
         .add("/verify/{token}", openapi(get(verify), routes!(verify)))
         .add("/login", openapi(post(login), routes!(login)))
+        .add(
+            "/api-key/exchange",
+            openapi(post(exchange_api_key), routes!(exchange_api_key)),
+        )
         .add("/captcha", openapi(get(captcha), routes!(captcha)))
         .add("/forgot", openapi(post(forgot), routes!(forgot)))
         .add("/reset", openapi(post(reset), routes!(reset)))

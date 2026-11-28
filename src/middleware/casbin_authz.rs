@@ -20,7 +20,10 @@ use tower::{Layer, Service};
 use uuid::Uuid;
 
 use crate::models::{roles, tenants};
-use crate::services::{api_key_service::ApiKeyIdentity, auth_cache};
+use crate::services::{
+    api_key_service::{self, ApiKeyIdentity},
+    auth_cache,
+};
 use crate::views::errors::{err_forbidden, err_internal, err_unauthorized};
 
 const WHITELIST_PATHS: &[&str] = &["/api/auth/current", "/api/users/me/menus"];
@@ -150,7 +153,7 @@ where
 
 async fn handle_jwt_authz<S>(
     claims: UserClaims,
-    req: Request<Body>,
+    mut req: Request<Body>,
     inner: &mut S,
     ctx: &AuthzCtx,
     matched_path: &str,
@@ -160,6 +163,38 @@ where
     S: Service<Request<Body>, Response = Response, Error = Infallible> + Send,
     S::Future: Send,
 {
+    // API-key minted JWT: trust the signed tenant/role claims and skip the
+    // per-request users/tenants/roles lookups that normal user JWTs need.
+    if api_key_service::is_api_key_session(&claims.claims) {
+        let Some(identity) =
+            api_key_service::identity_from_session_claims(&claims.claims, &claims.pid)
+        else {
+            return Ok(err_unauthorized(
+                "authz.invalid_api_key_session",
+                "API Key 会话无效",
+            )
+            .into_response());
+        };
+
+        let subject = format!("apikey:{}", identity.api_key_id);
+        let tenant_id = identity.tenant_id.to_string();
+        if !casbin_enforce(&ctx.enforcer, &subject, &tenant_id, matched_path, method)
+            .await
+        {
+            return Ok(err_forbidden(
+                "authz.api_key_access_denied",
+                format!("API Key 无权访问 {method} {matched_path}"),
+            )
+            .into_response());
+        }
+
+        tracing::Span::current()
+            .record("api_key_id", tracing::field::display(identity.api_key_id));
+        tracing::Span::current().record("auth_type", tracing::field::display("api_key"));
+        req.extensions_mut().insert(identity);
+        return inner.call(req).await;
+    }
+
     let Ok(user_id) = Uuid::parse_str(&claims.pid) else {
         return Ok(
             err_unauthorized("authz.invalid_token", "认证令牌无效").into_response()

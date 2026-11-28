@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::models::_entities::users;
 use crate::services::auth_cache::CachedUserProfile;
@@ -212,4 +213,18 @@ impl LoginErrorResponse {
             unlock_at_epoch: Some(unlock_at_epoch),
         }
     }
+}
+
+/// Response returned by `POST /api/auth/api-key/exchange`.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeyExchangeResponse {
+    pub token: String,
+    pub token_type: String,
+    pub expires_in: u64,
+    pub expires_at: String,
+    pub api_key_id: String,
+    pub tenant_id: String,
+    pub tenant_code: String,
+    pub role: String,
 }
