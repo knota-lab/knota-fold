@@ -237,6 +237,7 @@ knota-fold/
 │   │   ├── audit_logs/
 │   │   ├── sys_configs/
 │   │   ├── api_keys/             # API Key + 兑换令牌 + 短期 JWT
+│   │   ├── app_logs/             # 请求日志、日志落库
 │   │   ├── workers/              # 调度管理 API
 │   │   ├── notification/
 │   │   └── knowledge_base/       # 文档、检索、QA、向量

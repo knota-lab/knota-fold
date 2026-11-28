@@ -182,7 +182,7 @@ where
             match result {
                 Ok(response) => {
                     // Send request summary to app-logs (if module is enabled).
-                    if let Some(sender) = crate::app_logs::layer::get_sender() {
+                    if let Some(sender) = crate::modules::app_logs::layer::get_sender() {
                         let duration_ms = u64::try_from(start.elapsed().as_millis())
                             .unwrap_or(u64::MAX);
                         let status = response.status().as_u16();
@@ -193,9 +193,9 @@ where
                             None
                         };
 
-                        crate::app_logs::layer::try_send_log(
+                        crate::modules::app_logs::layer::try_send_log(
                             sender,
-                            crate::app_logs::layer::LogEntry::request_summary(
+                            crate::modules::app_logs::layer::LogEntry::request_summary(
                                 &trace_id,
                                 &request_id,
                                 &method,

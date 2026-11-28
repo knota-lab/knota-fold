@@ -3,7 +3,7 @@ use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use sqlx::{AssertSqlSafe, FromRow};
 
-use crate::app_logs::writer;
+use crate::modules::app_logs::writer;
 use crate::utils::error::IntoLocoResult;
 
 // ── Response types (must match DB columns for FromRow) ──────────
@@ -189,7 +189,7 @@ macro_rules! bind_log_params {
 
 pub async fn stats() -> Result<Json<serde_json::Value>> {
     Ok(Json(serde_json::json!({
-        "droppedCount": crate::app_logs::layer::dropped_count(),
+        "droppedCount": crate::modules::app_logs::layer::dropped_count(),
     })))
 }
 

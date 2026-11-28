@@ -1,4 +1,5 @@
 pub mod api_keys;
+pub mod app_logs;
 pub mod audit_logs;
 pub mod auth;
 pub mod dicts;

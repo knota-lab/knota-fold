@@ -71,7 +71,7 @@ impl Hooks for App {
     }
 
     fn init_logger(ctx: &AppContext) -> Result<bool> {
-        crate::app_logs::init_logger(ctx)
+        crate::modules::app_logs::init_logger(ctx)
     }
 
     async fn before_run(ctx: &AppContext) -> Result<()> {
@@ -116,7 +116,7 @@ impl Hooks for App {
             Box::new(crate::initializers::casbin::CasbinInitializer),
             Box::new(crate::initializers::s3::S3ClientInitializer),
             Box::new(crate::initializers::knowledge_base::KnowledgeBaseInitializer),
-            Box::new(crate::app_logs::AppLogsInitializer),
+            Box::new(crate::modules::app_logs::AppLogsInitializer),
         ];
 
         if let Some(openapi) = crate::initializers::openapi::openapi_initializer(ctx) {
@@ -188,7 +188,7 @@ impl Hooks for App {
             // Public i18n bundles — no auth at all (Login page etc.).
             .add_route(crate::modules::i18n::controller::i18n::public_routes())
             // App logs admin API — Casbin-gated.
-            .add_route(crate::app_logs::routes::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::app_logs::routes::routes().layer(authz_layer.clone()))
             // Task scheduler — Casbin-gated.
             .add_route(
                 crate::modules::workers::controller::worker_definitions::routes().layer(authz_layer.clone()),

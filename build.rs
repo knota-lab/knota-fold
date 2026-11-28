@@ -16,7 +16,7 @@ const RAW_SQL_PATTERNS: &[&str] = &[
 ];
 
 const EXCLUDED_DIRS: &[&str] = &[
-    "src/app_logs", // dedicated sqlx-backed SQLite log store
+    "src/modules/app_logs", // dedicated sqlx-backed SQLite log store
 ];
 
 const EXCLUDED_FILES: &[&str] = &[
@@ -45,7 +45,7 @@ const LINE_RULES: &[LineRule] = &[
         severity: Severity::Error,
         marker: "no-error-string-ok:",
         include_prefixes: &[
-            "src/controllers/",
+            "src/modules/",
             "src/services/",
             "src/extractors/",
             "src/middleware/",
@@ -57,7 +57,7 @@ const LINE_RULES: &[LineRule] = &[
         id: "no-domain-to-err",
         severity: Severity::Warning,
         marker: "no-domain-to-err-ok:",
-        include_prefixes: &["src/controllers/", "src/modules/"],
+        include_prefixes: &["src/modules/"],
         patterns: &[".to_err()"],
         message: "Domain 错误的 to_err() 会丢失结构化信息变成 500，请使用 to_response() 或转换为 AppError",
     },
@@ -90,7 +90,7 @@ const WINDOW_RULES: &[WindowRule] = &[
         id: "no-uuid-parse-to-error-any",
         severity: Severity::Warning,
         marker: "no-uuid-parse-to-error-any-ok:",
-        include_prefixes: &["src/controllers/"],
+        include_prefixes: &["src/modules/"],
         anchor: ".parse::<Uuid>()",
         required_parts: &[".map_err(|", "Error::Any", ".into()"],
         window_lines: 6,

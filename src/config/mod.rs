@@ -17,8 +17,8 @@ use serde::Deserialize;
 
 // ── Re-exports from existing modules ──────────────────────────────
 
-pub use crate::app_logs::config::AppLogsConfig;
 pub use crate::initializers::s3::S3Config;
+pub use crate::modules::app_logs::config::AppLogsConfig;
 pub use crate::modules::auth::service::captcha_service::CaptchaConfig;
 
 // ── Task scheduler ────────────────────────────────────────────────

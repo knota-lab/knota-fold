@@ -6,7 +6,6 @@
 #![allow(clippy::result_large_err)]
 
 pub mod app;
-pub mod app_logs;
 pub mod config;
 pub mod data;
 pub mod error_info;
