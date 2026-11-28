@@ -7,16 +7,17 @@ use uuid::Uuid;
 
 use crate::extractors::TenantContext;
 use crate::middleware::tracing::TraceId;
-use crate::models::{
-    scheduled_worker_definitions, scheduled_worker_executions,
-    scheduled_worker_schedules, scheduled_worker_tenant_grants, tenants,
-};
-use crate::services::task_scheduler_service;
-use crate::views::errors::parse_uuid;
-use crate::views::worker_scheduler::{
+use crate::modules::tenants::models::tenants;
+use crate::modules::workers::models::scheduled_worker_definitions;
+use crate::modules::workers::models::scheduled_worker_executions;
+use crate::modules::workers::models::scheduled_worker_schedules;
+use crate::modules::workers::models::scheduled_worker_tenant_grants;
+use crate::modules::workers::service::task_scheduler_service;
+use crate::modules::workers::views::worker_scheduler::{
     CreateWorkerScheduleRequest, PatchEnabledRequest, TriggerResponse,
     UpdateWorkerScheduleRequest, WorkerScheduleResponse,
 };
+use crate::views::errors::parse_uuid;
 
 #[utoipa::path(
     get,

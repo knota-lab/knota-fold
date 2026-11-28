@@ -3,12 +3,12 @@ use loco_rs::prelude::*;
 
 use crate::extractors::RequestMeta;
 use crate::extractors::TenantContext;
-use crate::services::sys_menu_service;
-use crate::views::audit_logs::AuditContext;
-use crate::views::errors::parse_uuid;
-use crate::views::sys_menus::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::menus::service::sys_menu_service;
+use crate::modules::menus::views::sys_menus::{
     CreateSysMenuRequest, SysMenuResponse, SysMenuTreeResponse, UpdateSysMenuRequest,
 };
+use crate::views::errors::parse_uuid;
 
 #[utoipa::path(
     get,

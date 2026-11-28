@@ -56,14 +56,14 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::models::_entities::{file_references, files};
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::files::views::file_references::{
+    FileReferenceResponse, FileReferenceWithFileResponse,
+};
+use crate::modules::files::views::files::FileResponse;
 use crate::services::resource_types::ResourceType;
 use crate::utils::error::{db_err_into, IntoAppError, IntoModelResult, OptionErrInto};
 use crate::utils::id::generate_id;
-use crate::views::audit_logs::AuditContext;
-use crate::views::file_references::{
-    FileReferenceResponse, FileReferenceWithFileResponse,
-};
-use crate::views::files::FileResponse;
 use crate::views::pagination::PaginatedResponse;
 
 /// Caller-supplied attach payload. The controller layer is responsible

@@ -7,14 +7,16 @@ use uuid::Uuid;
 use crate::models::_entities::sys_role_template_menus;
 use crate::models::_entities::sys_role_template_permissions;
 use crate::models::_entities::sys_role_templates;
-use crate::models::sys_role_templates as templates_model;
-use crate::services::audit_service;
-use crate::utils::error::{IntoAppError, IntoModelResult};
-use crate::views::audit_logs::{AuditAction, AuditContext, RoleTemplateAuditSnapshot};
-use crate::views::role_templates::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{
+    AuditAction, AuditContext, RoleTemplateAuditSnapshot,
+};
+use crate::modules::roles::models::sys_role_templates as templates_model;
+use crate::modules::roles::views::role_templates::{
     CreateRoleTemplateRequest, RoleTemplateResponse, TemplatePermissionResponse,
     UpdateRoleTemplateRequest,
 };
+use crate::utils::error::{IntoAppError, IntoModelResult};
 
 #[tracing::instrument(skip_all)]
 pub async fn list_templates(

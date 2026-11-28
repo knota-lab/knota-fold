@@ -6,7 +6,9 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::config::ConfigExt;
-use crate::models::{api_keys, roles, tenants};
+use crate::modules::api_keys::models::api_keys;
+use crate::modules::roles::models::roles;
+use crate::modules::tenants::models::tenants;
 
 const EXCHANGE_TOKEN_PREFIX: &str = "ex_";
 const SUPER_ADMIN_ROLE: &str = "SUPER_ADMIN";

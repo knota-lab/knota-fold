@@ -5,11 +5,11 @@ use sea_orm::{ActiveModelTrait, ActiveValue, TransactionTrait};
 use uuid::Uuid;
 
 use crate::extractors::TenantContext;
-use crate::models::{
-    scheduled_worker_definitions, scheduled_worker_schedules,
-    scheduled_worker_tenant_grants, tenants,
-};
-use crate::views::worker_scheduler::{
+use crate::modules::tenants::models::tenants;
+use crate::modules::workers::models::scheduled_worker_definitions;
+use crate::modules::workers::models::scheduled_worker_schedules;
+use crate::modules::workers::models::scheduled_worker_tenant_grants;
+use crate::modules::workers::views::worker_scheduler::{
     BatchGrantsRequest, CreateWorkerDefinitionRequest, GrantedTenantResponse,
     PatchStatusRequest, UpdateWorkerDefinitionRequest, WorkerDefinitionResponse,
     WorkerGrantResponse,

@@ -8,15 +8,15 @@ use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFi
 use uuid::Uuid;
 
 use crate::models::_entities::{permissions, role_permissions, roles, user_roles};
-use crate::models::permissions as permissions_model;
-use crate::services::casbin_service::{self, SharedEnforcer};
-use crate::utils::error::IntoModelResult;
-use crate::views::pagination::PaginatedResponse;
-use crate::views::permissions::{
+use crate::modules::permissions::models::permissions as permissions_model;
+use crate::modules::permissions::views::permissions::{
     AssignablePermissionsResponse, CreatePermissionRequest, PermissionResponse,
     PermissionWithMetadataResponse, PermissionsWithMetadataResponse, RouteMetadataItem,
     SyncPermissionItem, UpdatePermissionRequest,
 };
+use crate::services::casbin_service::{self, SharedEnforcer};
+use crate::utils::error::IntoModelResult;
+use crate::views::pagination::PaginatedResponse;
 
 pub async fn list_permissions(
     db: &DatabaseConnection,

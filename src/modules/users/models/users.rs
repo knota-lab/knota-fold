@@ -302,8 +302,11 @@ impl Model {
         secret: &str,
         expiration: u64,
     ) -> ModelResult<String> {
-        let tenant =
-            crate::models::tenants::Model::find_by_id(db, self.tenant_id).await?;
+        let tenant = crate::modules::tenants::models::tenants::Model::find_by_id(
+            db,
+            self.tenant_id,
+        )
+        .await?;
 
         // password_iat: epoch seconds of the last password change (or account
         // creation if never changed).  Middleware compares this against the DB

@@ -1,13 +1,13 @@
 //! File-audit service — Wave 1 skeleton (signatures only).
 //!
-//! Thin facade over [`crate::services::audit_service::log`] for the file
+//! Thin facade over [`crate::modules::audit_logs::service::audit_service::log`] for the file
 //! domain, keeping action enum + snapshot wiring in one place.
 //! Real implementation arrives in Wave 2; bodies intentionally `todo!()`.
 
 use sea_orm::ConnectionTrait;
 
 use crate::models::_entities::{file_references, file_uploads, files};
-use crate::views::audit_logs::AuditContext;
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
 
 #[tracing::instrument(skip_all)]
 pub async fn log_upload_complete<C: ConnectionTrait>(

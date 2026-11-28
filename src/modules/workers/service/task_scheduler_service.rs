@@ -7,10 +7,11 @@ use loco_rs::{
 use sea_orm::{DatabaseConnection, EntityTrait};
 
 use crate::config::ConfigExt;
-use crate::models::{
-    scheduled_worker_definitions, scheduled_worker_executions,
-    scheduled_worker_schedules, scheduled_worker_tenant_grants, tenants,
-};
+use crate::modules::tenants::models::tenants;
+use crate::modules::workers::models::scheduled_worker_definitions;
+use crate::modules::workers::models::scheduled_worker_executions;
+use crate::modules::workers::models::scheduled_worker_schedules;
+use crate::modules::workers::models::scheduled_worker_tenant_grants;
 use crate::views::errors::err_custom;
 
 /// Main tick function called every minute by `scheduler_dispatch` task.

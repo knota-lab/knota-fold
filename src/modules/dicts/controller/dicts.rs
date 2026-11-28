@@ -3,9 +3,9 @@ use loco_openapi::prelude::*;
 use loco_rs::prelude::*;
 
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::services::dict_service;
-use crate::views::audit_logs::AuditContext;
-use crate::views::dicts::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::dicts::service::dict_service;
+use crate::modules::dicts::views::dicts::{
     CreateDictItemRequest, CreateDictTypeRequest, DictItemResponse, DictItemTreeResponse,
     DictItemsQuery, DictTypeResponse, ToggleStatusRequest, UpdateDictItemRequest,
     UpdateDictTypeRequest,

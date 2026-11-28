@@ -20,14 +20,15 @@ use loco_rs::prelude::*;
 use uuid::Uuid;
 
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::services::{i18n_locale_service, i18n_service};
-use crate::views::audit_logs::AuditContext;
-use crate::views::errors::err_bad_request;
-use crate::views::i18n::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::i18n::service::i18n_locale_service;
+use crate::modules::i18n::service::i18n_service;
+use crate::modules::i18n::views::i18n::{
     BatchUpdateRequest, CreateLocaleRequest, ExportQuery, ImportRequest, KeyListParams,
     UpdateLocaleRequest, UpdateTranslationRequest, UpsertGlobalTranslationRequest,
     IMPORT_MAX_BYTES,
 };
+use crate::views::errors::err_bad_request;
 
 /// Reject the request early if `Content-Length` exceeds the i18n import cap.
 /// Bodies without `Content-Length` are allowed through; the JSON parser will

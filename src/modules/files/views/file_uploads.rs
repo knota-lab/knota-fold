@@ -140,7 +140,8 @@ pub struct UploadFileSummary {
 #[serde(rename_all = "camelCase")]
 pub struct CompleteUploadRequest {
     #[serde(default)]
-    pub attach_to: Option<crate::views::file_references::AttachReferenceRequest>,
+    pub attach_to:
+        Option<crate::modules::files::views::file_references::AttachReferenceRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,7 +221,8 @@ pub struct InstantUploadRequest {
     /// hit the file is also attached to the supplied business
     /// resource (sequenced after revive/use of the winner row).
     #[serde(default)]
-    pub attach_to: Option<crate::views::file_references::AttachReferenceRequest>,
+    pub attach_to:
+        Option<crate::modules::files::views::file_references::AttachReferenceRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]

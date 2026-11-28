@@ -1,4 +1,6 @@
-use knota_fold::{app::App, models::_entities::files, services::file_service};
+use knota_fold::{
+    app::App, models::_entities::files, modules::files::service::file_service,
+};
 use loco_rs::testing::request::request;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use serial_test::serial;

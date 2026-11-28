@@ -16,16 +16,18 @@ use crate::models::_entities::roles;
 use crate::models::_entities::sys_menus;
 use crate::models::_entities::tenants;
 use crate::models::_entities::user_roles;
-use crate::models::permissions as permissions_model;
-use crate::models::roles as roles_model;
-use crate::services::audit_service;
-use crate::services::casbin_service::{self, SharedEnforcer};
-use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
-use crate::views::audit_logs::{AuditAction, AuditContext, RoleAuditSnapshot};
-use crate::views::pagination::PaginatedResponse;
-use crate::views::roles::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{
+    AuditAction, AuditContext, RoleAuditSnapshot,
+};
+use crate::modules::permissions::models::permissions as permissions_model;
+use crate::modules::roles::models::roles as roles_model;
+use crate::modules::roles::views::roles::{
     CreateRoleRequest, RoleListParams, RoleResponse, UpdateRoleRequest,
 };
+use crate::services::casbin_service::{self, SharedEnforcer};
+use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
+use crate::views::pagination::PaginatedResponse;
 
 #[tracing::instrument(skip_all)]
 pub async fn list_roles(
@@ -454,7 +456,7 @@ pub async fn sync_role_permissions<C: ConnectionTrait>(
     // Delegation check: non-super-admin can only assign permissions they hold
     if !is_super_admin && !permission_ids.is_empty() {
         let actor_scope =
-            crate::services::permission_service::get_user_effective_permission_ids(
+            crate::modules::permissions::service::permission_service::get_user_effective_permission_ids(
                 db,
                 actor_user_id,
                 tenant_id,
@@ -559,7 +561,7 @@ pub async fn sync_role_menus(
     // Delegation check: non-super-admin can only assign menus they hold
     if !is_super_admin && !sys_menu_ids.is_empty() {
         let mut actor_scope =
-            crate::services::tenant_menu_service::get_user_effective_menu_ids(
+            crate::modules::menus::service::tenant_menu_service::get_user_effective_menu_ids(
                 db,
                 actor_user_id,
                 tenant_id,

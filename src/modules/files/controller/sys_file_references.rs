@@ -1,6 +1,6 @@
 //! Cross-tenant file-reference controller (super-admin) — Wave 5 D3.
 //!
-//! Mirrors [`crate::controllers::file_references`] under
+//! Mirrors [`crate::modules::files::controller::file_references`] under
 //! `/api/sys/tenants/{tenantCode}/...`. Every handler:
 //!
 //! 1. Asserts `tc.is_super_admin`.
@@ -17,12 +17,15 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::services::{
-    file_reference_service, file_service, resource_types::ResourceType, tenant_service,
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::files::service::file_reference_service;
+use crate::modules::files::service::file_service;
+use crate::modules::files::views::file_references::{
+    AttachReferenceRequest, FileReferenceResponse,
 };
+use crate::modules::tenants::service::tenant_service;
+use crate::services::resource_types::ResourceType;
 use crate::utils::error::IntoModelResult;
-use crate::views::audit_logs::AuditContext;
-use crate::views::file_references::{AttachReferenceRequest, FileReferenceResponse};
 use crate::views::pagination::PaginationParams;
 
 /// Optional query filter for sys cross-tenant list — same shape as the

@@ -14,18 +14,20 @@ use crate::models::_entities::sys_role_template_menus;
 use crate::models::_entities::sys_role_template_permissions;
 use crate::models::_entities::sys_role_templates;
 use crate::models::_entities::tenants;
-use crate::models::permissions as permissions_model;
-use crate::models::roles as roles_model;
-use crate::models::tenants as tenants_model;
-use crate::services::audit_service;
-use crate::services::casbin_service::{self, SharedEnforcer};
-use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
-use crate::views::audit_logs::{AuditAction, AuditContext, TenantAuditSnapshot};
-use crate::views::errors::err_bad_request;
-use crate::views::pagination::PaginatedResponse;
-use crate::views::tenants::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{
+    AuditAction, AuditContext, TenantAuditSnapshot,
+};
+use crate::modules::permissions::models::permissions as permissions_model;
+use crate::modules::roles::models::roles as roles_model;
+use crate::modules::tenants::models::tenants as tenants_model;
+use crate::modules::tenants::views::tenants::{
     CreateTenantRequest, TenantListParams, TenantResponse, UpdateTenantRequest,
 };
+use crate::services::casbin_service::{self, SharedEnforcer};
+use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
+use crate::views::errors::err_bad_request;
+use crate::views::pagination::PaginatedResponse;
 
 #[tracing::instrument(skip_all)]
 pub async fn list_tenants(

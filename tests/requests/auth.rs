@@ -1,8 +1,7 @@
 use insta::{assert_debug_snapshot, with_settings};
 use knota_fold::{
-    app::App,
-    models::{_entities::sys_configs, users},
-    services::auth_policy,
+    app::App, models::_entities::sys_configs, modules::auth::service::auth_policy,
+    modules::users::models::users,
 };
 use loco_rs::{app::AppContext, testing::prelude::*};
 use rstest::rstest;

@@ -26,7 +26,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Strongly-typed resource kind for [`file_references`](crate::models::file_references).
+/// Strongly-typed resource kind for [`file_references`](crate::modules::files::models::file_references).
 ///
 /// Serialization uses the canonical `domain:entity` string form, matching
 /// what is stored in `file_references.resource_type`.

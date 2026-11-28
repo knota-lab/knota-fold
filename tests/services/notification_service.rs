@@ -1,5 +1,5 @@
 use knota_fold::app::App;
-use knota_fold::models::users;
+use knota_fold::modules::users::models::users;
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
 use uuid::Uuid;

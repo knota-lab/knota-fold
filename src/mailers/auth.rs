@@ -4,7 +4,7 @@
 use loco_rs::prelude::*;
 use serde_json::json;
 
-use crate::models::users;
+use crate::modules::users::models::users;
 
 static welcome: Dir<'_> = include_dir!("src/mailers/auth/welcome");
 static forgot: Dir<'_> = include_dir!("src/mailers/auth/forgot");

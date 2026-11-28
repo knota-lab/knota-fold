@@ -8,8 +8,8 @@ use loco_rs::prelude::*;
 use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
-use crate::models::i18n_queries;
-use crate::models::tenants;
+use crate::modules::i18n::models::i18n_queries;
+use crate::modules::tenants::models::tenants;
 use crate::utils::error::IntoAppError;
 use crate::views::errors::err_bad_request;
 

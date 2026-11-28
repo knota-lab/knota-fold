@@ -3,7 +3,10 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::utils::error::{IntoAppError, IntoLocoResult};
-use crate::{models::sys_configs, views::file_uploads::ProbeUploadHint};
+use crate::{
+    modules::files::views::file_uploads::ProbeUploadHint,
+    modules::sys_configs::models::sys_configs,
+};
 
 const POLICY_KEY: &str = "files.multipart.partSizePolicy";
 const MIB: u64 = 1024 * 1024;

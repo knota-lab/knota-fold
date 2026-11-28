@@ -5,7 +5,7 @@ use loco_rs::{
     Result,
 };
 
-use crate::services::file_service;
+use crate::modules::files::service::file_service;
 
 pub struct PurgeFiles;
 

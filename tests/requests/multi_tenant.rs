@@ -1,5 +1,5 @@
 use knota_fold::app::App;
-use knota_fold::views::auth::LoginResponse;
+use knota_fold::modules::auth::views::auth::LoginResponse;
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
 
@@ -351,7 +351,7 @@ async fn new_user_without_role_gets_forbidden() {
             login_response.text()
         );
 
-        let lr: knota_fold::views::auth::LoginResponse =
+        let lr: knota_fold::modules::auth::views::auth::LoginResponse =
             serde_json::from_str(&login_response.text()).unwrap();
 
         // Try to access protected endpoint — should get 403 from Casbin

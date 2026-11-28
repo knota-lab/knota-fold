@@ -1,7 +1,9 @@
 use knota_fold::app::App;
-use knota_fold::services::role_service;
-use knota_fold::views::audit_logs::AuditContext;
-use knota_fold::views::roles::{CreateRoleRequest, RoleListParams, UpdateRoleRequest};
+use knota_fold::modules::audit_logs::views::audit_logs::AuditContext;
+use knota_fold::modules::roles::service::role_service;
+use knota_fold::modules::roles::views::roles::{
+    CreateRoleRequest, RoleListParams, UpdateRoleRequest,
+};
 use loco_rs::prelude::model::query::PaginationQuery;
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
@@ -227,7 +229,7 @@ async fn can_toggle_role_status_without_casbin() {
     .await
     .expect("Failed to create role for toggle test");
 
-    knota_fold::models::roles::Model::toggle_status(
+    knota_fold::modules::roles::models::roles::Model::toggle_status(
         db, created.id, tenant_id, "disabled",
     )
     .await

@@ -10,21 +10,26 @@ use uuid::Uuid;
 use crate::utils::error::IntoModelResult;
 use crate::{
     extractors::{RequestMeta, TenantContext},
-    models::tenants,
-    services::file_upload_service::JsonEndpointResponse,
-    services::{
-        file_reference_service, file_service, file_upload_service,
-        resource_types::ResourceType,
-    },
-    views::{
-        audit_logs::AuditContext,
-        file_references::AttachReferenceRequest,
-        file_uploads::{
-            CompleteUploadRequest, ExpiredUploadResponse, InitiateUploadRequest,
-            InstantUploadRequest, InstantUploadResponse, ProbeRequest, ProbeResponse,
-            RegisterPartRequest, ResumeUploadResponse, SignPartResponse,
+    modules::{
+        audit_logs::views::audit_logs::AuditContext,
+        files::{
+            service::{
+                file_reference_service, file_service,
+                file_upload_service::{self, JsonEndpointResponse},
+            },
+            views::{
+                file_references::AttachReferenceRequest,
+                file_uploads::{
+                    CompleteUploadRequest, ExpiredUploadResponse, InitiateUploadRequest,
+                    InstantUploadRequest, InstantUploadResponse, ProbeRequest,
+                    ProbeResponse, RegisterPartRequest, ResumeUploadResponse,
+                    SignPartResponse,
+                },
+            },
         },
+        tenants::models::tenants,
     },
+    services::resource_types::ResourceType,
 };
 
 const JSON_BODY_LIMIT_BYTES: usize = 64 * 1024;

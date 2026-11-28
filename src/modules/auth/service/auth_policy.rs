@@ -1,6 +1,6 @@
 use loco_rs::app::AppContext;
 
-use crate::services::sys_config_service;
+use crate::modules::sys_configs::service::sys_config_service;
 
 pub const KEY_REGISTRATION_ENABLED: &str = "auth.registration.enabled";
 

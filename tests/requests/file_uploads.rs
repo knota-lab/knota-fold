@@ -3,11 +3,11 @@ use blake3::Hash;
 use knota_fold::{
     app::App,
     initializers::s3::{SharedS3Client, SharedS3Config},
-    models,
     models::_entities::{
         audit_logs, file_upload_idempotency, file_upload_parts, file_uploads, files,
     },
-    services::file_upload_service,
+    modules::files::models,
+    modules::files::service::file_upload_service,
 };
 use loco_rs::TestServer;
 use loco_rs::{app::AppContext, testing::prelude::*};
@@ -1332,7 +1332,7 @@ async fn seed_active_file(
     full_hash: &str,
     fast_hash: Option<&str>,
     storage_key: &str,
-) -> models::_entities::files::Model {
+) -> files::Model {
     models::files::ActiveModel {
         id: Set(Uuid::new_v4()),
         tenant_id: Set(tenant_id),

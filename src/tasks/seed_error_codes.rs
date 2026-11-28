@@ -38,9 +38,11 @@ use loco_rs::{
 use regex::Regex;
 use uuid::Uuid;
 
-use crate::services::i18n_manifest_service;
-use crate::views::audit_logs::AuditContext;
-use crate::views::i18n::{ManifestEntryInput, ManifestLocation, ManifestUploadRequest};
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::i18n::service::i18n_manifest_service;
+use crate::modules::i18n::views::i18n::{
+    ManifestEntryInput, ManifestLocation, ManifestUploadRequest,
+};
 
 pub struct SeedErrorCodes;
 

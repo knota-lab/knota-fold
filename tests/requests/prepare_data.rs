@@ -3,10 +3,8 @@
 use axum::http::{HeaderName, HeaderValue};
 
 use knota_fold::{
-    app::App,
-    models::{_entities::sys_configs, users},
-    services::auth_policy,
-    views::auth::LoginResponse,
+    app::App, models::_entities::sys_configs, modules::auth::service::auth_policy,
+    modules::auth::views::auth::LoginResponse, modules::users::models::users,
 };
 use loco_rs::TestServer;
 use loco_rs::{app::AppContext, testing::prelude::seed};

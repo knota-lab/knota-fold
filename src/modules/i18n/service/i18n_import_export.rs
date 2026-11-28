@@ -6,16 +6,16 @@ use loco_rs::prelude::*;
 use sea_orm::{DatabaseConnection, TransactionTrait};
 use uuid::Uuid;
 
-use crate::models::i18n_queries;
-use crate::models::i18n_translations as trans_model;
-use crate::services::audit_service;
-use crate::utils::error::{IntoAppError, IntoModelResult};
-use crate::views::audit_logs::{AuditAction, AuditContext};
-use crate::views::errors::err_bad_request;
-use crate::views::i18n::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{AuditAction, AuditContext};
+use crate::modules::i18n::models::i18n_queries;
+use crate::modules::i18n::models::i18n_translations as trans_model;
+use crate::modules::i18n::views::i18n::{
     ExportResponse, ImportEntry, ImportRequest, ImportResponse, ImportScope,
     IMPORT_MAX_ENTRIES,
 };
+use crate::utils::error::{IntoAppError, IntoModelResult};
+use crate::views::errors::err_bad_request;
 
 use super::i18n_bundle::{
     bump_global_revision, bump_tenant_revision, invalidate_bundle_cache,

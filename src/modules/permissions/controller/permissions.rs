@@ -3,13 +3,13 @@ use loco_rs::prelude::*;
 use std::sync::OnceLock;
 
 use crate::extractors::TenantContext;
-use crate::services::casbin_service::SharedEnforcer;
-use crate::services::permission_service;
-use crate::views::errors::parse_uuid;
-use crate::views::pagination::PaginationParams;
-use crate::views::permissions::{
+use crate::modules::permissions::service::permission_service;
+use crate::modules::permissions::views::permissions::{
     PermissionResponse, SyncPermissionsRequest, UpdatePermissionRequest,
 };
+use crate::services::casbin_service::SharedEnforcer;
+use crate::views::errors::parse_uuid;
+use crate::views::pagination::PaginationParams;
 
 /// Cached `OpenAPI` spec used by metadata-enriched permission endpoints.
 ///
@@ -43,20 +43,20 @@ fn init_openapi_spec() -> &'static utoipa::openapi::OpenApi {
 /// The `openapi()` wrappers inside each function push to the global
 /// `OPENAPI_ROUTES`, giving us a single clean set of route registrations.
 fn register_all_controller_routes() {
-    use crate::controllers;
-    let _ = controllers::auth::routes();
-    let _ = controllers::roles::routes();
-    let _ = controllers::roles::user_role_routes();
-    let _ = controllers::permissions::routes();
-    let _ = controllers::sys_menus::routes();
-    let _ = controllers::menus::routes();
-    let _ = controllers::menus::user_menu_routes();
-    let _ = controllers::dicts::dict_type_routes();
-    let _ = controllers::dicts::dict_item_routes();
-    let _ = controllers::users::routes();
-    let _ = controllers::tenants::routes();
-    let _ = controllers::tenants::sys_routes();
-    let _ = controllers::role_templates::routes();
+    use crate::modules::{auth, dicts, menus, permissions, roles, tenants, users};
+    let _ = auth::controller::auth::routes();
+    let _ = roles::controller::roles::routes();
+    let _ = roles::controller::roles::user_role_routes();
+    let _ = permissions::controller::permissions::routes();
+    let _ = menus::controller::sys_menus::routes();
+    let _ = menus::controller::menus::routes();
+    let _ = menus::controller::menus::user_menu_routes();
+    let _ = dicts::controller::dicts::dict_type_routes();
+    let _ = dicts::controller::dicts::dict_item_routes();
+    let _ = users::controller::users::routes();
+    let _ = tenants::controller::tenants::routes();
+    let _ = tenants::controller::tenants::sys_routes();
+    let _ = roles::controller::role_templates::routes();
 }
 
 /// Public accessor for the cached `OpenAPI` spec.

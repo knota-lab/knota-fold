@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::models::_entities::{dict_items, dict_types};
-use crate::models::dict_items::EffectiveDictItem;
-use crate::models::dict_types::EffectiveDictType;
+use crate::modules::dicts::models::dict_items::EffectiveDictItem;
+use crate::modules::dicts::models::dict_types::EffectiveDictType;
 
 // ── Query params ──
 

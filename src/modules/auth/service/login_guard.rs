@@ -26,7 +26,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use loco_rs::{app::AppContext, cache};
 
-use crate::services::sys_config_service;
+use crate::modules::sys_configs::service::sys_config_service;
 
 // ── sys_configs keys ────────────────────────────────────────────────────
 

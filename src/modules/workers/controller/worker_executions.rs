@@ -4,12 +4,12 @@ use loco_rs::prelude::*;
 use sea_orm::EntityTrait;
 
 use crate::extractors::TenantContext;
-use crate::models::{
-    scheduled_worker_definitions, scheduled_worker_executions, scheduled_worker_schedules,
-};
+use crate::modules::workers::models::scheduled_worker_definitions;
+use crate::modules::workers::models::scheduled_worker_executions;
+use crate::modules::workers::models::scheduled_worker_schedules;
+use crate::modules::workers::views::worker_scheduler::WorkerExecutionResponse;
 use crate::views::errors::parse_uuid;
 use crate::views::pagination::{PaginatedResponse, PaginationParams};
-use crate::views::worker_scheduler::WorkerExecutionResponse;
 
 #[utoipa::path(
     get,

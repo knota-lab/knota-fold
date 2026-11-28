@@ -13,14 +13,14 @@ use sea_orm::{ActiveValue, EntityTrait};
 use uuid::Uuid;
 
 use crate::models::_entities::i18n_supported_locales;
-use crate::models::i18n_supported_locales as locales_model;
-use crate::services::audit_service;
-use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
-use crate::views::audit_logs::{AuditAction, AuditContext};
-use crate::views::errors::err_bad_request;
-use crate::views::i18n::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{AuditAction, AuditContext};
+use crate::modules::i18n::models::i18n_supported_locales as locales_model;
+use crate::modules::i18n::views::i18n::{
     CreateLocaleRequest, LocaleAdminResponse, LocaleResponse, UpdateLocaleRequest,
 };
+use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
+use crate::views::errors::err_bad_request;
 
 const CACHE_KEY_ENABLED: &str = "i18n:locales:enabled";
 const CACHE_TTL: Duration = Duration::from_mins(5);
@@ -199,7 +199,7 @@ pub async fn delete(
     locale: &str,
     audit_ctx: &AuditContext,
 ) -> loco_rs::Result<()> {
-    if locale == crate::views::i18n::BASE_LOCALE {
+    if locale == crate::modules::i18n::views::i18n::BASE_LOCALE {
         return Err(err_bad_request(
             "i18n.base_locale_protected",
             format!("禁止删除基础 locale '{locale}'"),

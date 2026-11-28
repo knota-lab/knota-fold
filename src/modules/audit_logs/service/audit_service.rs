@@ -8,10 +8,10 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::models::_entities::audit_logs;
-use crate::utils::error::{IntoAppError, IntoLocoResult};
-use crate::views::audit_logs::{
+use crate::modules::audit_logs::views::audit_logs::{
     AuditAction, AuditContext, AuditEntry, AuditLogQuery, AuditLogResponse,
 };
+use crate::utils::error::{IntoAppError, IntoLocoResult};
 use crate::views::pagination::PaginatedResponse;
 
 /// Record a single audit log entry.

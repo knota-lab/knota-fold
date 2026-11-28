@@ -2,7 +2,7 @@ use chrono::{offset::Local, Duration};
 use insta::assert_debug_snapshot;
 use knota_fold::{
     app::App,
-    models::users::{self, Model, RegisterParams},
+    modules::users::models::users::{self, Model, RegisterParams},
 };
 use loco_rs::testing::prelude::*;
 use sea_orm::{ActiveModelTrait, ActiveValue, IntoActiveModel};

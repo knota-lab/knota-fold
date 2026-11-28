@@ -11,7 +11,7 @@ use uuid::Uuid;
 use std::fmt::Write;
 
 use crate::models::_entities::{i18n_entries, i18n_entry_locations, i18n_translations};
-use crate::models::i18n_bundle_revisions as rev_model;
+use crate::modules::i18n::models::i18n_bundle_revisions as rev_model;
 
 /// Scoping for key-listing queries. Eliminates the runtime panic risk of
 /// `include_global=true + tenant_id=None`.

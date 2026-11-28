@@ -1,5 +1,5 @@
 use knota_fold::app::App;
-use knota_fold::models::scheduled_worker_definitions;
+use knota_fold::modules::workers::models::scheduled_worker_definitions;
 use loco_rs::testing::prelude::*;
 use sea_orm::EntityTrait;
 use serial_test::serial;

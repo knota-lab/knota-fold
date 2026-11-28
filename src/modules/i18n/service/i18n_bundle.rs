@@ -39,11 +39,11 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::models::_entities::i18n_bundle_revisions;
-use crate::models::i18n_bundle_revisions as rev_model;
-use crate::models::i18n_queries;
-use crate::models::i18n_translations as trans_model;
+use crate::modules::i18n::models::i18n_bundle_revisions as rev_model;
+use crate::modules::i18n::models::i18n_queries;
+use crate::modules::i18n::models::i18n_translations as trans_model;
+use crate::modules::i18n::views::i18n::{BundleResponse, BASE_LOCALE};
 use crate::utils::error::IntoAppError;
-use crate::views::i18n::{BundleResponse, BASE_LOCALE};
 
 use super::i18n_validation::{validate_locale, validate_namespace};
 

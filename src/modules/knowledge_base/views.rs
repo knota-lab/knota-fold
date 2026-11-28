@@ -1,7 +1,7 @@
 use chrono::Utc;
 
 use crate::models::_entities::{kb_documents, kb_folders, kb_libraries, worker_runs};
-use crate::services::worker_run_service::{
+use crate::modules::workers::service::worker_run_service::{
     WorkerRunDefinition, KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION, STATUS_CANCELLED,
     STATUS_FAILED, STATUS_SUCCEEDED,
 };
@@ -280,7 +280,7 @@ struct DerivedWorkerRunHealth {
 fn derive_worker_run_health(
     status: &str,
     stage_definition: Option<
-        &crate::services::worker_run_service::WorkerRunStageDefinition,
+        &crate::modules::workers::service::worker_run_service::WorkerRunStageDefinition,
     >,
     heartbeat_at: Option<chrono::NaiveDateTime>,
     stage_started_at: Option<chrono::NaiveDateTime>,
@@ -353,7 +353,7 @@ mod tests {
     use chrono::Duration as ChronoDuration;
 
     use super::*;
-    use crate::services::worker_run_service::{
+    use crate::modules::workers::service::worker_run_service::{
         KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION, STATUS_RUNNING,
     };
 

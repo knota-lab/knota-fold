@@ -5,12 +5,12 @@ use std::collections::{BTreeMap, HashMap};
 use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
-use crate::models::i18n_queries;
-use crate::models::i18n_translations as trans_model;
-use crate::utils::error::IntoAppError;
-use crate::views::i18n::{
+use crate::modules::i18n::models::i18n_queries;
+use crate::modules::i18n::models::i18n_translations as trans_model;
+use crate::modules::i18n::views::i18n::{
     KeyEntryResponse, KeyListResponse, KeyLocaleValue, NamespaceSummaryResponse,
 };
+use crate::utils::error::IntoAppError;
 
 /// List namespaces with per-namespace key/locale counts.
 ///

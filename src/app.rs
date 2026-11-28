@@ -16,7 +16,6 @@ use std::{net::TcpListener, path::Path};
 
 #[allow(unused_imports)]
 use crate::{
-    controllers,
     middleware::casbin_authz::CasbinAuthzLayer,
     middleware::ci_token_layer::CiTokenLayer,
     middleware::error_handler::ErrorHandlerLayer,
@@ -240,7 +239,7 @@ impl Hooks for App {
         // TracingLayer is the outermost layer: it wraps Casbin auth and all
         // controllers, ensuring every request gets a trace_id and request_id
         // before any downstream middleware runs.
-        crate::services::file_service::init_runtime(_ctx)?;
+        crate::modules::files::service::file_service::init_runtime(_ctx)?;
 
         // Override loco-rs's default HTML fallback for /api/* routes.
         //

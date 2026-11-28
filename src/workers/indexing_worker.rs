@@ -28,11 +28,11 @@ use crate::modules::knowledge_base::service::numeric::embedding_vec_f64_to_f32;
 use crate::modules::knowledge_base::service::{
     chunking_service, document_service, line_splitting_service,
 };
-use crate::services::resource_types::ResourceType;
-use crate::services::worker_run_service::{
+use crate::modules::workers::service::worker_run_service::{
     WorkerRunStart, WorkerRunTracker, KNOWLEDGE_BASE_INDEXING_BUSINESS_TYPE,
     KNOWLEDGE_BASE_INDEXING_RUN_DEFINITION, KNOWLEDGE_BASE_INDEXING_WORKER_NAME,
 };
+use crate::services::resource_types::ResourceType;
 use crate::utils::mime::detect_mime;
 const MAX_INDEX_FILE_BYTES: i64 = 50 * 1024 * 1024;
 const EMBEDDING_PROGRESS_BATCH_SIZE: usize = 16;

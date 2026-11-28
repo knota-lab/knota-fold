@@ -5,16 +5,19 @@ use sea_orm::{ActiveModelTrait, ActiveValue};
 use uuid::Uuid;
 
 use crate::extractors::TenantContext;
-use crate::models::{api_key_exchange_tokens, api_keys, roles, tenants};
-use crate::services::api_key_service::{
+use crate::modules::api_keys::models::api_key_exchange_tokens;
+use crate::modules::api_keys::models::api_keys;
+use crate::modules::api_keys::service::api_key_service::{
     api_key_settings, generate_exchange_token, GeneratedKey,
 };
-use crate::services::casbin_service::{sync_api_key_role, SharedEnforcer};
-use crate::utils::error::OptionErrInto;
-use crate::views::api_key_exchange_tokens::{
+use crate::modules::api_keys::views::api_key_exchange_tokens::{
     CreateExchangeTokenRequest, CreateExchangeTokenResponse, ExchangeInfoQuery,
     ExchangeInfoResponse, ExchangeKeyResponse, ExchangeRequest, ExchangeTokenResponse,
 };
+use crate::modules::roles::models::roles;
+use crate::modules::tenants::models::tenants;
+use crate::services::casbin_service::{sync_api_key_role, SharedEnforcer};
+use crate::utils::error::OptionErrInto;
 use crate::views::errors::{err_bad_request, parse_uuid, CodedErrorResponse};
 
 const INVALID_EXCHANGE_TOKEN_MESSAGE: &str = "无效或已过期的兑换令牌";

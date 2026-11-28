@@ -15,9 +15,9 @@ use loco_rs::prelude::*;
 use uuid::Uuid;
 
 use crate::extractors::RequestMeta;
-use crate::services::i18n_manifest_service;
-use crate::views::audit_logs::AuditContext;
-use crate::views::i18n::ManifestUploadRequest;
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::i18n::service::i18n_manifest_service;
+use crate::modules::i18n::views::i18n::ManifestUploadRequest;
 
 #[utoipa::path(
     post,

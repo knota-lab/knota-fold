@@ -1,9 +1,8 @@
 use knota_fold::app::App;
-use knota_fold::models::{
-    dict_items as dict_items_model, dict_types as dict_types_model,
-};
-use knota_fold::services::dict_service;
-use knota_fold::views::dicts::{
+use knota_fold::modules::dicts::models::dict_items as dict_items_model;
+use knota_fold::modules::dicts::models::dict_types as dict_types_model;
+use knota_fold::modules::dicts::service::dict_service;
+use knota_fold::modules::dicts::views::dicts::{
     CreateDictItemRequest, CreateDictTypeRequest, UpdateDictItemRequest,
     UpdateDictTypeRequest,
 };
@@ -12,7 +11,7 @@ use loco_rs::testing::prelude::*;
 use serial_test::serial;
 use uuid::Uuid;
 
-use knota_fold::views::audit_logs::AuditContext;
+use knota_fold::modules::audit_logs::views::audit_logs::AuditContext;
 
 const TENANT_ID: &str = "00000000-0000-0000-0000-000000000001";
 const OTHER_TENANT_ID: &str = "00000000-0000-0000-0000-000000000002";

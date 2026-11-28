@@ -4,17 +4,20 @@ use crate::views::errors::{err_bad_request, err_forbidden, err_unauthorized};
 use crate::{
     extractors::tenant::TenantContext,
     mailers::auth::AuthMailer,
-    models::{_entities::users, roles, users::RegisterParams},
-    services::{
-        api_key_service::{
+    modules::{
+        api_keys::service::api_key_service::{
             ApiKeyIdentity, API_KEY_SESSION_AUTH_TYPE, API_KEY_SESSION_TTL_SECS,
         },
-        auth_cache, auth_policy, captcha_service, login_guard,
-    },
-    views::auth::{
-        ApiKeyExchangeResponse, CaptchaResponse, ChangePasswordRequest, CurrentResponse,
-        LoginErrorResponse, LoginRequest, LoginResponse, UnlockAccountRequest,
-        UpdateProfileRequest,
+        auth::{
+            service::{auth_cache, auth_policy, captcha_service, login_guard},
+            views::auth::{
+                ApiKeyExchangeResponse, CaptchaResponse, ChangePasswordRequest,
+                CurrentResponse, LoginErrorResponse, LoginRequest, LoginResponse,
+                UnlockAccountRequest, UpdateProfileRequest,
+            },
+        },
+        roles::models::roles,
+        users::models::users::{self, RegisterParams},
     },
 };
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};

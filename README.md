@@ -258,7 +258,7 @@ knota-fold/
 └── tests/                        # 集成测试
 ```
 
-`src/controllers/`、`src/services/`、`src/views/`、`src/models/` 仍保留一层兼容 re-export，新代码请直接使用 `crate::modules::<domain>::...`；后续可逐步删除兼容层。
+业务代码统一使用 `crate::modules::<domain>::...`。`src/models/` 只保留 SeaORM `_entities`，`src/services/` 只保留 Casbin 与 resource_types，`src/views/` 只保留共享错误与分页。
 
 ## 测试
 

@@ -5,11 +5,13 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use uuid::Uuid;
 
 use crate::models::_entities::{i18n_entries, i18n_translations};
-use crate::models::i18n_queries;
-use crate::services::audit_service;
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{AuditAction, AuditContext};
+use crate::modules::i18n::models::i18n_queries;
+use crate::modules::i18n::views::i18n::{
+    EntryListResponse, EntryLocationResponse, EntryResponse,
+};
 use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
-use crate::views::audit_logs::{AuditAction, AuditContext};
-use crate::views::i18n::{EntryListResponse, EntryLocationResponse, EntryResponse};
 
 pub async fn list_entries(
     db: &DatabaseConnection,

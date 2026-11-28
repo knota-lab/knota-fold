@@ -3,10 +3,12 @@ use loco_rs::prelude::*;
 
 use crate::extractors::RequestMeta;
 use crate::extractors::TenantContext;
-use crate::services::tenant_menu_service;
-use crate::views::audit_logs::AuditContext;
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::menus::service::tenant_menu_service;
+use crate::modules::menus::views::menus::{
+    MergedMenuTreeResponse, UpdateOverrideRequest,
+};
 use crate::views::errors::parse_uuid;
-use crate::views::menus::{MergedMenuTreeResponse, UpdateOverrideRequest};
 
 #[utoipa::path(
     get,

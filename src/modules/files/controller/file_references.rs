@@ -9,7 +9,7 @@
 //! - `DELETE /api/file-references/{id}`   →  soft-detach a single
 //!   reference by its own id.
 //!
-//! See [`crate::controllers::sys_file_references`] for the cross-tenant
+//! See [`crate::modules::files::controller::sys_file_references`] for the cross-tenant
 //! mirror used by super-admin tooling.
 
 use axum::http::StatusCode;
@@ -19,9 +19,12 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::services::{file_reference_service, resource_types::ResourceType};
-use crate::views::audit_logs::AuditContext;
-use crate::views::file_references::{AttachReferenceRequest, FileReferenceResponse};
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::files::service::file_reference_service;
+use crate::modules::files::views::file_references::{
+    AttachReferenceRequest, FileReferenceResponse,
+};
+use crate::services::resource_types::ResourceType;
 use crate::views::pagination::PaginationParams;
 
 /// Optional query filter for the tenant-wide list endpoint.

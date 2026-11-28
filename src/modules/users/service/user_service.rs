@@ -14,20 +14,22 @@ use crate::models::_entities::sys_role_templates;
 use crate::models::_entities::tenants;
 use crate::models::_entities::user_roles;
 use crate::models::_entities::users;
-use crate::models::roles as roles_model;
-use crate::models::users as users_model;
-use crate::models::users::RegisterParams;
-use crate::services::audit_service;
-use crate::services::casbin_service::{self, SharedEnforcer};
-use crate::services::login_guard;
-use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
-use crate::views::audit_logs::{AuditAction, AuditContext, UserAuditSnapshot};
-use crate::views::errors::err_bad_request;
-use crate::views::pagination::PaginatedResponse;
-use crate::views::users::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{
+    AuditAction, AuditContext, UserAuditSnapshot,
+};
+use crate::modules::auth::service::login_guard;
+use crate::modules::roles::models::roles as roles_model;
+use crate::modules::users::models::users as users_model;
+use crate::modules::users::models::users::RegisterParams;
+use crate::modules::users::views::users::{
     CreateSuperAdminRequest, CreateUserRequest, UpdateUserRequest, UserListParams,
     UserResponse,
 };
+use crate::services::casbin_service::{self, SharedEnforcer};
+use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
+use crate::views::errors::err_bad_request;
+use crate::views::pagination::PaginatedResponse;
 
 #[tracing::instrument(skip_all)]
 pub async fn list_users(
@@ -105,15 +107,16 @@ pub async fn create_user(
                 ),
             ));
         }
-        let tenant = crate::models::tenants::Model::find_by_code(db, code)
-            .await
-            .model_err()
-            .map_err(|_| {
-                Error::CustomError(
-                    StatusCode::BAD_REQUEST,
-                    ErrorDetail::new("common.bad_request", "租户未找到"),
-                )
-            })?;
+        let tenant =
+            crate::modules::tenants::models::tenants::Model::find_by_code(db, code)
+                .await
+                .model_err()
+                .map_err(|_| {
+                    Error::CustomError(
+                        StatusCode::BAD_REQUEST,
+                        ErrorDetail::new("common.bad_request", "租户未找到"),
+                    )
+                })?;
         tenant.id
     } else {
         caller_tenant_id

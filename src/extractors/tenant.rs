@@ -4,12 +4,12 @@ use loco_rs::app::AppContext;
 use loco_rs::{auth::jwt, prelude::*};
 use uuid::Uuid;
 
-use crate::models::roles;
-use crate::models::tenants;
-use crate::services::api_key_service::{
+use crate::modules::api_keys::service::api_key_service::{
     identity_from_session_claims, is_api_key_session, ApiKeyIdentity,
 };
-use crate::services::auth_cache;
+use crate::modules::auth::service::auth_cache;
+use crate::modules::roles::models::roles;
+use crate::modules::tenants::models::tenants;
 use crate::utils::error::IntoModelResult;
 use crate::views::errors::auth as auth_err;
 

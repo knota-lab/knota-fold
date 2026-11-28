@@ -1,6 +1,8 @@
 use knota_fold::app::App;
-use knota_fold::services::permission_service;
-use knota_fold::views::permissions::{CreatePermissionRequest, UpdatePermissionRequest};
+use knota_fold::modules::permissions::service::permission_service;
+use knota_fold::modules::permissions::views::permissions::{
+    CreatePermissionRequest, UpdatePermissionRequest,
+};
 use loco_rs::prelude::model::query::PaginationQuery;
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
@@ -142,9 +144,12 @@ async fn can_soft_delete_permission() {
     let permission_id = Uuid::parse_str(MENU_READ_PERMISSION_ID).unwrap();
     let pagination = pagination("1", "10");
 
-    knota_fold::models::permissions::Model::soft_delete(db, permission_id)
-        .await
-        .expect("Failed to soft delete permission");
+    knota_fold::modules::permissions::models::permissions::Model::soft_delete(
+        db,
+        permission_id,
+    )
+    .await
+    .expect("Failed to soft delete permission");
 
     let response = permission_service::list_permissions(db, &pagination)
         .await
@@ -192,7 +197,7 @@ async fn permission_code_must_be_globally_unique() {
 #[tokio::test]
 #[serial]
 async fn sync_delete_resync_restores_soft_deleted_permission() {
-    use knota_fold::views::permissions::SyncPermissionItem;
+    use knota_fold::modules::permissions::views::permissions::SyncPermissionItem;
 
     let boot = boot_test::<App>().await.expect("Failed to boot");
     seed::<App>(&boot.app_context)
@@ -216,14 +221,18 @@ async fn sync_delete_resync_restores_soft_deleted_permission() {
     assert!(created[0].deleted_at.is_none());
 
     // 2. Soft-delete it
-    knota_fold::models::permissions::Model::soft_delete(db, original_id)
-        .await
-        .expect("Soft delete should succeed");
+    knota_fold::modules::permissions::models::permissions::Model::soft_delete(
+        db,
+        original_id,
+    )
+    .await
+    .expect("Soft delete should succeed");
 
     // Verify it's no longer in active list
-    let active = knota_fold::models::permissions::Model::find_all(db)
-        .await
-        .expect("find_all should succeed");
+    let active =
+        knota_fold::modules::permissions::models::permissions::Model::find_all(db)
+            .await
+            .expect("find_all should succeed");
     assert!(
         !active.iter().any(|p| p.id == original_id),
         "Deleted permission should not appear in active list"

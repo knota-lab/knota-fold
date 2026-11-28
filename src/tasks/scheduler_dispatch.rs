@@ -5,7 +5,7 @@ use loco_rs::{
     Result,
 };
 
-use crate::services::task_scheduler_service;
+use crate::modules::workers::service::task_scheduler_service;
 
 pub struct SchedulerDispatch;
 

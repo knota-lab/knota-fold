@@ -13,6 +13,11 @@ use crate::extractors::{RequestMeta, TenantContext};
 use crate::initializers::knowledge_base::SharedSearchProvider;
 use crate::initializers::s3::{SharedS3Client, SharedS3Config};
 use crate::models::_entities::{files, kb_documents};
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{
+    AuditAction, AuditContext, KbDocumentAuditSnapshot,
+};
+use crate::modules::files::service::file_reference_service::{self, AttachRequest};
 use crate::modules::knowledge_base::errors::KnowledgeBaseError;
 use crate::modules::knowledge_base::service;
 use crate::modules::knowledge_base::views::{
@@ -21,12 +26,11 @@ use crate::modules::knowledge_base::views::{
     PresignDocumentAssetsRequest, PresignDocumentAssetsResponse,
     PresignedDocumentAssetResponse,
 };
-use crate::services::audit_service;
-use crate::services::file_reference_service::{self, AttachRequest};
+use crate::modules::workers::service::worker_run_service::{
+    self, KNOWLEDGE_BASE_INDEXING_BUSINESS_TYPE,
+};
 use crate::services::resource_types::ResourceType;
-use crate::services::worker_run_service::{self, KNOWLEDGE_BASE_INDEXING_BUSINESS_TYPE};
 use crate::utils::error::IntoModelResult;
-use crate::views::audit_logs::{AuditAction, AuditContext, KbDocumentAuditSnapshot};
 use crate::views::errors::{
     err_bad_request, err_forbidden, err_internal, err_not_found, parse_uuid,
     CodedErrorResponse,

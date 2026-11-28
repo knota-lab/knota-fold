@@ -12,12 +12,12 @@ use loco_rs::prelude::*;
 use uuid::Uuid;
 
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::services::i18n_service;
-use crate::views::audit_logs::AuditContext;
-use crate::views::errors::err_bad_request;
-use crate::views::i18n::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::i18n::service::i18n_service;
+use crate::modules::i18n::views::i18n::{
     BatchUpdateRequest, ExportQuery, ImportRequest, KeyListParams, IMPORT_MAX_BYTES,
 };
+use crate::views::errors::err_bad_request;
 
 /// Query params for `DELETE …/cell` — addresses a single tenant override row
 /// by its `(namespace, key, locale)` natural key. We use query string instead

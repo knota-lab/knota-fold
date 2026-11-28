@@ -2,8 +2,8 @@ use axum::http::Uri;
 use blake3::Hash;
 use knota_fold::{
     app::App,
-    models,
     models::_entities::{file_uploads, files},
+    modules::files::models,
 };
 use loco_rs::TestServer;
 use loco_rs::{app::AppContext, testing::prelude::*};

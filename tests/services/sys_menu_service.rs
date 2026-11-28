@@ -1,7 +1,9 @@
 use knota_fold::app::App;
-use knota_fold::services::sys_menu_service;
-use knota_fold::views::audit_logs::AuditContext;
-use knota_fold::views::sys_menus::{CreateSysMenuRequest, UpdateSysMenuRequest};
+use knota_fold::modules::audit_logs::views::audit_logs::AuditContext;
+use knota_fold::modules::menus::service::sys_menu_service;
+use knota_fold::modules::menus::views::sys_menus::{
+    CreateSysMenuRequest, UpdateSysMenuRequest,
+};
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
 use uuid::Uuid;

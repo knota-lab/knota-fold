@@ -29,7 +29,7 @@ use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilt
 use uuid::Uuid;
 
 use crate::models::_entities::{roles, user_roles, users};
-use crate::models::users::RegisterParams;
+use crate::modules::users::models::users::RegisterParams;
 
 pub struct BootstrapAdmin;
 

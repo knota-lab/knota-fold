@@ -2,13 +2,13 @@ use loco_openapi::prelude::*;
 use loco_rs::prelude::*;
 
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::services::role_template_service;
-use crate::views::audit_logs::AuditContext;
-use crate::views::errors::parse_uuid;
-use crate::views::role_templates::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::roles::service::role_template_service;
+use crate::modules::roles::views::role_templates::{
     CreateRoleTemplateRequest, SyncTemplateMenusRequest, SyncTemplatePermissionsRequest,
     TemplateMenuIdsResponse, UpdateRoleTemplateRequest,
 };
+use crate::views::errors::parse_uuid;
 
 #[utoipa::path(
     get,

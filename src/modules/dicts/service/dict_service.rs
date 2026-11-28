@@ -6,18 +6,18 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::models::_entities::{dict_items, dict_types};
-use crate::models::dict_items as dict_items_model;
-use crate::models::dict_items::EffectiveDictItem;
-use crate::models::dict_types as dict_types_model;
-use crate::services::audit_service;
-use crate::utils::error::{IntoAppError, IntoModelResult};
-use crate::views::audit_logs::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{
     AuditAction, AuditContext, DictItemAuditSnapshot, DictTypeAuditSnapshot,
 };
-use crate::views::dicts::{
+use crate::modules::dicts::models::dict_items as dict_items_model;
+use crate::modules::dicts::models::dict_items::EffectiveDictItem;
+use crate::modules::dicts::models::dict_types as dict_types_model;
+use crate::modules::dicts::views::dicts::{
     CreateDictItemRequest, CreateDictTypeRequest, DictItemResponse, DictItemTreeResponse,
     DictTypeResponse, UpdateDictItemRequest, UpdateDictTypeRequest,
 };
+use crate::utils::error::{IntoAppError, IntoModelResult};
 use crate::views::errors::err_bad_request;
 use crate::views::pagination::PaginatedResponse;
 

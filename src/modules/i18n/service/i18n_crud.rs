@@ -9,15 +9,15 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::models::_entities::i18n_translations;
-use crate::models::i18n_translations as trans_model;
-use crate::services::audit_service;
-use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
-use crate::views::audit_logs::{AuditAction, AuditContext};
-use crate::views::errors::err_bad_request;
-use crate::views::i18n::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{AuditAction, AuditContext};
+use crate::modules::i18n::models::i18n_translations as trans_model;
+use crate::modules::i18n::views::i18n::{
     ImportEntry, ImportResponse, TranslationResponse, UpdateTranslationRequest,
     UpsertGlobalTranslationRequest, UpsertTenantOverrideRequest, IMPORT_MAX_ENTRIES,
 };
+use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
+use crate::views::errors::err_bad_request;
 
 use super::i18n_bundle::{
     bump_global_revision, bump_tenant_revision, invalidate_bundle_cache,

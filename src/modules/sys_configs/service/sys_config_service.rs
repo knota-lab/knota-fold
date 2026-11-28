@@ -6,16 +6,16 @@ use sea_orm::{ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFi
 use uuid::Uuid;
 
 use crate::models::_entities::sys_configs;
-use crate::models::sys_configs as sys_configs_model;
-use crate::services::audit_service;
-use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
-use crate::views::audit_logs::{AuditAction, AuditContext};
-use crate::views::errors::err_bad_request;
-use crate::views::sys_configs::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{AuditAction, AuditContext};
+use crate::modules::sys_configs::models::sys_configs as sys_configs_model;
+use crate::modules::sys_configs::views::sys_configs::{
     ConfigLayers, CreateGlobalConfigRequest, ResolvedConfigDetail, ResolvedConfigSlim,
     ResolvedConfigsResponse, TenantUpsertResponse, UpdateGlobalConfigRequest,
     UpsertTenantConfigRequest,
 };
+use crate::utils::error::{IntoAppError, IntoModelResult, OptionErrInto};
+use crate::views::errors::err_bad_request;
 
 // ── Cache key helpers ──────────────────────────────────────────────────────────
 

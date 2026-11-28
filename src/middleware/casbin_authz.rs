@@ -19,11 +19,10 @@ use tokio::sync::RwLock;
 use tower::{Layer, Service};
 use uuid::Uuid;
 
-use crate::models::{roles, tenants};
-use crate::services::{
-    api_key_service::{self, ApiKeyIdentity},
-    auth_cache,
-};
+use crate::modules::api_keys::service::api_key_service::{self, ApiKeyIdentity};
+use crate::modules::auth::service::auth_cache;
+use crate::modules::roles::models::roles;
+use crate::modules::tenants::models::tenants;
 use crate::views::errors::{err_forbidden, err_internal, err_unauthorized};
 
 const WHITELIST_PATHS: &[&str] = &["/api/auth/current", "/api/users/me/menus"];

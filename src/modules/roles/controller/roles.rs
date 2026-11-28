@@ -5,19 +5,20 @@ use loco_rs::prelude::*;
 use crate::extractors::{RequestMeta, TenantContext};
 use crate::models::_entities::roles;
 use crate::models::_entities::users;
-use crate::services::casbin_service::SharedEnforcer;
-use crate::services::{
-    permission_service, role_service, tenant_menu_service, tenant_service,
-};
-use crate::utils::error::IntoModelResult;
-use crate::utils::error::OptionErrInto;
-use crate::views::audit_logs::AuditContext;
-use crate::views::errors::parse_uuid;
-use crate::views::roles::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::menus::service::tenant_menu_service;
+use crate::modules::permissions::service::permission_service;
+use crate::modules::roles::service::role_service;
+use crate::modules::roles::views::roles::{
     CreateRoleRequest, RoleListParams, RoleMenuIdsResponse, RolePermissionIdsResponse,
     RoleResponse, SyncRoleMenusRequest, SyncRolePermissionsRequest, SyncUserRolesRequest,
     ToggleRoleStatusRequest, UpdateRoleRequest,
 };
+use crate::modules::tenants::service::tenant_service;
+use crate::services::casbin_service::SharedEnforcer;
+use crate::utils::error::IntoModelResult;
+use crate::utils::error::OptionErrInto;
+use crate::views::errors::parse_uuid;
 
 #[utoipa::path(
     get,
@@ -327,7 +328,8 @@ pub(crate) async fn assignable_permissions(
         return crate::views::errors::role::cross_tenant("查看权限");
     }
 
-    let openapi = crate::controllers::permissions::get_openapi_spec_ref();
+    let openapi =
+        crate::modules::permissions::controller::permissions::get_openapi_spec_ref();
     let result = permission_service::get_assignable_permissions(
         &ctx.db,
         openapi,

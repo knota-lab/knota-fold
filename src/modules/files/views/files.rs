@@ -65,7 +65,8 @@ pub struct SmallUploadRequest {
     /// Optional Wave 5 D4: bind the just-uploaded file to a business
     /// resource in the same logical operation. Sent as a JSON sidecar
     /// field in the multipart form (`attachTo` part with JSON body).
-    pub attach_to: Option<crate::views::file_references::AttachReferenceRequest>,
+    pub attach_to:
+        Option<crate::modules::files::views::file_references::AttachReferenceRequest>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

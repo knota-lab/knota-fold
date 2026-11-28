@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::models::_entities::roles;
-use crate::views::menus::MergedMenuTreeResponse;
+use crate::modules::menus::views::menus::MergedMenuTreeResponse;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

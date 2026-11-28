@@ -30,30 +30,32 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::initializers::s3::{SharedS3Client, SharedS3Config};
-use crate::models::{
-    _entities::{file_instant_idempotency, file_references, files},
-    file_repo, tenants,
+use crate::models::_entities::{file_instant_idempotency, file_references, files};
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{
+    AuditAction, AuditContext, FileAuditSnapshot,
 };
-use crate::services::{
-    audit_service, file_reference_service, partition_policy, tenant_service,
+use crate::modules::files::models::file_repo;
+use crate::modules::files::service::file_reference_service;
+use crate::modules::files::service::partition_policy;
+use crate::modules::files::views::file_uploads::{
+    InstantUploadConfirmed, InstantUploadMiss, InstantUploadRequest,
+    InstantUploadResponse, ProbeMissResponse, ProbeRequest, ProbeResponse,
+    ProbeSuspectResponse, UploadFileSummary,
 };
+use crate::modules::files::views::files::{
+    DedupCheckRequest, DedupCheckResponse, DownloadUrlResponse, FileResponse,
+    SmallUploadRequest, SoftDeleteRequest,
+};
+use crate::modules::tenants::models::tenants;
+use crate::modules::tenants::service::tenant_service;
 use crate::utils::error::{db_err_into, ErrInto, IntoAppError, OptionErrInto};
 use crate::utils::{
     file_hash::{build_storage_key, format_b3_hash, validate_b3_hash},
     id::generate_id,
     mime::{detect_mime, is_blacklisted},
 };
-use crate::views::audit_logs::{AuditAction, AuditContext, FileAuditSnapshot};
 use crate::views::errors::err_bad_request;
-use crate::views::file_uploads::{
-    InstantUploadConfirmed, InstantUploadMiss, InstantUploadRequest,
-    InstantUploadResponse, ProbeMissResponse, ProbeRequest, ProbeResponse,
-    ProbeSuspectResponse, UploadFileSummary,
-};
-use crate::views::files::{
-    DedupCheckRequest, DedupCheckResponse, DownloadUrlResponse, FileResponse,
-    SmallUploadRequest, SoftDeleteRequest,
-};
 use crate::views::pagination::PaginatedResponse;
 
 const ACTIVE_STATUS: &str = "ACTIVE";
@@ -276,7 +278,7 @@ pub async fn probe(
         ));
     }
 
-    crate::views::file_uploads::validate_b3_fast_hash(
+    crate::modules::files::views::file_uploads::validate_b3_fast_hash(
         &req.content_hash_fast,
         "contentHashFast",
     )?;
@@ -1666,7 +1668,7 @@ pub async fn instant_upload(
         ));
     }
     validate_b3_hash(&req.expected_hash)?;
-    crate::views::file_uploads::validate_b3_fast_hash(
+    crate::modules::files::views::file_uploads::validate_b3_fast_hash(
         &req.expected_hash_fast,
         "expectedHashFast",
     )?;

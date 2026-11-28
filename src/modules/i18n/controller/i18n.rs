@@ -19,11 +19,12 @@ use loco_openapi::prelude::*;
 use loco_rs::prelude::*;
 
 use crate::extractors::TenantContext;
-use crate::models::users;
-use crate::services::{i18n_locale_service, i18n_service};
+use crate::modules::i18n::service::i18n_locale_service;
+use crate::modules::i18n::service::i18n_service;
+use crate::modules::i18n::views::i18n::{self as i18n_views, BASE_LOCALE};
+use crate::modules::users::models::users;
 use crate::utils::error::{IntoModelResult, OptionErrInto};
 use crate::views::errors::err_bad_request;
-use crate::views::i18n::{self as i18n_views, BASE_LOCALE};
 
 #[utoipa::path(
     get,

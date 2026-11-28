@@ -5,14 +5,16 @@ use uuid::Uuid;
 use crate::models::_entities::{
     role_menus, roles, sys_menus, tenant_menu_overrides, user_roles,
 };
-use crate::models::tenant_menu_overrides as overrides_model;
-use crate::services::audit_service;
-use crate::utils::error::IntoModelResult;
-use crate::views::audit_logs::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{
     AuditAction, AuditContext, TenantMenuOverrideAuditSnapshot,
 };
-use crate::views::menus::{MergedMenuTreeResponse, UpdateOverrideRequest};
-use crate::views::roles::AssignableMenusResponse;
+use crate::modules::menus::models::tenant_menu_overrides as overrides_model;
+use crate::modules::menus::views::menus::{
+    MergedMenuTreeResponse, UpdateOverrideRequest,
+};
+use crate::modules::roles::views::roles::AssignableMenusResponse;
+use crate::utils::error::IntoModelResult;
 
 #[derive(Clone)]
 struct MergedMenuItem {

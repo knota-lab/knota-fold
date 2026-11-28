@@ -1,7 +1,7 @@
 use knota_fold::{
     app::App,
     models::_entities::{file_upload_idempotency, file_upload_parts, file_uploads},
-    services::file_upload_service,
+    modules::files::service::file_upload_service,
 };
 use loco_rs::testing::request::request;
 use sea_orm::{

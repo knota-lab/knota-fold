@@ -8,7 +8,6 @@
 pub mod app;
 pub mod app_logs;
 pub mod config;
-pub mod controllers;
 pub mod data;
 pub mod error_info;
 pub mod extractors;

@@ -2,8 +2,8 @@ use loco_openapi::prelude::*;
 use loco_rs::prelude::*;
 
 use crate::extractors::TenantContext;
-use crate::services::audit_service;
-use crate::views::audit_logs::AuditLogQuery;
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::AuditLogQuery;
 
 #[utoipa::path(
     get,

@@ -9,7 +9,8 @@ use loco_rs::{
 use sea_orm::DatabaseConnection;
 
 use crate::config::ConfigExt;
-use crate::models::{scheduled_worker_definitions, scheduled_worker_executions};
+use crate::modules::workers::models::scheduled_worker_definitions;
+use crate::modules::workers::models::scheduled_worker_executions;
 use crate::workers::test_job_worker::{TestJobWorker, TestJobWorkerArgs};
 
 async fn validate_and_load_config(

@@ -10,14 +10,15 @@ use uuid::Uuid;
 
 use crate::extractors::TenantContext;
 use crate::models::_entities::api_keys as api_keys_entity;
-use crate::models::{api_keys, roles};
+use crate::modules::api_keys::models::api_keys;
+use crate::modules::api_keys::views::api_keys::{
+    ApiKeyResponse, ChangeApiKeyRoleRequest, UpdateApiKeyRequest,
+};
+use crate::modules::roles::models::roles;
 use crate::services::casbin_service::{
     remove_api_key_role, sync_api_key_role, SharedEnforcer,
 };
 use crate::utils::error::OptionErrInto;
-use crate::views::api_keys::{
-    ApiKeyResponse, ChangeApiKeyRoleRequest, UpdateApiKeyRequest,
-};
 use crate::views::errors::{parse_uuid, CodedErrorResponse};
 
 async fn load_role_name(

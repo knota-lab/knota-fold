@@ -2,15 +2,15 @@ use loco_openapi::prelude::*;
 use loco_rs::prelude::*;
 
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::models::tenants;
-use crate::services::sys_config_service;
-use crate::utils::error::IntoModelResult;
-use crate::views::audit_logs::AuditContext;
-use crate::views::sys_configs::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::sys_configs::service::sys_config_service;
+use crate::modules::sys_configs::views::sys_configs::{
     CreateGlobalConfigRequest, GlobalConfigListParams, SysConfigListResponse,
     SysConfigResponse, TenantConfigListParams, UpdateGlobalConfigRequest,
     UpsertTenantConfigRequest,
 };
+use crate::modules::tenants::models::tenants;
+use crate::utils::error::IntoModelResult;
 
 // ── Global config management ──────────────────────────────────────────────────
 

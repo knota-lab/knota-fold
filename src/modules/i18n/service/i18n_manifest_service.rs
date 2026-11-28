@@ -34,15 +34,16 @@ use sea_orm::{
 };
 
 use crate::models::_entities::{i18n_entries, i18n_entry_locations};
-use crate::models::i18n_entries as entry_model;
-use crate::services::{audit_service, i18n_service};
-use crate::utils::error::{IntoAppError, IntoModelResult};
-use crate::utils::id::generate_id;
-use crate::views::audit_logs::{AuditAction, AuditContext};
-use crate::views::errors::err_bad_request;
-use crate::views::i18n::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{AuditAction, AuditContext};
+use crate::modules::i18n::models::i18n_entries as entry_model;
+use crate::modules::i18n::service::i18n_service;
+use crate::modules::i18n::views::i18n::{
     ManifestEntryInput, ManifestUploadRequest, ManifestUploadResponse, BASE_LOCALE,
 };
+use crate::utils::error::{IntoAppError, IntoModelResult};
+use crate::utils::id::generate_id;
+use crate::views::errors::err_bad_request;
 
 /// Hard cap to protect the DB. Way above any plausible real-world manifest.
 const MAX_MANIFEST_ENTRIES: usize = 50_000;

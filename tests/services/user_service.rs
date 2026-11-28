@@ -1,6 +1,6 @@
 use knota_fold::app::App;
-use knota_fold::services::user_service;
-use knota_fold::views::audit_logs::AuditContext;
+use knota_fold::modules::audit_logs::views::audit_logs::AuditContext;
+use knota_fold::modules::users::service::user_service;
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
 use uuid::Uuid;

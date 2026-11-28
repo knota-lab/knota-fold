@@ -26,27 +26,32 @@ use crate::utils::error::{db_err_into, ErrInto, IntoAppError, OptionErrInto};
 use crate::views::errors::err_bad_request;
 use crate::{
     initializers::s3::{SharedS3Client, SharedS3Config},
-    models::{
-        _entities::{file_upload_idempotency, file_upload_parts, file_uploads, files},
-        file_repo,
+    models::_entities::{
+        file_upload_idempotency, file_upload_parts, file_uploads, files,
     },
-    services::{audit_service, file_reference_service, file_service, partition_policy},
+    modules::{
+        audit_logs::{
+            service::audit_service,
+            views::audit_logs::{
+                AuditAction, AuditContext, FileAuditSnapshot, FileUploadAuditSnapshot,
+            },
+        },
+        files::{
+            models::file_repo,
+            service::{file_reference_service, file_service, partition_policy},
+            views::file_uploads::{
+                validate_b3_fast_hash, AbortUploadResponse, CompleteUploadResponse,
+                ExpiredUploadResponse, InitiateUploadRequest, InitiateUploadResponse,
+                RegisterPartRequest, RegisterPartResponse, ResumeUploadResponse,
+                SignPartResponse, UploadFileSummary, UploadPurgeOutcome,
+                UploadedPartResponse,
+            },
+        },
+    },
     utils::{
         file_hash::{format_b3_hash, validate_b3_hash},
         id::generate_id,
         mime::{detect_mime, is_blacklisted},
-    },
-    views::{
-        audit_logs::{
-            AuditAction, AuditContext, FileAuditSnapshot, FileUploadAuditSnapshot,
-        },
-        file_uploads::{
-            validate_b3_fast_hash, AbortUploadResponse, CompleteUploadResponse,
-            ExpiredUploadResponse, InitiateUploadRequest, InitiateUploadResponse,
-            RegisterPartRequest, RegisterPartResponse, ResumeUploadResponse,
-            SignPartResponse, UploadFileSummary, UploadPurgeOutcome,
-            UploadedPartResponse,
-        },
     },
 };
 

@@ -7,13 +7,15 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::models::_entities::{role_menus, sys_menus};
-use crate::models::sys_menus as sys_menus_model;
-use crate::services::audit_service;
-use crate::utils::error::{IntoModelResult, OptionErrInto};
-use crate::views::audit_logs::{AuditAction, AuditContext, SysMenuAuditSnapshot};
-use crate::views::sys_menus::{
+use crate::modules::audit_logs::service::audit_service;
+use crate::modules::audit_logs::views::audit_logs::{
+    AuditAction, AuditContext, SysMenuAuditSnapshot,
+};
+use crate::modules::menus::models::sys_menus as sys_menus_model;
+use crate::modules::menus::views::sys_menus::{
     CreateSysMenuRequest, SysMenuResponse, SysMenuTreeResponse, UpdateSysMenuRequest,
 };
+use crate::utils::error::{IntoModelResult, OptionErrInto};
 
 const MAX_MENU_DEPTH: usize = 20;
 

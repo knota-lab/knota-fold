@@ -3,16 +3,17 @@ use loco_rs::prelude::model::query;
 use loco_rs::prelude::*;
 
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::models::roles as roles_model;
-use crate::services::casbin_service::SharedEnforcer;
-use crate::services::{tenant_service, user_service};
-use crate::views::audit_logs::AuditContext;
-use crate::views::errors::parse_uuid;
-use crate::views::roles::RoleResponse;
-use crate::views::tenants::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::roles::models::roles as roles_model;
+use crate::modules::roles::views::roles::RoleResponse;
+use crate::modules::tenants::service::tenant_service;
+use crate::modules::tenants::views::tenants::{
     CreateTenantRequest, TenantListParams, TenantResponse, UpdateTenantRequest,
 };
-use crate::views::users::{CreateUserRequest, UserResponse};
+use crate::modules::users::service::user_service;
+use crate::modules::users::views::users::{CreateUserRequest, UserResponse};
+use crate::services::casbin_service::SharedEnforcer;
+use crate::views::errors::parse_uuid;
 
 #[utoipa::path(
     get,

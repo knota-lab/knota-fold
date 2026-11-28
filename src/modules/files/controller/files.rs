@@ -10,16 +10,16 @@ use loco_rs::prelude::*;
 use uuid::Uuid;
 
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::services::{
-    file_reference_service, file_service, resource_types::ResourceType,
-};
-use crate::views::audit_logs::AuditContext;
-use crate::views::errors::err_bad_request;
-use crate::views::file_references::AttachReferenceRequest;
-use crate::views::files::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::files::service::file_reference_service;
+use crate::modules::files::service::file_service;
+use crate::modules::files::views::file_references::AttachReferenceRequest;
+use crate::modules::files::views::files::{
     DedupCheckRequest, DownloadUrlQuery, FileResponse, SmallUploadRequest,
     SoftDeleteRequest,
 };
+use crate::services::resource_types::ResourceType;
+use crate::views::errors::err_bad_request;
 use crate::views::pagination::PaginationParams;
 
 pub(crate) const MAX_SMALL_UPLOAD_BYTES: usize = 5 * 1024 * 1024;
@@ -256,7 +256,7 @@ pub(crate) async fn dedup_check(
     State(ctx): State<AppContext>,
     Json(params): Json<DedupCheckRequest>,
 ) -> Result<Response> {
-    let response: crate::views::files::DedupCheckResponse =
+    let response: crate::modules::files::views::files::DedupCheckResponse =
         file_service::dedup_check(&ctx.db, tc.tenant_id, &params).await?;
     format::json(response)
 }
@@ -271,7 +271,7 @@ pub(crate) async fn download_url(
     Query(query): Query<DownloadUrlQuery>,
 ) -> Result<Response> {
     let disposition = file_service::parse_disposition(query.disposition.as_deref())?;
-    let response: crate::views::files::DownloadUrlResponse =
+    let response: crate::modules::files::views::files::DownloadUrlResponse =
         file_service::get_download_url(&ctx, tc.tenant_id, id, disposition).await?;
     format::json(response)
 }

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::models::_entities::users;
-use crate::services::auth_cache::CachedUserProfile;
+use crate::modules::auth::service::auth_cache::CachedUserProfile;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

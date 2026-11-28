@@ -1,7 +1,7 @@
 use knota_fold::app::App;
-use knota_fold::services::i18n_service;
-use knota_fold::views::audit_logs::AuditContext;
-use knota_fold::views::i18n::ImportEntry;
+use knota_fold::modules::audit_logs::views::audit_logs::AuditContext;
+use knota_fold::modules::i18n::service::i18n_service;
+use knota_fold::modules::i18n::views::i18n::ImportEntry;
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
 use uuid::Uuid;
@@ -32,7 +32,7 @@ async fn insert_global_translation(
     locale: &str,
     value: &str,
 ) {
-    use knota_fold::views::i18n::UpsertGlobalTranslationRequest;
+    use knota_fold::modules::i18n::views::i18n::UpsertGlobalTranslationRequest;
     i18n_service::upsert_global_translation(
         ctx,
         uuid(USER_ID),
@@ -261,7 +261,7 @@ async fn batch_update_tenant_updates_existing_override() {
     // Prepare: create a global translation and a tenant override.
     insert_global_translation(ctx, "Tenant.DEFAULT", "key1", "zh-CN", "全局值").await;
 
-    use knota_fold::views::i18n::UpsertTenantOverrideRequest;
+    use knota_fold::modules::i18n::views::i18n::UpsertTenantOverrideRequest;
     i18n_service::upsert_tenant_override(
         ctx,
         tenant_id,

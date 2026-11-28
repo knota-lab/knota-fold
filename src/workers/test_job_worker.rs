@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tracing::Instrument;
 use uuid::Uuid;
 
-use crate::services::task_execution_service;
+use crate::modules::workers::service::task_execution_service;
 
 pub struct TestJobWorker {
     pub ctx: AppContext,

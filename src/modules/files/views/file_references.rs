@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::models::_entities::file_references;
-use crate::views::files::FileResponse;
+use crate::modules::files::views::files::FileResponse;
 
 /// Caller-supplied attach payload.
 ///

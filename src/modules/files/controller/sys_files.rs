@@ -12,17 +12,17 @@ use loco_openapi::prelude::*;
 use loco_rs::prelude::*;
 use uuid::Uuid;
 
-use crate::controllers::files::MAX_SMALL_UPLOAD_BODY_BYTES;
 use crate::extractors::{RequestMeta, TenantContext};
-use crate::services::{
-    file_reference_service, file_service, resource_types::ResourceType,
-};
-use crate::views::audit_logs::AuditContext;
-use crate::views::errors::err_bad_request;
-use crate::views::file_references::AttachReferenceRequest;
-use crate::views::files::{
+use crate::modules::audit_logs::views::audit_logs::AuditContext;
+use crate::modules::files::controller::files::MAX_SMALL_UPLOAD_BODY_BYTES;
+use crate::modules::files::service::file_reference_service;
+use crate::modules::files::service::file_service;
+use crate::modules::files::views::file_references::AttachReferenceRequest;
+use crate::modules::files::views::files::{
     DedupCheckRequest, DownloadUrlQuery, SmallUploadRequest, SoftDeleteRequest,
 };
+use crate::services::resource_types::ResourceType;
+use crate::views::errors::err_bad_request;
 use crate::views::pagination::PaginationParams;
 
 /// Sys-side mirror of `controllers::files::attach_to_service_request`.
@@ -170,7 +170,9 @@ pub(crate) async fn sys_get_one(
     }
     let tenant = file_service::resolve_target_tenant(&ctx.db, &tenant_code).await?;
     let response = file_service::sys_get_by_id(&ctx.db, tenant.id, id).await?;
-    format::json(crate::views::files::FileResponse::from(response))
+    format::json(crate::modules::files::views::files::FileResponse::from(
+        response,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/sys/tenants/{tenantCode}/files", tag = "超管-文件管理", description = "跨租户直接上传（multipart/form-data，设计 §8.1 L579-598）",

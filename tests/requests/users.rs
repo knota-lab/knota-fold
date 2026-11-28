@@ -1,5 +1,5 @@
 use knota_fold::app::App;
-use knota_fold::views::auth::LoginResponse;
+use knota_fold::modules::auth::views::auth::LoginResponse;
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
 

@@ -1,7 +1,7 @@
 use knota_fold::app::App;
-use knota_fold::services::tenant_menu_service;
-use knota_fold::views::audit_logs::AuditContext;
-use knota_fold::views::menus::UpdateOverrideRequest;
+use knota_fold::modules::audit_logs::views::audit_logs::AuditContext;
+use knota_fold::modules::menus::service::tenant_menu_service;
+use knota_fold::modules::menus::views::menus::UpdateOverrideRequest;
 use loco_rs::testing::prelude::*;
 use serial_test::serial;
 use uuid::Uuid;
