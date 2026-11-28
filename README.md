@@ -5,7 +5,7 @@
 ## 技术栈
 
 **后端**
-- Rust · [Loco-rs](https://loco.rs) 0.16 · Axum 0.8 · SeaORM 1.1
+- Rust · [Loco-rs](https://loco.rs) 1.3 · Axum 0.8 · SeaORM 2.0
 - Casbin RBAC · JWT + API Key 双路认证
 - SQLite（开发）/ PostgreSQL（生产）· Redis 缓存
 - S3 / MinIO 对象存储 · 后台任务调度 · Qdrant 向量数据库
@@ -221,45 +221,44 @@ Authorization: Bearer <短期JWT>
 
 ## 项目结构
 
-```
-knota-fold/                       # 后端
+```text
+knota-fold/
 ├── src/
-│   ├── controllers/              # API 控制器
-│   ├── services/                 # 业务逻辑层
-│   ├── models/                   # SeaORM 数据模型
-│   ├── views/                    # 请求/响应 DTO
-│   ├── middleware/                # 中间件（Casbin、RBAC、Tracing）
-│   ├── initializers/             # 应用初始化器（Casbin、S3、OpenAPI）
-│   ├── tasks/                    # 后台定时任务
-│   ├── workers/                  # 异步 Worker
-│   ├── mailers/                  # 邮件模板
+│   ├── modules/                  # 按业务域组织（controller / service / models / views）
+│   │   ├── auth/                 # 登录、验证码、登录锁定、JWT 缓存
+│   │   ├── users/
+│   │   ├── roles/                # 角色、角色模板
+│   │   ├── permissions/
+│   │   ├── tenants/
+│   │   ├── menus/                # 菜单、租户菜单覆盖
+│   │   ├── dicts/
+│   │   ├── files/                # 文件、分片上传、引用、文件审计
+│   │   ├── i18n/
+│   │   ├── audit_logs/
+│   │   ├── sys_configs/
+│   │   ├── api_keys/             # API Key + 兑换令牌 + 短期 JWT
+│   │   ├── workers/              # 调度管理 API
+│   │   ├── notification/
+│   │   └── knowledge_base/       # 文档、检索、QA、向量
+│   ├── models/_entities/         # SeaORM 生成实体（共享，不随域移动）
+│   ├── services/                 # 跨域基础设施：Casbin、resource_types
+│   ├── views/                    # 共享错误、分页
+│   ├── middleware/               # JWT/API Key 鉴权、Tracing、错误处理
+│   ├── extractors/               # TenantContext 等
+│   ├── initializers/             # 应用初始化器
+│   ├── utils/                    # 错误、ID、时间等
+│   ├── config/                   # 配置结构
 │   ├── fixtures/                 # 种子数据
-│   └── config/                   # 配置模块
+│   ├── mailers/                  # 邮件模板
+│   ├── tasks/                    # Loco 定时任务
+│   └── workers/                  # Loco 后台 Worker
 ├── migration/                    # 数据库迁移
-├── config/                       # 环境配置文件（development / test / production）
+├── config/                       # 环境配置（development / test / production）
 ├── docker/                       # Docker 配置
-│   ├── Dockerfile                # 后端镜像（多阶段构建）
-│   ├── docker-compose.yml        # 本地开发（依赖服务）
-│   ├── docker-compose.staging.yml  # Staging（全栈构建）
-│   ├── docker-compose.prod.yml   # 生产部署
-│   ├── easytier/                 # EasyTier 配置模板
-│   └── .env.example              # 环境变量文档
 └── tests/                        # 集成测试
-
-knota-studio/                     # 前端管理面板
-├── src/
-│   ├── pages/                    # 页面组件
-│   ├── api/                      # API 客户端
-│   ├── components/               # 通用组件（ProTable、DataTable、Form）
-│   ├── stores/                   # 状态管理（Auth、Agent）
-│   ├── i18n/                     # 国际化运行时
-│   ├── layout/                   # 布局组件（侧边栏、面包屑）
-│   ├── lib/                      # 工具库（Agent 集成、Iconify）
-│   └── types/                    # TypeScript 类型定义
-├── Caddyfile                     # Caddy 配置（安全头 + 限流 + 反代）
-├── Dockerfile                    # 前端镜像（多阶段构建：pnpm → Caddy）
-└── public/                       # 静态资源
 ```
+
+`src/controllers/`、`src/services/`、`src/views/`、`src/models/` 仍保留一层兼容 re-export，新代码请直接使用 `crate::modules::<domain>::...`；后续可逐步删除兼容层。
 
 ## 测试
 

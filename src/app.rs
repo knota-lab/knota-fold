@@ -131,78 +131,78 @@ impl Hooks for App {
         let authz_layer = casbin_authz_layer(ctx);
 
         AppRoutes::with_default_routes() // controller routes below
-            .add_route(controllers::auth::routes())
-            .add_route(controllers::auth::super_admin_routes().layer(authz_layer.clone()))
-            .add_route(controllers::roles::routes().layer(authz_layer.clone()))
-            .add_route(controllers::roles::user_role_routes().layer(authz_layer.clone()))
-            .add_route(controllers::permissions::routes().layer(authz_layer.clone()))
-            .add_route(controllers::sys_menus::routes().layer(authz_layer.clone()))
-            .add_route(controllers::menus::routes().layer(authz_layer.clone()))
-            .add_route(controllers::menus::user_menu_routes().layer(authz_layer.clone()))
-            .add_route(controllers::dicts::dict_type_routes().layer(authz_layer.clone()))
-            .add_route(controllers::dicts::dict_item_routes().layer(authz_layer.clone()))
-            .add_route(controllers::users::routes().layer(authz_layer.clone()))
-            .add_route(controllers::tenants::routes().layer(authz_layer.clone()))
-            .add_route(controllers::tenants::sys_routes().layer(authz_layer.clone()))
-            .add_route(controllers::role_templates::routes().layer(authz_layer.clone()))
-            .add_route(controllers::audit_logs::routes().layer(authz_layer.clone()))
-            .add_route(controllers::sys_configs::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::auth::controller::auth::routes())
+            .add_route(crate::modules::auth::controller::auth::super_admin_routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::roles::controller::roles::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::roles::controller::roles::user_role_routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::permissions::controller::permissions::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::menus::controller::sys_menus::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::menus::controller::menus::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::menus::controller::menus::user_menu_routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::dicts::controller::dicts::dict_type_routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::dicts::controller::dicts::dict_item_routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::users::controller::users::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::tenants::controller::tenants::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::tenants::controller::tenants::sys_routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::roles::controller::role_templates::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::audit_logs::controller::audit_logs::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::sys_configs::controller::sys_configs::routes().layer(authz_layer.clone()))
             .add_route(
-                controllers::sys_configs::tenant_routes().layer(authz_layer.clone()),
+                crate::modules::sys_configs::controller::sys_configs::tenant_routes().layer(authz_layer.clone()),
             )
             .add_route(
-                controllers::sys_configs::super_admin_routes().layer(authz_layer.clone()),
+                crate::modules::sys_configs::controller::sys_configs::super_admin_routes().layer(authz_layer.clone()),
             )
             .add_route(
-                controllers::sys_configs::resolved_routes().layer(authz_layer.clone()),
+                crate::modules::sys_configs::controller::sys_configs::resolved_routes().layer(authz_layer.clone()),
             )
-            .add_route(controllers::files::routes().layer(authz_layer.clone()))
-            .add_route(controllers::file_uploads::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::files::controller::files::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::files::controller::file_uploads::routes().layer(authz_layer.clone()))
             .add_route(
-                controllers::file_references::routes_files_subpath()
+                crate::modules::files::controller::file_references::routes_files_subpath()
                     .layer(authz_layer.clone()),
             )
             .add_route(
-                controllers::file_references::routes_root().layer(authz_layer.clone()),
+                crate::modules::files::controller::file_references::routes_root().layer(authz_layer.clone()),
             )
-            .add_route(controllers::sys_files::routes().layer(authz_layer.clone()))
-            .add_route(controllers::sys_file_uploads::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::files::controller::sys_files::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::files::controller::sys_file_uploads::routes().layer(authz_layer.clone()))
             .add_route(
-                controllers::sys_file_references::routes_files_subpath()
+                crate::modules::files::controller::sys_file_references::routes_files_subpath()
                     .layer(authz_layer.clone()),
             )
             .add_route(
-                controllers::sys_file_references::routes_root()
+                crate::modules::files::controller::sys_file_references::routes_root()
                     .layer(authz_layer.clone()),
             )
             // i18n user-facing reads — JWT only (TenantContext), no Casbin.
             // Every logged-in user needs locales + bundles to render any page.
-            .add_route(controllers::i18n::user_routes())
+            .add_route(crate::modules::i18n::controller::i18n::user_routes())
             // i18n admin (global locales + global translations) — Casbin-gated.
-            .add_route(controllers::admin_i18n::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::i18n::controller::admin_i18n::routes().layer(authz_layer.clone()))
             // i18n tenant overrides — current tenant via JWT.
             .add_route(
-                controllers::tenant_i18n::tenant_routes().layer(authz_layer.clone()),
+                crate::modules::i18n::controller::tenant_i18n::tenant_routes().layer(authz_layer.clone()),
             )
             // CI endpoints — gated by X-CI-Token (env-provisioned), NOT Casbin.
-            .add_route(controllers::ci_i18n::routes().layer(CiTokenLayer::new()))
+            .add_route(crate::modules::i18n::controller::ci_i18n::routes().layer(CiTokenLayer::new()))
             // Public i18n bundles — no auth at all (Login page etc.).
-            .add_route(controllers::i18n::public_routes())
+            .add_route(crate::modules::i18n::controller::i18n::public_routes())
             // App logs admin API — Casbin-gated.
             .add_route(crate::app_logs::routes::routes().layer(authz_layer.clone()))
             // Task scheduler — Casbin-gated.
             .add_route(
-                controllers::worker_definitions::routes().layer(authz_layer.clone()),
+                crate::modules::workers::controller::worker_definitions::routes().layer(authz_layer.clone()),
             )
-            .add_route(controllers::worker_schedules::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::workers::controller::worker_schedules::routes().layer(authz_layer.clone()))
             .add_route(
-                controllers::worker_executions::routes().layer(authz_layer.clone()),
+                crate::modules::workers::controller::worker_executions::routes().layer(authz_layer.clone()),
             )
-            .add_route(controllers::api_keys::routes().layer(authz_layer.clone()))
+            .add_route(crate::modules::api_keys::controller::api_keys::routes().layer(authz_layer.clone()))
             .add_route(
-                controllers::api_key_exchange_tokens::routes().layer(authz_layer.clone()),
+                crate::modules::api_keys::controller::api_key_exchange_tokens::routes().layer(authz_layer.clone()),
             )
-            .add_route(controllers::api_key_exchange_tokens::public_routes())
+            .add_route(crate::modules::api_keys::controller::api_key_exchange_tokens::public_routes())
             // Notification module — manages routes (create/list/revoke) Casbin-gated;
             // inbox/read/unread/forced are login-only.
             .add_route(

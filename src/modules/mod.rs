@@ -1,2 +1,15 @@
+pub mod api_keys;
+pub mod audit_logs;
+pub mod auth;
+pub mod dicts;
+pub mod files;
+pub mod i18n;
 pub mod knowledge_base;
+pub mod menus;
 pub mod notification;
+pub mod permissions;
+pub mod roles;
+pub mod sys_configs;
+pub mod tenants;
+pub mod users;
+pub mod workers;
